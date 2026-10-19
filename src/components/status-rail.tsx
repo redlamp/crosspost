@@ -11,6 +11,7 @@ import {
 } from "@dnd-kit/core"
 import { arrayMove, rectSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
+import { TriangleAlertIcon } from "lucide-react"
 
 import { PlatformLogo } from "@/components/platform-logo"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -62,14 +63,18 @@ function RailTile({ item }: { item: RailItem }) {
               "relative grid size-10 cursor-grab touch-none place-items-center rounded-lg border transition-colors active:cursor-grabbing",
               "border-[color-mix(in_oklab,var(--brand)_45%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_14%,var(--card))]",
               "hover:bg-[color-mix(in_oklab,var(--brand)_24%,var(--card))]",
-              issue && "border-destructive bg-destructive/20 hover:bg-destructive/30",
+              // Issues show as a ring plus a warning badge, never by recoloring the tile,
+              // so a red or pink brand can't be mistaken for one.
+              issue && enabled && "ring-2 ring-destructive ring-offset-2 ring-offset-background",
               !enabled && "opacity-40 grayscale",
               isDragging && "shadow-lg ring-2 ring-(--brand)",
             )}
           >
             <PlatformLogo adapter={adapter} />
             {issue && enabled && (
-              <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-destructive ring-2 ring-background" />
+              <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-destructive text-white ring-2 ring-background">
+                <TriangleAlertIcon className="size-2.5" strokeWidth={3} />
+              </span>
             )}
             {posts > 0 && (
               <span
@@ -79,7 +84,6 @@ function RailTile({ item }: { item: RailItem }) {
                   "bg-(--brand) text-white",
                   // Black-branded marks invert in dark mode, so their badge text must too.
                   !adapter.brand.color && "text-background",
-                  issue && "bg-destructive text-white",
                 )}
               >
                 {posts}
