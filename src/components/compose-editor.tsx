@@ -1,0 +1,477 @@
+"use client"
+
+import { ScissorsIcon } from "lucide-react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
+
+import { PlatformLogo } from "@/components/platform-logo"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import type { PlatformAdapter } from "@/lib/adapters"
+import { graphemes, snapToWordStart } from "@/lib/text"
+import { cn } from "@/lib/utils"
+
+/** Where one platform's post `index` (2 or more) starts in the draft. */
+export type SplitMarker = {
+  adapter: PlatformAdapter
+  offset: number
+  index: number
+  manual: boolean
+}
+
+type Props = {
+  value: string
+  onChange: (value: string) => void
+  markers: SplitMarker[]
+  /** Threading platforms that are on. Each gets a chip that can be dragged into the text. */
+  palette: PlatformAdapter[]
+  /** A split is being placed for these platforms; `moving` is set when existing splits at that offset are dragged. */
+  onPlaceStart: (platformIds: string[], moving?: { offset: number }) => void
+  /** Live position while placing; null when the pointer is outside the text (no split, or removal). */
+  onPlace: (offset: number | null) => void
+  onPlaceEnd: () => void
+  onSplitAtCursor: (platformIds: string[], offset: number) => void
+  onRemove: (marker: SplitMarker) => void
+}
+
+// Styles the mirror copies so its text wraps exactly like the textarea's.
+const MIRRORED = [
+  "boxSizing",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "fontStyle",
+  "fontVariantLigatures",
+  "letterSpacing",
+  "lineHeight",
+  "textTransform",
+  "textIndent",
+  "wordSpacing",
+  "tabSize",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+] as const
+
+const FLAG_HEIGHT = 16
+/** How close to the textarea's top or bottom edge a drag starts scrolling it. */
+const SCROLL_ZONE = 28
+/** Pointer movement before pressing a chip becomes a drag rather than a click. */
+const DRAG_THRESHOLD = 4
+
+type Position = { x: number; y: number; h: number }
+
+type Drag = {
+  adapters: PlatformAdapter[]
+  /** Set when existing splits are being moved (one platform's, or a shared group). */
+  moving?: { offset: number }
+  x: number
+  y: number
+  inside: boolean
+}
+
+const brandOf = (adapter: PlatformAdapter) => adapter.brand.color ?? "var(--foreground)"
+
+function mirrorStyle(ta: HTMLTextAreaElement): React.CSSProperties {
+  const cs = getComputedStyle(ta)
+  const style: Record<string, string> = {}
+  for (const prop of MIRRORED) style[prop] = cs[prop]
+  // clientWidth excludes a scrollbar, which narrows the textarea's text area.
+  const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth)
+  return {
+    ...style,
+    width: `${ta.clientWidth + borders}px`,
+    height: `${ta.offsetHeight}px`,
+    borderStyle: "solid",
+    borderColor: "transparent",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    overflow: "hidden",
+  }
+}
+
+/** Stop text getting selected while dragging; returns a function that undoes it. */
+function lockSelection(): () => void {
+  const previous = document.body.style.userSelect
+  document.body.style.userSelect = "none"
+  return () => {
+    document.body.style.userSelect = previous
+  }
+}
+
+function caretOffsetAt(x: number, y: number, node: Node): number | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+  }
+  const pos = doc.caretPositionFromPoint?.(x, y)
+  if (pos) return pos.offsetNode === node ? pos.offset : null
+  const range = doc.caretRangeFromPoint?.(x, y)
+  return range && range.startContainer === node ? range.startOffset : null
+}
+
+/** A split flag: platform logo plus the number of the post it starts. */
+export function Flag({ adapter, label, className }: { adapter: PlatformAdapter; label?: React.ReactNode; className?: string }) {
+  return (
+    <span
+      style={{ "--brand": brandOf(adapter) } as React.CSSProperties}
+      className={cn(
+        "flex h-4 items-center gap-0.5 rounded-sm rounded-bl-none bg-(--brand) px-1 text-[10px] leading-none font-semibold text-white tabular-nums shadow-sm",
+        // Black-branded marks invert in dark mode, so their flag text must too.
+        !adapter.brand.color && "text-background",
+        className,
+      )}
+    >
+      <PlatformLogo adapter={adapter} className="size-2.5 fill-current" />
+      {label}
+    </span>
+  )
+}
+
+export function ComposeEditor({
+  value,
+  onChange,
+  markers,
+  palette,
+  onPlaceStart,
+  onPlace,
+  onPlaceEnd,
+  onSplitAtCursor,
+  onRemove,
+}: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const mirrorRef = useRef<HTMLDivElement>(null)
+  const hitRef = useRef<HTMLDivElement>(null)
+  const [style, setStyle] = useState<React.CSSProperties | null>(null)
+  const [positions, setPositions] = useState<Map<number, Position>>(new Map())
+  const [visibleHeight, setVisibleHeight] = useState(0)
+  const [drag, setDrag] = useState<Drag | null>(null)
+
+  const offsets = [...new Set(markers.map((m) => m.offset))].sort((a, b) => a - b)
+  const offsetsKey = offsets.join(",")
+
+  const measure = useCallback(() => {
+    const ta = taRef.current
+    const mirror = mirrorRef.current
+    const wrap = wrapRef.current
+    if (!ta || !mirror || !wrap) return
+    mirror.scrollTop = ta.scrollTop
+    const origin = wrap.getBoundingClientRect()
+    const next = new Map<number, Position>()
+    for (const span of mirror.querySelectorAll<HTMLElement>("[data-offset]")) {
+      const r = span.getClientRects()[0]
+      if (!r) continue
+      next.set(Number(span.dataset.offset), { x: r.left - origin.left, y: r.top - origin.top, h: r.height })
+    }
+    setPositions(next)
+    setVisibleHeight(ta.clientHeight)
+  }, [])
+
+  // Copy the textarea's styles, and again whenever its size changes.
+  useLayoutEffect(() => {
+    const ta = taRef.current
+    if (!ta) return
+    const update = () => setStyle(mirrorStyle(ta))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(ta)
+    void document.fonts?.ready.then(update)
+    return () => ro.disconnect()
+  }, [])
+
+  useLayoutEffect(measure, [measure, value, offsetsKey, style])
+
+  const dragAdapters = drag?.adapters
+
+  // The latest props, for drag handlers that live across renders.
+  const latest = useRef({ value, onPlace, onPlaceEnd, measure })
+  useLayoutEffect(() => {
+    latest.current = { value, onPlace, onPlaceEnd, measure }
+  })
+
+  /**
+   * Start dragging a split. Listeners attach right away (not in an effect),
+   * so a quick drag can't release before anyone is listening.
+   */
+  const beginDrag = (adapters: PlatformAdapter[], x: number, y: number, moving?: { offset: number }) => {
+    let pointer = { x, y }
+    let lastOffset: number | null | undefined
+    const hit = hitRef.current
+    // The hit-testing copy normally sits out of the way; during a drag it takes the pointer.
+    if (hit) {
+      hit.style.visibility = "visible"
+      hit.style.pointerEvents = "auto"
+    }
+
+    /** Where the split would go for the pointer's position, or null outside the text. */
+    const offsetAt = (px: number, py: number): number | null => {
+      const ta = taRef.current
+      const node = hit?.firstChild
+      if (!ta || !hit || !node) return null
+      const r = ta.getBoundingClientRect()
+      // The pointer holds the flag, which sits above the text line it marks.
+      const inside = px >= r.left && px <= r.right && py >= r.top - FLAG_HEIGHT && py <= r.bottom
+      if (!inside) return null
+      hit.scrollTop = ta.scrollTop
+      const ty = Math.min(Math.max(py + FLAG_HEIGHT, r.top + 4), r.bottom - 4)
+      const raw = caretOffsetAt(px, ty, node)
+      const { value } = latest.current
+      return raw === null ? null : snapToWordStart(value, Math.min(raw, value.length))
+    }
+
+    const update = () => {
+      const offset = offsetAt(pointer.x, pointer.y)
+      setDrag((d) => (d ? { ...d, x: pointer.x, y: pointer.y, inside: offset !== null } : d))
+      if (offset !== lastOffset) {
+        lastOffset = offset
+        latest.current.onPlace(offset)
+      }
+    }
+
+    const move = (e: PointerEvent) => {
+      pointer = { x: e.clientX, y: e.clientY }
+      update()
+    }
+
+    // Scroll the compose box while the pointer is near its top or bottom edge.
+    const scroller = window.setInterval(() => {
+      const ta = taRef.current
+      if (!ta) return
+      const r = ta.getBoundingClientRect()
+      if (pointer.x < r.left || pointer.x > r.right) return
+      const dy = pointer.y < r.top + SCROLL_ZONE ? -12 : pointer.y > r.bottom - SCROLL_ZONE ? 12 : 0
+      if (dy === 0) return
+      const before = ta.scrollTop
+      ta.scrollTop += dy
+      if (ta.scrollTop !== before) {
+        latest.current.measure()
+        update()
+      }
+    }, 30)
+
+    let unlockSelection = () => {}
+    const end = (e: PointerEvent) => {
+      // The release point counts, even if no move event landed there.
+      if (e.type === "pointerup") move(e)
+      window.clearInterval(scroller)
+      unlockSelection()
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", end)
+      window.removeEventListener("pointercancel", end)
+      if (hit) {
+        hit.style.visibility = ""
+        hit.style.pointerEvents = ""
+      }
+      setDrag(null)
+      latest.current.onPlaceEnd()
+    }
+
+    onPlaceStart(
+      adapters.map((a) => a.id),
+      moving,
+    )
+    setDrag({ adapters, moving, x, y, inside: !!moving })
+    unlockSelection = lockSelection()
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", end)
+    window.addEventListener("pointercancel", end)
+    update()
+  }
+
+  /** Chips: a short press is a click (split at the cursor); moving a few pixels starts a drag. */
+  const chipPointerDown = (adapters: PlatformAdapter[]) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    const start = { x: e.clientX, y: e.clientY }
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD) return
+      cleanup()
+      beginDrag(adapters, ev.clientX, ev.clientY)
+    }
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", cleanup)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", cleanup, { once: true })
+  }
+
+  const splitAtCursor = (adapters: PlatformAdapter[]) => {
+    const ta = taRef.current
+    if (!ta) return
+    onSplitAtCursor(
+      adapters.map((a) => a.id),
+      snapToWordStart(value, ta.selectionStart),
+    )
+  }
+
+  // Mirror content: the text, with the first grapheme of each split wrapped so it can be measured.
+  const pieces: React.ReactNode[] = []
+  let cursor = 0
+  for (const offset of offsets) {
+    if (offset < cursor || offset >= value.length) continue
+    const first = graphemes(value.slice(offset, offset + 8))[0] ?? ""
+    pieces.push(value.slice(cursor, offset))
+    pieces.push(
+      <span key={offset} data-offset={offset}>
+        {first}
+      </span>,
+    )
+    cursor = offset + first.length
+  }
+  pieces.push(value.slice(cursor), "​")
+
+  const chips: { key: string; adapters: PlatformAdapter[]; name: string }[] = [
+    ...(palette.length > 1 ? [{ key: "all", adapters: palette, name: "all threading platforms" }] : []),
+    ...palette.map((a) => ({ key: a.id, adapters: [a], name: a.name })),
+  ]
+
+  return (
+    <div className="space-y-3">
+      <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
+        <Label htmlFor="compose" className="text-base font-semibold">
+          Compose
+        </Label>
+        {chips.length > 0 && (
+          <div role="group" aria-label="Add a split" className="flex items-center gap-1.5">
+            <span className="mr-0.5 text-xs text-muted-foreground">Split</span>
+            {chips.map((chip) => (
+              <Tooltip key={chip.key}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onPointerDown={chipPointerDown(chip.adapters)}
+                    onClick={() => splitAtCursor(chip.adapters)}
+                    aria-label={`Split ${chip.name} at the cursor, or drag into the text`}
+                    style={{ "--brand": brandOf(chip.adapters[0]) } as React.CSSProperties}
+                    className={cn(
+                      "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border px-1.5 transition-colors active:cursor-grabbing",
+                      chip.key === "all"
+                        ? "border-border bg-secondary text-xs font-medium hover:bg-accent"
+                        : "border-[color-mix(in_oklab,var(--brand)_45%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_14%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand)_24%,var(--card))]",
+                    )}
+                  >
+                    {chip.key === "all" ? (
+                      <>
+                        <ScissorsIcon className="size-3.5" />
+                        All
+                      </>
+                    ) : (
+                      <PlatformLogo adapter={chip.adapters[0]} className="size-4" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Drag into the text to split {chip.key === "all" ? "every threading platform" : chip.name} there, or
+                  click to split at the cursor
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div ref={wrapRef} className="relative">
+        <Textarea
+          ref={taRef}
+          id="compose"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onScroll={measure}
+          placeholder="What's happening?"
+          className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base"
+          autoFocus
+        />
+        {style && (
+          <div ref={mirrorRef} aria-hidden className="pointer-events-none invisible absolute top-0 left-0" style={style}>
+            {pieces}
+          </div>
+        )}
+        {style && (
+          // Hit-testing copy: during a drag it sits on top with transparent text, so the
+          // browser can say which character is under the pointer. Hidden otherwise.
+          <div
+            ref={hitRef}
+            aria-hidden
+            className="pointer-events-none invisible absolute top-0 left-0 z-10 text-transparent select-none"
+            style={style}
+          >
+            {value + "​"}
+          </div>
+        )}
+        <div className="pointer-events-none absolute inset-0 z-20">
+          {offsets.map((offset) => {
+            const pos = positions.get(offset)
+            if (!pos || pos.y < 0 || pos.y + pos.h > visibleHeight + 2) return null
+            const here = markers.filter((m) => m.offset === offset)
+            return (
+              <div key={offset} className="absolute" style={{ left: pos.x, top: pos.y }}>
+                <div
+                  className="absolute top-0 -left-px w-0.5 rounded-full"
+                  style={{ height: pos.h, background: brandOf(here[0].adapter) }}
+                />
+                <div className="absolute flex gap-0.5" style={{ top: -FLAG_HEIGHT + 2, left: -1 }}>
+                  {here.length > 1 && (
+                    // Several platforms split here: one handle moves (or removes) them together.
+                    <button
+                      type="button"
+                      title={`${here.map((m) => m.adapter.name).join(", ")} split here. Drag to move them together, or drag out of the text to remove them. Drag one flag to move just that platform.`}
+                      aria-label={`Split for ${here.map((m) => m.adapter.name).join(", ")}`}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        beginDrag(
+                          here.map((m) => m.adapter),
+                          e.clientX,
+                          e.clientY,
+                          { offset },
+                        )
+                      }}
+                      onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
+                      className="pointer-events-auto flex h-4 cursor-grab touch-none items-center rounded-sm rounded-bl-none bg-foreground px-1 text-background shadow-sm active:cursor-grabbing"
+                    >
+                      <ScissorsIcon className="size-2.5" />
+                    </button>
+                  )}
+                  {here.map((m) => (
+                    <button
+                      key={m.adapter.id}
+                      type="button"
+                      title={`${m.adapter.name} post ${m.index} starts here. Drag to move, or drag out of the text to remove${m.manual ? "; double-click to undo" : ""}.`}
+                      aria-label={`${m.adapter.name} split before post ${m.index}`}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
+                      }}
+                      onDoubleClick={() => m.manual && onRemove(m)}
+                      className="pointer-events-auto cursor-grab touch-none active:cursor-grabbing"
+                    >
+                      <Flag adapter={m.adapter} label={m.index} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* The dragged split, following the pointer while it's outside the text. */}
+      {drag && !drag.inside && dragAdapters && (
+        <div
+          aria-hidden
+          className={cn("pointer-events-none fixed z-50 flex gap-0.5", drag.moving && "opacity-60")}
+          style={{ left: drag.x - 6, top: drag.y - 8 }}
+        >
+          {dragAdapters.map((a) => (
+            <Flag key={a.id} adapter={a} label={drag.moving ? "×" : "+"} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
