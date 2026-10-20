@@ -46,8 +46,8 @@ export type PlatformAdapter = {
   breakpoints?: Breakpoint[];
   /** Why a single post can't be published as is (beyond its length), or null. */
   problems?: (post: string) => string | null;
-  /** Most images one post can carry, and whether a post needs one. Omit when there's no practical limit. */
-  images?: { max: number; required?: boolean };
+  /** A post can't go out without a photo or video (Instagram). */
+  needsImage?: boolean;
   /** A button that opens the platform to post, given the first post's text. */
   open: { label: string; url: (firstChunk: string) => string };
 };

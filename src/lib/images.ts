@@ -14,6 +14,9 @@ export type StagedImage = {
   url: string
 }
 
+/** Most images a post can carry: Bluesky and Twitter take 4, so every platform gets the same set. */
+export const MAX_IMAGES = 4
+
 type StoredImage = { id: string; name: string; blob: Blob }
 
 const DB = "crosspost"
@@ -57,7 +60,7 @@ export function useStagedImages() {
 
   useEffect(() => {
     load()
-      .then((stored) => setImages(stored.map(withUrl)))
+      .then((stored) => setImages(stored.slice(0, MAX_IMAGES).map(withUrl)))
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
@@ -70,12 +73,15 @@ export function useStagedImages() {
     })
   }, [images, loaded])
 
+  /** Stage image files, up to MAX_IMAGES in all. Returns how many were added and how many didn't fit. */
   const add = (files: Iterable<File>) => {
-    const added = [...files]
-      .filter((f) => f.type.startsWith("image/"))
+    const candidates = [...files].filter((f) => f.type.startsWith("image/"))
+    const room = Math.max(0, MAX_IMAGES - images.length)
+    const added = candidates
+      .slice(0, room)
       .map((f) => withUrl({ id: crypto.randomUUID(), name: f.name || "image.png", blob: f }))
-    if (added.length) setImages((list) => [...list, ...added])
-    return added.length
+    if (added.length) setImages((list) => [...list, ...added].slice(0, MAX_IMAGES))
+    return { added: added.length, skipped: candidates.length - added.length }
   }
 
   return { images, setImages, add }

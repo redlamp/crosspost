@@ -25,13 +25,6 @@ export function firstProblem(adapter: PlatformAdapter, chunks: string[]): string
   return null
 }
 
-/** Too many staged images for one post here, described; or null. */
-export function imageProblem(adapter: PlatformAdapter, count: number): string | null {
-  const max = adapter.images?.max
-  if (!max || count <= max) return null
-  return `${adapter.name} takes up to ${max} images per post; ${count} are staged, so only the first ${max} are shown.`
-}
-
 function counterTone(count: number, limit: number) {
   if (count > limit) return "text-destructive"
   if (count >= limit * NEAR_LIMIT) return "text-amber-600 dark:text-amber-400"
@@ -98,9 +91,8 @@ export function PlatformCard({
   // When the post becomes a chain anyway, the header total isn't a problem.
   const splits = adapter.chain && chunks.length > 1
   const switchId = `platform-${adapter.id}`
-  const problem = firstProblem(adapter, chunks) ?? imageProblem(adapter, images.length)
-  const postImages = adapter.images ? images.slice(0, adapter.images.max) : images
-  const needsImage = adapter.images?.required && images.length === 0 && chunks.length > 0
+  const problem = firstProblem(adapter, chunks)
+  const needsImage = adapter.needsImage && images.length === 0 && chunks.length > 0
 
   return (
     <Card
@@ -232,9 +224,9 @@ export function PlatformCard({
               return (
                 <li key={i} className="rounded-md border bg-background/40 p-3">
                   <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
-                  {i === 0 && postImages.length > 0 && (
+                  {i === 0 && images.length > 0 && (
                     <div className="mt-2">
-                      <ImageStrip images={postImages} platform={adapter.name} />
+                      <ImageStrip images={images} platform={adapter.name} />
                     </div>
                   )}
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">

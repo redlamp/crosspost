@@ -4,7 +4,7 @@ import { CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
 import { useRef } from "react"
 import { toast } from "sonner"
 
-import { copyImage, downloadImage, dragOut, type StagedImage } from "@/lib/images"
+import { copyImage, downloadImage, dragOut, MAX_IMAGES, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 export async function copyWithToast(img: StagedImage, what = "image") {
@@ -52,7 +52,7 @@ export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
           className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
         >
           <ImagePlusIcon className="size-4" />
-          Drop, paste or pick images
+          Drop, paste or pick up to {MAX_IMAGES} images
         </button>
       </>
     )
@@ -61,9 +61,9 @@ export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
   return (
     <div className="space-y-2">
       {picker}
-      <ol className="flex flex-wrap gap-2" aria-label="Staged images">
+      <ol className="grid grid-cols-4 gap-2" aria-label="Staged images">
         {images.map((img, i) => (
-          <li key={img.id} className="group relative size-20 overflow-hidden rounded-md border bg-muted">
+          <li key={img.id} className="group relative aspect-square overflow-hidden rounded-md border bg-muted">
             {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
             <img
               src={img.url}
@@ -109,17 +109,19 @@ export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
             </div>
           </li>
         ))}
-        <li>
-          <button
-            type="button"
-            onClick={() => input.current?.click()}
-            aria-label="Add images"
-            title="Add images"
-            className="grid size-20 place-items-center rounded-md border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-          >
-            <ImagePlusIcon className="size-5" />
-          </button>
-        </li>
+        {images.length < MAX_IMAGES && (
+          <li>
+            <button
+              type="button"
+              onClick={() => input.current?.click()}
+              aria-label="Add images"
+              title={`Add images (up to ${MAX_IMAGES})`}
+              className="grid aspect-square w-full place-items-center rounded-md border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+            >
+              <ImagePlusIcon className="size-5" />
+            </button>
+          </li>
+        )}
       </ol>
     </div>
   )

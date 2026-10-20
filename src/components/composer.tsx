@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
 import { ImageTray } from "@/components/image-tray"
-import { firstProblem, imageProblem, PlatformCard } from "@/components/platform-card"
+import { firstProblem, PlatformCard } from "@/components/platform-card"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { imageFiles, useStagedImages } from "@/lib/images"
+import { imageFiles, MAX_IMAGES, useStagedImages } from "@/lib/images"
 import { cn } from "@/lib/utils"
 import { useStoredState } from "@/lib/use-stored-state"
 
@@ -54,7 +54,9 @@ export default function Composer() {
   const { images, setImages, add: stageImages } = useStagedImages()
   const [dropping, setDropping] = useState(false)
   const addImages = (files: File[]) => {
-    if (!stageImages(files)) toast.info("Only images can be staged for now.")
+    const { added, skipped } = stageImages(files)
+    if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
+    else if (!added) toast.info("Only images can be staged for now.")
   }
 
   /** Whether this platform's split posts get " i/n" labels. */
@@ -163,7 +165,7 @@ export default function Composer() {
     const issue =
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
-        : (firstProblem(adapter, chunks.map((c) => c.text)) ?? imageProblem(adapter, images.length))
+        : firstProblem(adapter, chunks.map((c) => c.text))
     const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "Fits in one post" : "Nothing to post"
     return { adapter, enabled: isEnabled(adapter.id), issue, note, posts: chunks.length }
   })
