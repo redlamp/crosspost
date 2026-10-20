@@ -233,9 +233,9 @@ export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
               className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
             />
             {copied.has(img.id) ? (
-              // Copied: grayed out like a done item, with the check on top.
+              // Copied: grayed out like a done item, with a blue check on top (the same on every card).
               <span className="absolute inset-0 grid place-items-center">
-                <span className="grid size-5 place-items-center rounded-full bg-(--brand) text-white shadow-sm">
+                <span className="grid size-5 place-items-center rounded-full bg-sky-500 text-white shadow-sm">
                   <CheckIcon className="size-3.5" strokeWidth={3} aria-label="Copied" />
                 </span>
               </span>
