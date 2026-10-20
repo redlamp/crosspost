@@ -1,6 +1,6 @@
 "use client"
 
-import { BroomIcon, ImageMinusIcon } from "lucide-react"
+import { BroomIcon, ImageMinusIcon, RotateCcwIcon } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -112,6 +112,27 @@ export default function Composer() {
   }
   /** An image's number: its place in the Compose tray. */
   const imageNumber = (id: string) => images.findIndex((img) => img.id === id) + 1
+
+  // A card has moved images between posts or set its own order.
+  const imagesCustomized =
+    Object.values(placement.shared).some((post) => post > 0) ||
+    Object.values(placement.only).some((posts) => Object.keys(posts).length > 0) ||
+    Object.keys(cardOrder).length > 0
+  /** Put every card back on the tray's order, all images on the first post, with an undo. */
+  const resetImages = () => {
+    const saved = { placement, cardOrder }
+    setPlacement({ shared: {}, only: {} })
+    setCardOrder({})
+    toast("Images reset to match Compose", {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setPlacement(saved.placement)
+          setCardOrder(saved.cardOrder)
+        },
+      },
+    })
+  }
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -302,11 +323,20 @@ export default function Composer() {
                 <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
               }
               clearImages={
-                <ConfirmButton
-                  icon={<ImageMinusIcon />}
-                  label={images.length === 1 ? "Clear Image" : "Clear Images"}
-                  onConfirm={clearImages}
-                />
+                <>
+                  <ConfirmButton
+                    icon={<ImageMinusIcon />}
+                    label={images.length === 1 ? "Clear Image" : "Clear Images"}
+                    onConfirm={clearImages}
+                  />
+                  {imagesCustomized && (
+                    <ConfirmButton
+                      icon={<RotateCcwIcon />}
+                      label={images.length === 1 ? "Reset Image" : "Reset Images"}
+                      onConfirm={resetImages}
+                    />
+                  )}
+                </>
               }
             />
           </CardContent>

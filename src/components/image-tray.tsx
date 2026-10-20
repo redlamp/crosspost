@@ -118,7 +118,7 @@ type AreaProps = {
   onReorder: (id: string, target: string, after: boolean) => void
   /** The Clear Post button, first in the bottom row. */
   clearPost: React.ReactNode
-  /** The Clear Image(s) button, beside it once images are staged. */
+  /** The image buttons (Clear and, after a card changes them, Reset), beside it once images are staged. */
   clearImages: React.ReactNode
 }
 
@@ -183,7 +183,7 @@ export function ImageArea({ images, drag, onAdd, onRemove, onReorder, clearPost,
           style={{ height: expanded ? `calc(${TILE_HEIGHT} + 1rem)` : 0 }}
         />
       )}
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div ref={first}>{clearPost}</div>
         {staged ? clearImages : <div className="h-9 flex-1" />}
       </div>
