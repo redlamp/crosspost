@@ -12,10 +12,19 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
-import { moveType, type StagedImage } from "@/lib/images"
+import { dropTarget, moveType, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
+
+type DropOn = { post: number; onlyHere: boolean; target: { id: string; after: boolean } | null }
+
+const sameDrop = (a: DropOn | null, b: DropOn) =>
+  !!a &&
+  a.post === b.post &&
+  a.onlyHere === b.onlyHere &&
+  a.target?.id === b.target?.id &&
+  a.target?.after === b.target?.after
 
 /** The first post the platform would reject for reasons other than length, described. */
 export function firstProblem(adapter: PlatformAdapter, chunks: string[]): string | null {
@@ -77,6 +86,14 @@ type Props = {
   imagePost?: (id: string) => number
   /** Move an image to a post: on every threaded platform, or with `onlyHere`, on this one. */
   onMoveImage?: (id: string, post: number, onlyHere: boolean) => void
+  /** An image's number in the Compose tray. */
+  imageNumber?: (id: string) => number
+  /** This platform has its own image order rather than the tray's. */
+  ownOrder?: boolean
+  /** Give this platform its own order, moving an image beside another. */
+  onReorderImage?: (id: string, target: string, after: boolean) => void
+  /** Go back to the tray's order. */
+  onMatchCompose?: () => void
 }
 
 export function PlatformCard({
@@ -92,6 +109,10 @@ export function PlatformCard({
   images = [],
   imagePost = () => 0,
   onMoveImage,
+  imageNumber,
+  ownOrder,
+  onReorderImage,
+  onMatchCompose,
 }: Props) {
   const total = adapter.count(text.trim())
   const over = total > adapter.limit
@@ -103,14 +124,17 @@ export function PlatformCard({
   const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
   // Images the user left off this platform.
   const [hiddenImages, setHiddenImages] = useState<ReadonlySet<string>>(new Set())
-  // The rest, numbered as in the Compose tray.
-  const shown = images.map((img, i) => ({ img, n: i + 1 })).filter(({ img }) => !hiddenImages.has(img.id))
+  // The rest, in this platform's order, numbered as in the Compose tray.
+  const shown = images
+    .map((img, i) => ({ img, n: imageNumber?.(img.id) ?? i + 1 }))
+    .filter(({ img }) => !hiddenImages.has(img.id))
   const hiddenCount = images.length - shown.length
   const needsImage = adapter.needsImage && shown.length === 0 && chunks.length > 0
   // The post an image is being dragged from, while one is.
   const [movingFrom, setMovingFrom] = useState<number | null>(null)
-  // The post a dragged image is over, and whether Ctrl (Cmd) keeps the move on this card.
-  const [dropOn, setDropOn] = useState<{ post: number; onlyHere: boolean } | null>(null)
+  // Where a dragged image is: the post it's over, whether Ctrl (Cmd) keeps a
+  // move on this card, and the image it would land beside, if any.
+  const [dropOn, setDropOn] = useState<DropOn | null>(null)
   // A drop that moves the image removes the element the drag started on, so
   // its dragend never reaches React. Catch the end of any drag on the window.
   useEffect(() => {
@@ -129,7 +153,15 @@ export function PlatformCard({
       window.removeEventListener("drop", end, true)
     }
   }, [movingFrom])
-  const acceptsMove = (e: React.DragEvent) => splits && e.dataTransfer.types.includes(moveType(adapter.id))
+  const fromThisCard = (e: React.DragEvent) => e.dataTransfer.types.includes(moveType(adapter.id))
+  /** What a drop here would do: land beside an image (reorder, and move if from another post), or move to this post. */
+  const dropAt = (e: React.DragEvent, post: number): DropOn | null => {
+    if (!fromThisCard(e)) return null
+    const target = dropTarget(e)
+    // Without an image to land beside, only another post is a place to go.
+    if (!target && (!splits || movingFrom === post)) return null
+    return { post, onlyHere: e.ctrlKey || e.metaKey, target }
+  }
   // Images on a post that no longer exists fall back to the last one.
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
 
@@ -265,24 +297,31 @@ export function PlatformCard({
                   key={i}
                   className={cn(
                     "rounded-md border bg-background/40 p-3 transition-colors",
-                    dropOn?.post === i && "border-(--brand)/60 bg-(--brand)/10",
+                    dropOn?.post === i && !dropOn.target && "border-(--brand)/60 bg-(--brand)/10",
                   )}
-                  // The whole post takes an image dragged from another of this card's posts.
+                  // The whole post takes an image dragged from another of this card's
+                  // posts; dropped beside an image, it also takes that place in the order.
                   onDragOver={(e) => {
-                    if (!acceptsMove(e) || movingFrom === i) return
+                    const at = dropAt(e, i)
+                    if (!at) {
+                      if (dropOn?.post === i) setDropOn(null)
+                      return
+                    }
                     e.preventDefault()
                     e.dataTransfer.dropEffect = "move"
-                    const onlyHere = e.ctrlKey || e.metaKey
-                    if (dropOn?.post !== i || dropOn.onlyHere !== onlyHere) setDropOn({ post: i, onlyHere })
+                    if (!sameDrop(dropOn, at)) setDropOn(at)
                   }}
                   onDragLeave={(e) => {
                     if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dropOn?.post === i) setDropOn(null)
                   }}
                   onDrop={(e) => {
                     setDropOn(null)
-                    if (!acceptsMove(e) || movingFrom === i) return
+                    const at = dropAt(e, i)
+                    if (!at) return
                     e.preventDefault()
-                    onMoveImage?.(e.dataTransfer.getData(moveType(adapter.id)), i, e.ctrlKey || e.metaKey)
+                    const id = e.dataTransfer.getData(moveType(adapter.id))
+                    if (splits && movingFrom !== i) onMoveImage?.(id, i, at.onlyHere)
+                    if (at.target) onReorderImage?.(id, at.target.id, at.target.after)
                     setMovingFrom(null)
                   }}
                 >
@@ -290,7 +329,8 @@ export function PlatformCard({
                   {(() => {
                     const items = shown.filter(({ img }) => postOf(img.id) === i)
                     const showHidden = i === 0 && hiddenCount > 0
-                    if (items.length === 0 && !showHidden && !(movingFrom !== null && splits)) return null
+                    const showMatch = i === 0 && !!ownOrder
+                    if (items.length === 0 && !showHidden && !showMatch && !(movingFrom !== null && splits)) return null
                     return (
                       <div className="mt-2">
                         <ImageStrip
@@ -311,7 +351,9 @@ export function PlatformCard({
                           movable={splits}
                           moving={movingFrom !== null && movingFrom !== i}
                           onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
-                          dropHint={dropOn?.post === i ? (dropOn.onlyHere ? "only" : "all") : null}
+                          dropHint={dropOn?.post === i && !dropOn.target ? (dropOn.onlyHere ? "only" : "all") : null}
+                          insert={dropOn?.post === i ? dropOn.target : null}
+                          onMatchCompose={showMatch ? onMatchCompose : undefined}
                         />
                       </div>
                     )

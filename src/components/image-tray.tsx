@@ -5,7 +5,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { PlatformAdapter } from "@/lib/adapters"
-import { copyImage, downloadImage, dragOut, MAX_IMAGES, type ImageDrag, type StagedImage } from "@/lib/images"
+import {
+  copyImage,
+  downloadImage,
+  dragOut,
+  dropTarget,
+  MAX_IMAGES,
+  TRAY_TYPE,
+  type ImageDrag,
+  type StagedImage,
+} from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
@@ -105,6 +114,8 @@ type AreaProps = {
   drag: ImageDrag | null
   onAdd: (files: File[]) => void
   onRemove: (id: string) => void
+  /** Move an image beside another in the tray (after it, or before). */
+  onReorder: (id: string, target: string, after: boolean) => void
   /** The Clear Post button, first in the bottom row. */
   clearPost: React.ReactNode
   /** The Clear Image(s) button, beside it once images are staged. */
@@ -117,7 +128,7 @@ type AreaProps = {
  * moves up and left into the full-width spot the image row will take, and it
  * slides back when the images are cleared.
  */
-export function ImageArea({ images, drag, onAdd, onRemove, clearPost, clearImages }: AreaProps) {
+export function ImageArea({ images, drag, onAdd, onRemove, onReorder, clearPost, clearImages }: AreaProps) {
   const box = useRef<HTMLDivElement>(null)
   const first = useRef<HTMLDivElement>(null)
 
@@ -162,7 +173,7 @@ export function ImageArea({ images, drag, onAdd, onRemove, clearPost, clearImage
     <div ref={box} className="@container relative">
       {staged ? (
         <div className="mb-4">
-          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} />
+          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} onReorder={onReorder} />
         </div>
       ) : (
         // Makes room above the buttons while the bar is up there.
@@ -245,11 +256,14 @@ type TrayProps = {
   drag?: ImageDrag | null
   onAdd: (files: File[]) => void
   onRemove: (id: string) => void
+  onReorder: (id: string, target: string, after: boolean) => void
 }
 
 /** Staged images in one row: copy, drag, download or remove each one, or add more in the empty slot. */
-function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
+function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
+  // Where a tile dragged within the tray would land: beside this one.
+  const [insert, setInsert] = useState<{ id: string; after: boolean } | null>(null)
   const picker = (
     <input
       ref={input}
@@ -267,18 +281,54 @@ function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   return (
     <div className="space-y-2">
       {picker}
-      <ol className="grid grid-cols-4 gap-2" aria-label="Staged images">
+      <ol
+        className="grid grid-cols-4 gap-2"
+        aria-label="Staged images"
+        // Drag a tile onto another to reorder; the edge it lands by lights up.
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(TRAY_TYPE)) return
+          const target = dropTarget(e)
+          if (!target) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = "move"
+          if (insert?.id !== target.id || insert.after !== target.after) setInsert(target)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setInsert(null)
+        }}
+        onDrop={(e) => {
+          setInsert(null)
+          const target = dropTarget(e)
+          if (!e.dataTransfer.types.includes(TRAY_TYPE) || !target) return
+          e.preventDefault()
+          onReorder(e.dataTransfer.getData(TRAY_TYPE), target.id, target.after)
+        }}
+      >
         {images.map((img, i) => (
-          <li key={img.id} className="group relative aspect-square overflow-hidden rounded-md border bg-muted">
+          <li
+            key={img.id}
+            data-image-id={img.id}
+            className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
             <img
               src={img.url}
               alt={img.name}
               title={`${img.name}: drag into a post, or copy and paste`}
               draggable
-              onDragStart={(e) => dragOut(e, img)}
+              onDragStart={(e) => dragOut(e, img, "tray")}
+              onDragEnd={() => setInsert(null)}
               className="size-full cursor-grab object-cover"
             />
+            {insert?.id === img.id && (
+              <span
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 w-1 bg-foreground",
+                  insert.after ? "right-0" : "left-0",
+                )}
+              />
+            )}
             <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
               {i + 1}
             </span>
@@ -402,6 +452,10 @@ type StripProps = {
   onMovingChange?: (moving: boolean) => void
   /** The drag is over this post: the move mirrors to every threaded platform, or stays on this one (Ctrl held). */
   dropHint?: "all" | "only" | null
+  /** Where a dragged image would land among these: beside this one. */
+  insert?: { id: string; after: boolean } | null
+  /** Set when this platform has its own image order: go back to the tray's. */
+  onMatchCompose?: () => void
 }
 
 /**
@@ -421,12 +475,14 @@ export function ImageStrip({
   moving,
   onMovingChange,
   dropHint = null,
+  insert = null,
+  onMatchCompose,
 }: StripProps) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
         {items.map(({ img, n }) => (
-          <li key={img.id} className="group/thumb relative size-14">
+          <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
             <button
               type="button"
               onClick={async () => {
@@ -436,8 +492,8 @@ export function ImageStrip({
                 copied.has(img.id)
                   ? `Image ${n} copied for ${platform.name}. Click to copy again.`
                   : movable
-                    ? `Copy image ${n}, or drag it into the post, or onto another post here (hold Ctrl for ${platform.name} only)`
-                    : `Copy image ${n}, or drag it into the post`
+                    ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold Ctrl for ${platform.name} only)`
+                    : `Copy image ${n}. Drag it into the post, or beside another image to reorder`
               }
               aria-pressed={copied.has(img.id)}
               className="block size-full overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
@@ -448,7 +504,7 @@ export function ImageStrip({
                 alt={`Image ${n}`}
                 draggable
                 onDragStart={(e) => {
-                  dragOut(e, img, movable ? platform.id : undefined)
+                  dragOut(e, img, { platformId: platform.id })
                   // Chrome cancels a drag whose page changes during dragstart, so
                   // show the drop slots just after it.
                   setTimeout(() => onMovingChange?.(true), 0)
@@ -457,6 +513,16 @@ export function ImageStrip({
                 className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
               />
             </button>
+            {insert?.id === img.id && (
+              // The gap this image would drop into.
+              <span
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand)",
+                  insert.after ? "-right-1.5" : "-left-1.5",
+                )}
+              />
+            )}
             <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
               {n}
             </span>
@@ -505,6 +571,15 @@ export function ImageStrip({
           className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
           Show {hiddenCount} hidden
+        </button>
+      )}
+      {onMatchCompose && (
+        <button
+          type="button"
+          onClick={onMatchCompose}
+          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          Match Compose order
         </button>
       )}
     </div>

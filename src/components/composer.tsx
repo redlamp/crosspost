@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { MAX_IMAGES, usePageImageInput, useStagedImages } from "@/lib/images"
+import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -78,6 +78,40 @@ export default function Composer() {
       }
       return { shared: { ...p.shared, [id]: post }, only }
     })
+
+  // Image order: the Compose tray's by default. Reordering on a card sets an
+  // order for that platform alone, until it's set back to match Compose.
+  const [cardOrder, setCardOrder] = useState<Record<string, string[]>>({})
+  const reorderTray = (id: string, target: string, after: boolean) =>
+    setImages((list) => {
+      const ids = reorder(
+        list.map((img) => img.id),
+        id,
+        target,
+        after,
+      )
+      return ids.map((x) => list.find((img) => img.id === x)!)
+    })
+  const reorderOnCard = (platformId: string, id: string, target: string, after: boolean) =>
+    setCardOrder((o) => ({ ...o, [platformId]: reorder(imagesFor(platformId).map((img) => img.id), id, target, after) }))
+  const matchCompose = (platformId: string) =>
+    setCardOrder((o) => {
+      const rest = { ...o }
+      delete rest[platformId]
+      return rest
+    })
+  /** A platform's images in its order: its own if set (images added since go last), else the tray's. */
+  const imagesFor = (platformId: string) => {
+    const order = cardOrder[platformId]
+    if (!order) return images
+    const rank = (id: string) => {
+      const at = order.indexOf(id)
+      return at < 0 ? order.length + images.findIndex((img) => img.id === id) : at
+    }
+    return [...images].sort((a, b) => rank(a.id) - rank(b.id))
+  }
+  /** An image's number: its place in the Compose tray. */
+  const imageNumber = (id: string) => images.findIndex((img) => img.id === id) + 1
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -263,6 +297,7 @@ export default function Composer() {
               drag={drag}
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
+              onReorder={reorderTray}
               clearPost={
                 <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
               }
@@ -298,7 +333,11 @@ export default function Composer() {
                 : undefined
             }
             onResetSplits={() => resetBreaks(adapter.id)}
-            images={images}
+            images={imagesFor(adapter.id)}
+            imageNumber={imageNumber}
+            ownOrder={!!cardOrder[adapter.id]}
+            onReorderImage={(id, target, after) => reorderOnCard(adapter.id, id, target, after)}
+            onMatchCompose={() => matchCompose(adapter.id)}
             imagePost={(id) => imagePost(adapter.id, id)}
             onMoveImage={(id, post, onlyHere) => moveImage(adapter.id, id, post, onlyHere)}
             enabled={isEnabled(adapter.id)}

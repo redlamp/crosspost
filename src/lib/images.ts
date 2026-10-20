@@ -227,8 +227,35 @@ export function downloadImage(img: StagedImage) {
 
 const OWN_PREFIX = "application/x-crosspost-"
 
-/** Drag type for moving an image between one platform's posts. The type shows mid-drag; the image id only on drop. */
+/**
+ * Drag type for an image dragged from one platform's card, to reorder it or
+ * move it between posts there. The type shows mid-drag; the image id only on drop.
+ */
 export const moveType = (platformId: string) => `${OWN_PREFIX}move-${platformId}`
+
+/** Drag type for an image dragged within the Compose tray, to reorder it. */
+export const TRAY_TYPE = `${OWN_PREFIX}tray`
+
+/**
+ * Move `id` beside `target` (after it, or before): the ids in their new
+ * order. Unchanged when either is missing or they're the same.
+ */
+export function reorder(ids: string[], id: string, target: string, after: boolean): string[] {
+  if (id === target || !ids.includes(id)) return ids
+  const rest = ids.filter((x) => x !== id)
+  const at = rest.indexOf(target)
+  if (at < 0) return ids
+  rest.splice(after ? at + 1 : at, 0, id)
+  return rest
+}
+
+/** The thumbnail under a drag, from `[data-image-id]`, and whether the pointer is on its right half. */
+export function dropTarget(e: React.DragEvent): { id: string; after: boolean } | null {
+  const thumb = (e.target as Element).closest<HTMLElement>("[data-image-id]")
+  if (!thumb?.dataset.imageId) return null
+  const box = thumb.getBoundingClientRect()
+  return { id: thumb.dataset.imageId, after: e.clientX > box.left + box.width / 2 }
+}
 
 /**
  * A drag of one of the page's own staged images. Chrome hands it over as a
@@ -238,11 +265,10 @@ export const isOwnDrag = (data: DataTransfer | null) => !!data?.types.some((t) =
 
 /**
  * Lets the image be dragged out as a file (Chrome saves it on a drop onto the
- * desktop) and, given a platform, between that platform's posts.
+ * desktop), and within where it came from: the Compose tray, or a platform's card.
  */
-export function dragOut(e: React.DragEvent, img: StagedImage, platformId?: string) {
+export function dragOut(e: React.DragEvent, img: StagedImage, from: "tray" | { platformId: string }) {
   e.dataTransfer.effectAllowed = "copyMove"
   e.dataTransfer.setData("DownloadURL", `${img.blob.type}:${img.name}:${img.url}`)
-  e.dataTransfer.setData(`${OWN_PREFIX}image`, img.id)
-  if (platformId) e.dataTransfer.setData(moveType(platformId), img.id)
+  e.dataTransfer.setData(from === "tray" ? TRAY_TYPE : moveType(from.platformId), img.id)
 }
