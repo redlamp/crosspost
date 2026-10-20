@@ -95,7 +95,10 @@ export function PlatformCard({
   const problem = firstProblem(adapter, chunks)
   // Images copied from this card, so it's clear which are already in the post.
   const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
-  const needsImage = adapter.needsImage && images.length === 0 && chunks.length > 0
+  // Images the user left off this platform; the rest go with its first post.
+  const [hiddenImages, setHiddenImages] = useState<ReadonlySet<string>>(new Set())
+  const shownImages = images.filter((img) => !hiddenImages.has(img.id))
+  const needsImage = adapter.needsImage && shownImages.length === 0 && chunks.length > 0
 
   return (
     <Card
@@ -234,6 +237,8 @@ export function PlatformCard({
                         platform={adapter.name}
                         copied={copiedImages}
                         onCopied={(id) => setCopiedImages((s) => new Set(s).add(id))}
+                        hidden={hiddenImages}
+                        onHiddenChange={setHiddenImages}
                       />
                     </div>
                   )}

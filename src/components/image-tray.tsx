@@ -199,55 +199,78 @@ type StripProps = {
   /** Ids of the images already copied from this card. */
   copied: ReadonlySet<string>
   onCopied: (id: string) => void
+  /** Ids of the images left off this platform's post. */
+  hidden: ReadonlySet<string>
+  onHiddenChange: (hidden: ReadonlySet<string>) => void
 }
 
-/** Small thumbnails on a platform card: click to copy, or drag into the post. Copied ones get a check. */
-export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
+/**
+ * Small thumbnails on a platform card: click to copy, or drag into the post.
+ * Copied ones get a check; the x leaves one off this platform only. Numbers
+ * match the Compose tray, so a skipped image leaves a gap.
+ */
+export function ImageStrip({ images, platform, copied, onCopied, hidden, onHiddenChange }: StripProps) {
+  const hiddenCount = images.filter((img) => hidden.has(img.id)).length
   return (
-    <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform}`}>
-      {images.map((img, i) => (
-        <li key={img.id}>
-          <button
-            type="button"
-            onClick={async () => {
-              if (await copyWithToast(img, `image ${i + 1}`)) onCopied(img.id)
-            }}
-            title={
-              copied.has(img.id)
-                ? `Image ${i + 1} copied for ${platform}. Click to copy again.`
-                : `Copy image ${i + 1}, or drag it into the post`
-            }
-            aria-pressed={copied.has(img.id)}
-            className="group/thumb relative block size-14 rounded outline-none"
-          >
-            <span
-              className={cn(
-                "block size-full overflow-hidden rounded border bg-muted",
-                "group-hover/thumb:ring-2 group-hover/thumb:ring-(--brand) group-focus-visible/thumb:ring-2 group-focus-visible/thumb:ring-(--brand)",
-              )}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-              <img
-                src={img.url}
-                alt={`Image ${i + 1}`}
-                draggable
-                onDragStart={(e) => dragOut(e, img)}
-                className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
-              />
-            </span>
-            <span className="absolute top-1 right-1 rounded-sm bg-black/60 px-1 text-[10px] leading-tight text-white tabular-nums">
-              {i + 1}
-            </span>
-            {copied.has(img.id) && (
-              // Copied: grayed out like a done item, with a blue check badge on the corner
-              // (placed like the post counts on the rail, the same blue on every card).
-              <span className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
-                <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform}`}>
+        {images.map((img, i) =>
+          hidden.has(img.id) ? null : (
+            <li key={img.id} className="group/thumb relative size-14">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (await copyWithToast(img, `image ${i + 1}`)) onCopied(img.id)
+                }}
+                title={
+                  copied.has(img.id)
+                    ? `Image ${i + 1} copied for ${platform}. Click to copy again.`
+                    : `Copy image ${i + 1}, or drag it into the post`
+                }
+                aria-pressed={copied.has(img.id)}
+                className="block size-full overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                <img
+                  src={img.url}
+                  alt={`Image ${i + 1}`}
+                  draggable
+                  onDragStart={(e) => dragOut(e, img)}
+                  className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
+                />
+              </button>
+              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
+                {i + 1}
               </span>
-            )}
-          </button>
-        </li>
-      ))}
-    </ol>
+              <button
+                type="button"
+                onClick={() => onHiddenChange(new Set(hidden).add(img.id))}
+                aria-label={`Leave image ${i + 1} off ${platform}`}
+                title={`Leave off ${platform}`}
+                className="absolute top-1 right-1 grid size-5 place-items-center rounded-md bg-black/60 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/thumb:opacity-100 hover:bg-black/80 focus-visible:opacity-100"
+              >
+                <XIcon className="size-3" />
+              </button>
+              {copied.has(img.id) && (
+                // Copied: grayed out like a done item, with a blue check badge on the corner
+                // (placed like the post counts on the rail, the same blue on every card).
+                <span className="pointer-events-none absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
+                  <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
+                </span>
+              )}
+            </li>
+          ),
+        )}
+      </ol>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onHiddenChange(new Set())}
+          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          Show {hiddenCount} hidden
+        </button>
+      )}
+    </div>
   )
 }
