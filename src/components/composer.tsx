@@ -1,7 +1,7 @@
 "use client"
 
 import { BroomIcon, ImageMinusIcon } from "lucide-react"
-import { useCallback, useMemo, useRef } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
@@ -30,6 +30,9 @@ type Prefs = {
 
 const DEFAULT_PREFS: Prefs = { numbering: true, enabled: {} }
 
+/** Post index per image id: shared by the threaded platforms, and per-platform overrides. */
+type Placement = { shared: Record<string, number>; only: Record<string, Record<string, number>> }
+
 type Breaks = Record<string, number[]>
 
 function chunksFor(adapter: PlatformAdapter, text: string, numbering: boolean, breaks: number[] = []): Chunk[] {
@@ -57,6 +60,24 @@ export default function Composer() {
     else if (!added) toast.info("Only images can be staged for now.")
   }
   const drag = usePageImageInput(addImages)
+
+  // Which post each image goes with on threaded platforms: the first unless
+  // moved. A move mirrors to every threaded platform; one made with Ctrl held
+  // stays on that platform and wins over the shared one.
+  const [placement, setPlacement] = useState<Placement>({ shared: {}, only: {} })
+  const imagePost = (platformId: string, id: string) =>
+    placement.only[platformId]?.[id] ?? placement.shared[id] ?? 0
+  const moveImage = (platformId: string, id: string, post: number, onlyHere: boolean) =>
+    setPlacement((p) => {
+      if (onlyHere) return { ...p, only: { ...p.only, [platformId]: { ...p.only[platformId], [id]: post } } }
+      // A shared move takes the image along on every platform, overrides included.
+      const only: Placement["only"] = {}
+      for (const [platform, posts] of Object.entries(p.only)) {
+        only[platform] = { ...posts }
+        delete only[platform][id]
+      }
+      return { shared: { ...p.shared, [id]: post }, only }
+    })
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -278,6 +299,8 @@ export default function Composer() {
             }
             onResetSplits={() => resetBreaks(adapter.id)}
             images={images}
+            imagePost={(id) => imagePost(adapter.id, id)}
+            onMoveImage={(id, post, onlyHere) => moveImage(adapter.id, id, post, onlyHere)}
             enabled={isEnabled(adapter.id)}
             onEnabledChange={(on) => setPrefs((p) => ({ ...p, enabled: { ...p.enabled, [adapter.id]: on } }))}
           />

@@ -73,6 +73,10 @@ type Props = {
   /** Set for platforms that number threads themselves, to let the user add labels anyway. */
   onNumberingChange?: (on: boolean) => void
   images?: StagedImage[]
+  /** Which post an image goes with on this platform (0 for the first). */
+  imagePost?: (id: string) => number
+  /** Move an image to a post: on every threaded platform, or with `onlyHere`, on this one. */
+  onMoveImage?: (id: string, post: number, onlyHere: boolean) => void
 }
 
 export function PlatformCard({
@@ -86,6 +90,8 @@ export function PlatformCard({
   numbering,
   onNumberingChange,
   images = [],
+  imagePost = () => 0,
+  onMoveImage,
 }: Props) {
   const total = adapter.count(text.trim())
   const over = total > adapter.limit
@@ -101,9 +107,6 @@ export function PlatformCard({
   const shown = images.map((img, i) => ({ img, n: i + 1 })).filter(({ img }) => !hiddenImages.has(img.id))
   const hiddenCount = images.length - shown.length
   const needsImage = adapter.needsImage && shown.length === 0 && chunks.length > 0
-  // Which post each image goes with: the first unless moved. Images on a
-  // post that no longer exists fall back to the last one.
-  const [placement, setPlacement] = useState<Record<string, number>>({})
   // The post an image is being dragged from, while one is.
   const [movingFrom, setMovingFrom] = useState<number | null>(null)
   // A drop that moves the image removes the element the drag started on, so
@@ -118,7 +121,8 @@ export function PlatformCard({
       window.removeEventListener("drop", end, true)
     }
   }, [movingFrom])
-  const postOf = (id: string) => (splits ? Math.min(placement[id] ?? 0, chunks.length - 1) : 0)
+  // Images on a post that no longer exists fall back to the last one.
+  const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
 
   return (
     <Card
@@ -273,8 +277,8 @@ export function PlatformCard({
                           onShowHidden={() => setHiddenImages(new Set())}
                           onMove={
                             splits
-                              ? (id) => {
-                                  setPlacement((p) => ({ ...p, [id]: i }))
+                              ? (id, onlyHere) => {
+                                  onMoveImage?.(id, i, onlyHere)
                                   setMovingFrom(null)
                                 }
                               : undefined

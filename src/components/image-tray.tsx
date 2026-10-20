@@ -395,8 +395,12 @@ type StripProps = {
   /** Images left off this platform, with a way back; shown on the first post. */
   hiddenCount?: number
   onShowHidden?: () => void
-  /** Set when images can move between this platform's posts: an image dropped here moves to this post. */
-  onMove?: (id: string) => void
+  /**
+   * Set when images can move between this platform's posts: an image dropped
+   * here moves to this post. `onlyHere` is set when Ctrl (or Cmd) is held,
+   * meaning this card only rather than every threaded platform.
+   */
+  onMove?: (id: string, onlyHere: boolean) => void
   /** One of this card's images is being dragged, so show where it can go. */
   moving?: boolean
   onMovingChange?: (moving: boolean) => void
@@ -420,8 +424,11 @@ export function ImageStrip({
   onMovingChange,
 }: StripProps) {
   const [over, setOver] = useState(false)
+  // Ctrl (Cmd on a Mac) held over this post: the move stays on this card.
+  const [onlyHere, setOnlyHere] = useState(false)
   const type = moveType(platform.id)
   const accepts = (e: React.DragEvent) => !!onMove && e.dataTransfer.types.includes(type)
+  const heldKey = (e: React.DragEvent) => e.ctrlKey || e.metaKey
 
   return (
     <div
@@ -434,6 +441,7 @@ export function ImageStrip({
         e.preventDefault()
         e.dataTransfer.dropEffect = "move"
         setOver(true)
+        setOnlyHere(heldKey(e))
       }}
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
@@ -442,7 +450,7 @@ export function ImageStrip({
         setOver(false)
         if (!accepts(e)) return
         e.preventDefault()
-        onMove?.(e.dataTransfer.getData(type))
+        onMove?.(e.dataTransfer.getData(type), heldKey(e))
       }}
     >
       <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform.name}`}>
@@ -457,7 +465,7 @@ export function ImageStrip({
                 copied.has(img.id)
                   ? `Image ${n} copied for ${platform.name}. Click to copy again.`
                   : onMove
-                    ? `Copy image ${n}, or drag it into the post or onto another post here`
+                    ? `Copy image ${n}, or drag it into the post, or onto another post here (hold Ctrl for ${platform.name} only)`
                     : `Copy image ${n}, or drag it into the post`
               }
               aria-pressed={copied.has(img.id)}
@@ -503,15 +511,16 @@ export function ImageStrip({
           </li>
         ))}
         {moving && onMove && (
-          // Where a dragged image lands on this post.
+          // Where a dragged image lands on this post. Hovered, it says
+          // whether the move mirrors to every threaded platform or not.
           <li
             aria-hidden
             className={cn(
-              "grid size-14 place-items-center rounded border border-dashed text-center text-[10px] leading-tight text-muted-foreground transition-colors",
+              "grid size-14 place-items-center rounded border border-dashed p-0.5 text-center text-[10px] leading-tight text-muted-foreground transition-colors",
               over && "border-(--brand) text-foreground",
             )}
           >
-            Move here
+            {!over ? "Move here" : onlyHere ? `${platform.name} only` : "All threads"}
           </li>
         )}
       </ol>
