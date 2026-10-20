@@ -81,6 +81,20 @@ function DropGlow({ drag, frame }: { drag: ImageDrag | null; frame?: (el: HTMLEl
 
 const EASE = "ease-[cubic-bezier(0.16,1,0.3,1)]"
 
+const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
+
+/** The empty drop bar's label for a drag of `count` images (null: the browser doesn't say). */
+function dropLabel(count: number | null) {
+  if (count === null) return `Drop, paste, or pick up to ${MAX_IMAGES} images`
+  if (count <= MAX_IMAGES) return `Drop ${plural(count)}`
+  return `Drop to add ${MAX_IMAGES} of ${count} images`
+}
+
+/** The add tile's note for a drag of `count` images when `room` more fit. */
+function fitLabel(count: number, room: number) {
+  return count <= room ? `+${count}` : `${room} of ${count} fit`
+}
+
 // The expanded drop bar is as tall as a tile in the 4-up row it turns into.
 const TILE_HEIGHT = "calc((100cqw - 1.5rem) / 4)"
 
@@ -213,7 +227,11 @@ function DropBar({ expanded, animate, drag, onAdd }: BarProps) {
           className={cn("relative", expanded ? "text-center text-balance" : "truncate")}
           title={`Drop, paste, or pick up to ${MAX_IMAGES} images`}
         >
-          {expanded ? `Drop, paste, or pick up to ${MAX_IMAGES} images` : "Drop, paste, or pick images"}
+          {drag?.phase === "in"
+            ? dropLabel(drag.count)
+            : expanded
+              ? `Drop, paste, or pick up to ${MAX_IMAGES} images`
+              : "Drop, paste, or pick images"}
         </span>
       </button>
     </>
@@ -307,7 +325,14 @@ function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
               )}
             >
               <DropGlow drag={drag} />
-              <ImagePlusIcon className="relative size-5" />
+              <span className="relative flex flex-col items-center gap-1">
+                <ImagePlusIcon className="size-5" />
+                {drag?.phase === "in" && drag.count !== null && (
+                  <span className="text-xs tabular-nums">
+                    {fitLabel(drag.count, MAX_IMAGES - images.length)}
+                  </span>
+                )}
+              </span>
             </button>
           </li>
         )}

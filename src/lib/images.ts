@@ -87,17 +87,25 @@ export function useStagedImages() {
   return { images, setImages, add }
 }
 
-/** Whether a drag carries image files. Chrome and Firefox show file types mid-drag; if not, any file counts. */
-function carriesImages(data: DataTransfer | null) {
-  if (!data?.types.includes("Files")) return false
+/**
+ * How many images a drag carries: 0 for none, null when the browser doesn't
+ * say. Chrome and Firefox list file types mid-drag; Safari doesn't, so any
+ * file drag counts there.
+ */
+function imagesInDrag(data: DataTransfer | null): number | null {
+  if (!data?.types.includes("Files")) return 0
   const items = [...data.items]
-  return items.length === 0 || items.some((i) => i.kind === "file" && i.type.startsWith("image/"))
+  if (items.length === 0) return null
+  return items.filter((i) => i.kind === "file" && i.type.startsWith("image/")).length
 }
 
 export type Point = { x: number; y: number }
 
-/** An image drag over the page: where it came in, or, once it's gone, where it went out. */
-export type ImageDrag = { phase: "in" | "out" } & Point
+/**
+ * An image drag over the page: where it came in, or, once it's gone, where it
+ * went out, and how many images it carries (null when the browser doesn't say).
+ */
+export type ImageDrag = { phase: "in" | "out"; count: number | null } & Point
 
 /**
  * Accept images pasted or dropped anywhere on the page, focused field or not
@@ -123,8 +131,9 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
     }
     const leave = () => {
       clear()
-      if (!last) return
-      setDrag({ phase: "out", ...last })
+      const exit = last
+      if (!exit) return
+      setDrag((d) => ({ phase: "out", count: d?.count ?? null, ...exit }))
       last = null
       outTimer = setTimeout(() => setDrag(null), 1200)
     }
@@ -132,9 +141,10 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       if (!e.dataTransfer?.types.includes("Files")) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
-      if (!carriesImages(e.dataTransfer)) return
+      const count = imagesInDrag(e.dataTransfer)
+      if (count === 0) return
       const at = { x: e.clientX, y: e.clientY }
-      if (!last) setDrag({ phase: "in", ...at })
+      if (!last) setDrag({ phase: "in", count, ...at })
       last = at
       clear()
       // dragover repeats while a drag stays over the page; when it stops

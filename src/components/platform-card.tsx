@@ -108,8 +108,8 @@ export function PlatformCard({
       className={cn(
         "scroll-mt-32 gap-4 py-4 outline-none lg:scroll-mt-20",
         // A hint of the brand: tinted surface and border, stronger in dark mode.
-        "border-[color-mix(in_oklab,var(--brand)_30%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_5%,var(--card))]",
-        "dark:border-[color-mix(in_oklab,var(--brand)_35%,var(--border))] dark:bg-[color-mix(in_oklab,var(--brand)_9%,var(--card))]",
+        "border-[color-mix(in_oklab,var(--brand)_30%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_4%,var(--card))]",
+        "dark:border-[color-mix(in_oklab,var(--brand)_35%,var(--border))] dark:bg-[color-mix(in_oklab,var(--brand)_7%,var(--card))]",
         !enabled && "opacity-60",
       )}
     >
