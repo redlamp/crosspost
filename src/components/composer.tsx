@@ -1,7 +1,7 @@
 "use client"
 
-import { SquarePenIcon } from "lucide-react"
-import { useCallback, useMemo, useRef } from "react"
+import { BroomIcon } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
@@ -165,7 +165,8 @@ export default function Composer() {
     const saved = { draft, breaks }
     setDraft("")
     setBreaks({})
-    toast("Started a new post", {
+    setConfirming(false)
+    toast("Post cleared", {
       action: {
         label: "Undo",
         onClick: () => {
@@ -176,6 +177,14 @@ export default function Composer() {
     })
   }
   const nothingToClear = !draft && Object.keys(breaks).length === 0
+
+  // Clearing takes a second click; the question backs out on its own after a few seconds.
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    if (!confirming) return
+    const timer = setTimeout(() => setConfirming(false), 5000)
+    return () => clearTimeout(timer)
+  }, [confirming])
 
   return (
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
@@ -218,11 +227,27 @@ export default function Composer() {
               </div>
               <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button variant="outline" onClick={startOver} disabled={nothingToClear}>
-                <SquarePenIcon />
-                New post
-              </Button>
+            <div
+              className="flex flex-wrap items-center justify-start gap-2"
+              onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
+            >
+              {confirming && !nothingToClear ? (
+                <>
+                  <span className="text-sm text-muted-foreground">Clear the text and splits?</span>
+                  <Button variant="destructive" onClick={startOver} autoFocus>
+                    <BroomIcon />
+                    Clear
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirming(false)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" onClick={() => setConfirming(true)} disabled={nothingToClear}>
+                  <BroomIcon />
+                  Clear post
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
