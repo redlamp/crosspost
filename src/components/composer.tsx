@@ -56,7 +56,7 @@ export default function Composer() {
     if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
     else if (!added) toast.info("Only images can be staged for now.")
   }
-  const dragFrom = usePageImageInput(addImages)
+  const drag = usePageImageInput(addImages)
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -239,7 +239,7 @@ export default function Composer() {
             </div>
             <ImageTray
               images={images}
-              dragFrom={dragFrom}
+              drag={drag}
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
             />

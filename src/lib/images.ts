@@ -96,38 +96,65 @@ function carriesImages(data: DataTransfer | null) {
 
 export type Point = { x: number; y: number }
 
+/** An image drag over the page: where it came in, or, once it's gone, where it went out. */
+export type ImageDrag = { phase: "in" | "out" } & Point
+
 /**
  * Accept images pasted or dropped anywhere on the page, focused field or not
- * (a missed drop would otherwise open the image in place of the app). While
- * images are dragged over the page, returns where the drag entered the
- * window; otherwise null.
+ * (a missed drop would otherwise open the image in place of the app). Reports
+ * image drags: "in" with the entry point while one is over the page, then
+ * "out" with the exit point briefly after it leaves; null otherwise and after
+ * a drop.
  */
-export function usePageImageInput(onFiles: (files: File[]) => void): Point | null {
-  const [entry, setEntry] = useState<Point | null>(null)
+export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag | null {
+  const [drag, setDrag] = useState<ImageDrag | null>(null)
   const handler = useRef(onFiles)
   useEffect(() => {
     handler.current = onFiles
   })
 
   useEffect(() => {
-    // dragover repeats every few hundred ms while a drag stays over the page,
-    // so the state ends shortly after the drag leaves or is dropped.
-    let timer: ReturnType<typeof setTimeout> | undefined
+    let last: Point | null = null
+    let leaveTimer: ReturnType<typeof setTimeout> | undefined
+    let outTimer: ReturnType<typeof setTimeout> | undefined
+    const clear = () => {
+      clearTimeout(leaveTimer)
+      clearTimeout(outTimer)
+    }
+    const leave = () => {
+      clear()
+      if (!last) return
+      setDrag({ phase: "out", ...last })
+      last = null
+      outTimer = setTimeout(() => setDrag(null), 1200)
+    }
     const over = (e: DragEvent) => {
       if (!e.dataTransfer?.types.includes("Files")) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
       if (!carriesImages(e.dataTransfer)) return
       const at = { x: e.clientX, y: e.clientY }
-      setEntry((current) => current ?? at)
-      clearTimeout(timer)
-      timer = setTimeout(() => setEntry(null), 400)
+      if (!last) setDrag({ phase: "in", ...at })
+      last = at
+      clear()
+      // dragover repeats while a drag stays over the page; when it stops
+      // (left the window, or Escape), the drag is over.
+      leaveTimer = setTimeout(leave, 400)
+    }
+    // Leaving the window has no element to go to; react at once rather than
+    // waiting out the timer. A dragover right after (moving between
+    // elements in some browsers) cancels it.
+    const dragleave = (e: DragEvent) => {
+      if (e.relatedTarget !== null || !last) return
+      clear()
+      leaveTimer = setTimeout(leave, 50)
     }
     const drop = (e: DragEvent) => {
       if (!e.dataTransfer?.types.includes("Files")) return
       e.preventDefault()
-      clearTimeout(timer)
-      setEntry(null)
+      clear()
+      last = null
+      setDrag(null)
       handler.current([...e.dataTransfer.files])
     }
     // Pasted images are staged; pasted text still lands wherever it's going.
@@ -138,17 +165,19 @@ export function usePageImageInput(onFiles: (files: File[]) => void): Point | nul
       handler.current(files)
     }
     window.addEventListener("dragover", over)
+    window.addEventListener("dragleave", dragleave)
     window.addEventListener("drop", drop)
     window.addEventListener("paste", paste)
     return () => {
-      clearTimeout(timer)
+      clear()
       window.removeEventListener("dragover", over)
+      window.removeEventListener("dragleave", dragleave)
       window.removeEventListener("drop", drop)
       window.removeEventListener("paste", paste)
     }
   }, [])
 
-  return entry
+  return drag
 }
 
 /** Image files in a paste or drop, if any. */
