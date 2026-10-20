@@ -86,8 +86,8 @@ const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
 /** The empty drop bar's label for a drag of `count` images (null: the browser doesn't say). */
 function dropLabel(count: number | null) {
   if (count === null) return `Drop, paste, or pick up to ${MAX_IMAGES} images`
-  if (count <= MAX_IMAGES) return `Drop ${plural(count)}`
-  return `Drop to add ${MAX_IMAGES} of ${count} images`
+  if (count <= MAX_IMAGES) return `Add ${plural(count)}`
+  return `Add ${MAX_IMAGES} of ${count} images`
 }
 
 /** The add tile's note for a drag of `count` images when `room` more fit. */
