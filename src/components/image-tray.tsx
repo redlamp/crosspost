@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { PlatformAdapter } from "@/lib/adapters"
-import { copyImage, downloadImage, dragOut, MAX_IMAGES, moveType, type ImageDrag, type StagedImage } from "@/lib/images"
+import { copyImage, downloadImage, dragOut, MAX_IMAGES, type ImageDrag, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
@@ -395,15 +395,13 @@ type StripProps = {
   /** Images left off this platform, with a way back; shown on the first post. */
   hiddenCount?: number
   onShowHidden?: () => void
-  /**
-   * Set when images can move between this platform's posts: an image dropped
-   * here moves to this post. `onlyHere` is set when Ctrl (or Cmd) is held,
-   * meaning this card only rather than every threaded platform.
-   */
-  onMove?: (id: string, onlyHere: boolean) => void
-  /** One of this card's images is being dragged, so show where it can go. */
+  /** Images can be dragged between this platform's posts (the post handles the drop). */
+  movable?: boolean
+  /** One of this card's images is being dragged from another post, so show where it can land. */
   moving?: boolean
   onMovingChange?: (moving: boolean) => void
+  /** The drag is over this post: the move mirrors to every threaded platform, or stays on this one (Ctrl held). */
+  dropHint?: "all" | "only" | null
 }
 
 /**
@@ -419,41 +417,14 @@ export function ImageStrip({
   onHide,
   hiddenCount = 0,
   onShowHidden,
-  onMove,
+  movable,
   moving,
   onMovingChange,
+  dropHint = null,
 }: StripProps) {
-  const [over, setOver] = useState(false)
-  // Ctrl (Cmd on a Mac) held over this post: the move stays on this card.
-  const [onlyHere, setOnlyHere] = useState(false)
-  const type = moveType(platform.id)
-  const accepts = (e: React.DragEvent) => !!onMove && e.dataTransfer.types.includes(type)
-  const heldKey = (e: React.DragEvent) => e.ctrlKey || e.metaKey
-
   return (
-    <div
-      className={cn(
-        "-m-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md p-1 transition-colors",
-        over && "bg-(--brand)/10 ring-1 ring-(--brand)/50",
-      )}
-      onDragOver={(e) => {
-        if (!accepts(e)) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = "move"
-        setOver(true)
-        setOnlyHere(heldKey(e))
-      }}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
-      }}
-      onDrop={(e) => {
-        setOver(false)
-        if (!accepts(e)) return
-        e.preventDefault()
-        onMove?.(e.dataTransfer.getData(type), heldKey(e))
-      }}
-    >
-      <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform.name}`}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
         {items.map(({ img, n }) => (
           <li key={img.id} className="group/thumb relative size-14">
             <button
@@ -464,7 +435,7 @@ export function ImageStrip({
               title={
                 copied.has(img.id)
                   ? `Image ${n} copied for ${platform.name}. Click to copy again.`
-                  : onMove
+                  : movable
                     ? `Copy image ${n}, or drag it into the post, or onto another post here (hold Ctrl for ${platform.name} only)`
                     : `Copy image ${n}, or drag it into the post`
               }
@@ -477,8 +448,10 @@ export function ImageStrip({
                 alt={`Image ${n}`}
                 draggable
                 onDragStart={(e) => {
-                  dragOut(e, img, onMove ? platform.id : undefined)
-                  onMovingChange?.(true)
+                  dragOut(e, img, movable ? platform.id : undefined)
+                  // Chrome cancels a drag whose page changes during dragstart, so
+                  // show the drop slots just after it.
+                  setTimeout(() => onMovingChange?.(true), 0)
                 }}
                 onDragEnd={() => onMovingChange?.(false)}
                 className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
@@ -510,20 +483,21 @@ export function ImageStrip({
             )}
           </li>
         ))}
-        {moving && onMove && (
-          // Where a dragged image lands on this post. Hovered, it says
-          // whether the move mirrors to every threaded platform or not.
-          <li
-            aria-hidden
-            className={cn(
-              "grid size-14 place-items-center rounded border border-dashed p-0.5 text-center text-[10px] leading-tight text-muted-foreground transition-colors",
-              over && "border-(--brand) text-foreground",
-            )}
-          >
-            {!over ? "Move here" : onlyHere ? `${platform.name} only` : "All threads"}
-          </li>
-        )}
       </ol>
+      {moving && movable && (
+        // Where a dragged image lands on this post: the rest of the row, as
+        // tall as a thumbnail. Hovered, it says whether the move mirrors to
+        // every threaded platform or stays on this one.
+        <div
+          aria-hidden
+          className={cn(
+            "grid h-14 min-w-40 flex-1 place-items-center rounded border border-dashed px-3 text-center text-sm text-muted-foreground transition-colors",
+            dropHint && "border-(--brand) text-foreground",
+          )}
+        >
+          {dropHint === "only" ? `Move here on ${platform.name} only` : dropHint === "all" ? "Move here on all threads" : "Move here"}
+        </div>
+      )}
       {hiddenCount > 0 && (
         <button
           type="button"

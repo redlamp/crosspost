@@ -12,7 +12,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
-import type { StagedImage } from "@/lib/images"
+import { moveType, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
@@ -109,11 +109,16 @@ export function PlatformCard({
   const needsImage = adapter.needsImage && shown.length === 0 && chunks.length > 0
   // The post an image is being dragged from, while one is.
   const [movingFrom, setMovingFrom] = useState<number | null>(null)
+  // The post a dragged image is over, and whether Ctrl (Cmd) keeps the move on this card.
+  const [dropOn, setDropOn] = useState<{ post: number; onlyHere: boolean } | null>(null)
   // A drop that moves the image removes the element the drag started on, so
   // its dragend never reaches React. Catch the end of any drag on the window.
   useEffect(() => {
     if (movingFrom === null) return
-    const end = () => setMovingFrom(null)
+    const end = () => {
+      setMovingFrom(null)
+      setDropOn(null)
+    }
     window.addEventListener("dragend", end, true)
     window.addEventListener("drop", end, true)
     return () => {
@@ -121,6 +126,7 @@ export function PlatformCard({
       window.removeEventListener("drop", end, true)
     }
   }, [movingFrom])
+  const acceptsMove = (e: React.DragEvent) => splits && e.dataTransfer.types.includes(moveType(adapter.id))
   // Images on a post that no longer exists fall back to the last one.
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
 
@@ -252,7 +258,31 @@ export function PlatformCard({
               const n = adapter.count(chunk)
               const what = chunks.length > 1 ? `${adapter.name} post ${i + 1}` : `${adapter.name} post`
               return (
-                <li key={i} className="rounded-md border bg-background/40 p-3">
+                <li
+                  key={i}
+                  className={cn(
+                    "rounded-md border bg-background/40 p-3 transition-colors",
+                    dropOn?.post === i && "border-(--brand)/60 bg-(--brand)/10",
+                  )}
+                  // The whole post takes an image dragged from another of this card's posts.
+                  onDragOver={(e) => {
+                    if (!acceptsMove(e) || movingFrom === i) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = "move"
+                    const onlyHere = e.ctrlKey || e.metaKey
+                    if (dropOn?.post !== i || dropOn.onlyHere !== onlyHere) setDropOn({ post: i, onlyHere })
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dropOn?.post === i) setDropOn(null)
+                  }}
+                  onDrop={(e) => {
+                    setDropOn(null)
+                    if (!acceptsMove(e) || movingFrom === i) return
+                    e.preventDefault()
+                    onMoveImage?.(e.dataTransfer.getData(moveType(adapter.id)), i, e.ctrlKey || e.metaKey)
+                    setMovingFrom(null)
+                  }}
+                >
                   <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
                   {(() => {
                     const items = shown.filter(({ img }) => postOf(img.id) === i)
@@ -275,16 +305,10 @@ export function PlatformCard({
                           onHide={(id) => setHiddenImages((s) => new Set(s).add(id))}
                           hiddenCount={showHidden ? hiddenCount : 0}
                           onShowHidden={() => setHiddenImages(new Set())}
-                          onMove={
-                            splits
-                              ? (id, onlyHere) => {
-                                  onMoveImage?.(id, i, onlyHere)
-                                  setMovingFrom(null)
-                                }
-                              : undefined
-                          }
+                          movable={splits}
                           moving={movingFrom !== null && movingFrom !== i}
                           onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
+                          dropHint={dropOn?.post === i ? (dropOn.onlyHere ? "only" : "all") : null}
                         />
                       </div>
                     )
