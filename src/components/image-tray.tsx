@@ -1,10 +1,10 @@
 "use client"
 
 import { CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
-import { useRef } from "react"
+import { useLayoutEffect, useRef } from "react"
 import { toast } from "sonner"
 
-import { copyImage, downloadImage, dragOut, MAX_IMAGES, type StagedImage } from "@/lib/images"
+import { copyImage, downloadImage, dragOut, MAX_IMAGES, type Point, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 export async function copyWithToast(img: StagedImage, what = "image") {
@@ -19,20 +19,62 @@ export async function copyWithToast(img: StagedImage, what = "image") {
 const tileButton =
   "grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
 
-// Drop targets light up while images are dragged over the page.
-const dropReady =
-  "scale-[1.02] border-sky-500 bg-sky-500/10 text-sky-700 shadow-[0_0_0_4px] shadow-sky-500/15 dark:border-sky-400 dark:text-sky-300"
+/**
+ * Highlights a drop target while images are dragged over the page: a soft
+ * radial glow that spreads from where the drag entered the window across the
+ * target. Place it inside a relatively positioned, overflow-hidden parent.
+ */
+function DropGlow({ from }: { from: Point | null }) {
+  const glow = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const el = glow.current
+    const box = el?.parentElement?.getBoundingClientRect()
+    if (!el || !box) return
+    if (!from) {
+      el.style.opacity = "0"
+      return
+    }
+    // A circle centered on the entry point (often outside the target), big
+    // enough to cover the target's farthest corner, grows from nothing.
+    const x = from.x - box.left
+    const y = from.y - box.top
+    // 1.25x so the fading rim passes beyond the far corner.
+    const r = 1.25 * Math.max(...[0, box.width].flatMap((cx) => [0, box.height].map((cy) => Math.hypot(cx - x, cy - y))))
+    Object.assign(el.style, {
+      left: `${x - r}px`,
+      top: `${y - r}px`,
+      width: `${2 * r}px`,
+      height: `${2 * r}px`,
+      transition: "none",
+      transform: "scale(0)",
+      opacity: "1",
+    })
+    void el.offsetWidth // Commit the start state so the growth animates.
+    // An expo-style ease-out: a quick burst from the entry point that glides to rest.
+    el.style.transition = "transform 1100ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out"
+    el.style.transform = "scale(1)"
+  }, [from])
+
+  return (
+    <span
+      ref={glow}
+      aria-hidden
+      className="pointer-events-none absolute rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--foreground)_14%,transparent)_75%,transparent)] opacity-0"
+    />
+  )
+}
 
 type TrayProps = {
   images: StagedImage[]
-  /** Images are being dragged over the page. */
-  dragging?: boolean
+  /** Where an image drag entered the window, while it's over the page. */
+  dragFrom?: Point | null
   onAdd: (files: File[]) => void
   onRemove: (id: string) => void
 }
 
 /** Images staged for the post: drop, paste or pick them; copy, drag or download each one. */
-export function ImageTray({ images, dragging, onAdd, onRemove }: TrayProps) {
+export function ImageTray({ images, dragFrom = null, onAdd, onRemove }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
   const picker = (
     <input
@@ -56,14 +98,13 @@ export function ImageTray({ images, dragging, onAdd, onRemove }: TrayProps) {
           type="button"
           onClick={() => input.current?.click()}
           className={cn(
-            "flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-all duration-300 ease-out hover:border-foreground/40 hover:text-foreground",
-            dragging && dropReady,
+            "relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
+            dragFrom && "border-foreground/40 text-foreground",
           )}
         >
-          <ImagePlusIcon
-            className={cn("size-4 transition-transform duration-300 ease-out", dragging && "-translate-y-0.5 scale-125")}
-          />
-          Drop, paste, or pick up to {MAX_IMAGES} images
+          <DropGlow from={dragFrom} />
+          <ImagePlusIcon className="relative size-4" />
+          <span className="relative">Drop, paste, or pick up to {MAX_IMAGES} images</span>
         </button>
       </>
     )
@@ -128,13 +169,12 @@ export function ImageTray({ images, dragging, onAdd, onRemove }: TrayProps) {
               aria-label="Add images"
               title={`Add images (up to ${MAX_IMAGES})`}
               className={cn(
-                "grid aspect-square w-full place-items-center rounded-md border border-dashed text-muted-foreground transition-all duration-300 ease-out hover:border-foreground/40 hover:text-foreground",
-                dragging && dropReady,
+                "relative grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-dashed text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
+                dragFrom && "border-foreground/40 text-foreground",
               )}
             >
-              <ImagePlusIcon
-                className={cn("size-5 transition-transform duration-300 ease-out", dragging && "-translate-y-0.5 scale-125")}
-              />
+              <DropGlow from={dragFrom} />
+              <ImagePlusIcon className="relative size-5" />
             </button>
           </li>
         )}

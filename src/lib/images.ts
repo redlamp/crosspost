@@ -94,12 +94,16 @@ function carriesImages(data: DataTransfer | null) {
   return items.length === 0 || items.some((i) => i.kind === "file" && i.type.startsWith("image/"))
 }
 
+export type Point = { x: number; y: number }
+
 /**
- * Accept files dropped anywhere on the page (so a missed drop never opens the
- * image in place of the app), and report while images are dragged over it.
+ * Accept images pasted or dropped anywhere on the page, focused field or not
+ * (a missed drop would otherwise open the image in place of the app). While
+ * images are dragged over the page, returns where the drag entered the
+ * window; otherwise null.
  */
-export function useWindowImageDrop(onFiles: (files: File[]) => void) {
-  const [dragging, setDragging] = useState(false)
+export function usePageImageInput(onFiles: (files: File[]) => void): Point | null {
+  const [entry, setEntry] = useState<Point | null>(null)
   const handler = useRef(onFiles)
   useEffect(() => {
     handler.current = onFiles
@@ -114,27 +118,37 @@ export function useWindowImageDrop(onFiles: (files: File[]) => void) {
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
       if (!carriesImages(e.dataTransfer)) return
-      setDragging(true)
+      const at = { x: e.clientX, y: e.clientY }
+      setEntry((current) => current ?? at)
       clearTimeout(timer)
-      timer = setTimeout(() => setDragging(false), 400)
+      timer = setTimeout(() => setEntry(null), 400)
     }
     const drop = (e: DragEvent) => {
       if (!e.dataTransfer?.types.includes("Files")) return
       e.preventDefault()
       clearTimeout(timer)
-      setDragging(false)
+      setEntry(null)
       handler.current([...e.dataTransfer.files])
+    }
+    // Pasted images are staged; pasted text still lands wherever it's going.
+    const paste = (e: ClipboardEvent) => {
+      const files = imageFiles(e.clipboardData)
+      if (!files.length) return
+      e.preventDefault()
+      handler.current(files)
     }
     window.addEventListener("dragover", over)
     window.addEventListener("drop", drop)
+    window.addEventListener("paste", paste)
     return () => {
       clearTimeout(timer)
       window.removeEventListener("dragover", over)
       window.removeEventListener("drop", drop)
+      window.removeEventListener("paste", paste)
     }
   }, [])
 
-  return dragging
+  return entry
 }
 
 /** Image files in a paste or drop, if any. */

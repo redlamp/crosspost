@@ -1,22 +1,21 @@
 "use client"
 
-import { BroomIcon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { BroomIcon, ImageMinusIcon } from "lucide-react"
+import { useCallback, useMemo, useRef } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
+import { ConfirmButton } from "@/components/confirm-button"
 import { ImageTray } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { imageFiles, MAX_IMAGES, useStagedImages, useWindowImageDrop } from "@/lib/images"
-import { cn } from "@/lib/utils"
+import { MAX_IMAGES, usePageImageInput, useStagedImages } from "@/lib/images"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -57,7 +56,7 @@ export default function Composer() {
     if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
     else if (!added) toast.info("Only images can be staged for now.")
   }
-  const dragging = useWindowImageDrop(addImages)
+  const dragFrom = usePageImageInput(addImages)
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -176,7 +175,6 @@ export default function Composer() {
     setDraft("")
     setBreaks({})
     setImages([])
-    setConfirming(false)
     toast("Post cleared", {
       action: {
         label: "Undo",
@@ -189,31 +187,19 @@ export default function Composer() {
     })
   }
   const nothingToClear = !draft && Object.keys(breaks).length === 0 && images.length === 0
+  const clearImages = () => {
+    const saved = images
+    setImages([])
+    toast(saved.length === 1 ? "Image cleared" : "Images cleared", {
+      action: { label: "Undo", onClick: () => setImages(saved) },
+    })
+  }
 
-  // Clearing takes a second click; the question backs out on its own after a few seconds.
-  const [confirming, setConfirming] = useState(false)
-  useEffect(() => {
-    if (!confirming) return
-    const timer = setTimeout(() => setConfirming(false), 5000)
-    return () => clearTimeout(timer)
-  }, [confirming])
 
   return (
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
       <div className="space-y-4 lg:sticky lg:top-20">
-        <Card
-          className={cn(
-            "gap-4 transition-[box-shadow,border-color] duration-300 ease-out",
-            dragging && "border-sky-500/50 shadow-[0_0_0_4px] shadow-sky-500/10",
-          )}
-          // Images pasted into Compose are staged, not put in the text.
-          onPaste={(e) => {
-            const files = imageFiles(e.clipboardData)
-            if (!files.length) return
-            e.preventDefault()
-            addImages(files)
-          }}
-        >
+        <Card className="gap-4">
           <CardContent className="space-y-4">
             <ComposeEditor
               value={draft}
@@ -253,27 +239,19 @@ export default function Composer() {
             </div>
             <ImageTray
               images={images}
-              dragging={dragging}
+              dragFrom={dragFrom}
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
             />
             <div className="flex flex-wrap items-center justify-start gap-3">
-              <Button
-                variant={confirming ? "destructive" : "outline"}
-                // Outline has a 1px border and destructive none; keep one so the width holds.
-                className={cn("border", confirming && "border-transparent")}
-                onClick={confirming ? startOver : () => setConfirming(true)}
-                onBlur={() => setConfirming(false)}
-                onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
-                disabled={nothingToClear}
-              >
-                <BroomIcon />
-                {/* Both labels share one grid cell, so the button keeps the wider one's width. */}
-                <span className="grid">
-                  <span className={cn("col-start-1 row-start-1", confirming && "invisible")}>Clear post</span>
-                  <span className={cn("col-start-1 row-start-1", !confirming && "invisible")}>Confirm</span>
-                </span>
-              </Button>
+              <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
+              {images.length > 0 && (
+                <ConfirmButton
+                  icon={<ImageMinusIcon />}
+                  label={images.length === 1 ? "Clear Image" : "Clear Images"}
+                  onConfirm={clearImages}
+                />
+              )}
             </div>
           </CardContent>
         </Card>
