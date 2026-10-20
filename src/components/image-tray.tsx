@@ -220,7 +220,7 @@ export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
             aria-pressed={copied.has(img.id)}
             className={cn(
               "relative block size-10 overflow-hidden rounded border bg-muted outline-none",
-              copied.has(img.id) && "border-(--brand)",
+
               "focus-visible:ring-2 focus-visible:ring-(--brand) hover:ring-2 hover:ring-(--brand)",
             )}
           >
@@ -230,14 +230,18 @@ export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
               alt={`Image ${i + 1}`}
               draggable
               onDragStart={(e) => dragOut(e, img)}
-              className="size-full object-cover"
+              className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
             />
-            <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-0.5 text-[9px] leading-tight text-white tabular-nums">
-              {i + 1}
-            </span>
-            {copied.has(img.id) && (
-              <span className="absolute top-0.5 right-0.5 grid size-3.5 place-items-center rounded-full bg-(--brand) text-white">
-                <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
+            {copied.has(img.id) ? (
+              // Copied: grayed out like a done item, with the check on top.
+              <span className="absolute inset-0 grid place-items-center">
+                <span className="grid size-5 place-items-center rounded-full bg-(--brand) text-white shadow-sm">
+                  <CheckIcon className="size-3.5" strokeWidth={3} aria-label="Copied" />
+                </span>
+              </span>
+            ) : (
+              <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-0.5 text-[9px] leading-tight text-white tabular-nums">
+                {i + 1}
               </span>
             )}
           </button>
