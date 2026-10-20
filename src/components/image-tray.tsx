@@ -204,7 +204,7 @@ type StripProps = {
 /** Small thumbnails on a platform card: click to copy, or drag into the post. Copied ones get a check. */
 export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
   return (
-    <ol className="flex flex-wrap gap-1.5" aria-label={`Images for ${platform}`}>
+    <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform}`}>
       {images.map((img, i) => (
         <li key={img.id}>
           <button
@@ -218,30 +218,31 @@ export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
                 : `Copy image ${i + 1}, or drag it into the post`
             }
             aria-pressed={copied.has(img.id)}
-            className={cn(
-              "relative block size-10 overflow-hidden rounded border bg-muted outline-none",
-
-              "focus-visible:ring-2 focus-visible:ring-(--brand) hover:ring-2 hover:ring-(--brand)",
-            )}
+            className="group/thumb relative block size-14 rounded outline-none"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-            <img
-              src={img.url}
-              alt={`Image ${i + 1}`}
-              draggable
-              onDragStart={(e) => dragOut(e, img)}
-              className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
-            />
-            {copied.has(img.id) ? (
-              // Copied: grayed out like a done item, with a blue check on top (the same on every card).
-              <span className="absolute inset-0 grid place-items-center">
-                <span className="grid size-5 place-items-center rounded-full bg-sky-500 text-white shadow-sm">
-                  <CheckIcon className="size-3.5" strokeWidth={3} aria-label="Copied" />
-                </span>
-              </span>
-            ) : (
-              <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-0.5 text-[9px] leading-tight text-white tabular-nums">
-                {i + 1}
+            <span
+              className={cn(
+                "block size-full overflow-hidden rounded border bg-muted",
+                "group-hover/thumb:ring-2 group-hover/thumb:ring-(--brand) group-focus-visible/thumb:ring-2 group-focus-visible/thumb:ring-(--brand)",
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+              <img
+                src={img.url}
+                alt={`Image ${i + 1}`}
+                draggable
+                onDragStart={(e) => dragOut(e, img)}
+                className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
+              />
+            </span>
+            <span className="absolute top-1 right-1 rounded-sm bg-black/60 px-1 text-[10px] leading-tight text-white tabular-nums">
+              {i + 1}
+            </span>
+            {copied.has(img.id) && (
+              // Copied: grayed out like a done item, with a blue check badge on the corner
+              // (placed like the post counts on the rail, the same blue on every card).
+              <span className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
+                <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
               </span>
             )}
           </button>
