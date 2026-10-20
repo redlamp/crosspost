@@ -231,6 +231,8 @@ export default function Composer() {
             <div className="flex flex-wrap items-center justify-start gap-3">
               <Button
                 variant={confirming ? "destructive" : "outline"}
+                // Outline has a 1px border and destructive none; keep one so the width holds.
+                className={cn("border", confirming && "border-transparent")}
                 onClick={confirming ? startOver : () => setConfirming(true)}
                 onBlur={() => setConfirming(false)}
                 onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
