@@ -1,7 +1,7 @@
 "use client"
 
 import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, TriangleAlertIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
@@ -106,6 +106,18 @@ export function PlatformCard({
   const [placement, setPlacement] = useState<Record<string, number>>({})
   // The post an image is being dragged from, while one is.
   const [movingFrom, setMovingFrom] = useState<number | null>(null)
+  // A drop that moves the image removes the element the drag started on, so
+  // its dragend never reaches React. Catch the end of any drag on the window.
+  useEffect(() => {
+    if (movingFrom === null) return
+    const end = () => setMovingFrom(null)
+    window.addEventListener("dragend", end, true)
+    window.addEventListener("drop", end, true)
+    return () => {
+      window.removeEventListener("dragend", end, true)
+      window.removeEventListener("drop", end, true)
+    }
+  }, [movingFrom])
   const postOf = (id: string) => (splits ? Math.min(placement[id] ?? 0, chunks.length - 1) : 0)
 
   return (
@@ -259,7 +271,14 @@ export function PlatformCard({
                           onHide={(id) => setHiddenImages((s) => new Set(s).add(id))}
                           hiddenCount={showHidden ? hiddenCount : 0}
                           onShowHidden={() => setHiddenImages(new Set())}
-                          onMove={splits ? (id) => setPlacement((p) => ({ ...p, [id]: i })) : undefined}
+                          onMove={
+                            splits
+                              ? (id) => {
+                                  setPlacement((p) => ({ ...p, [id]: i }))
+                                  setMovingFrom(null)
+                                }
+                              : undefined
+                          }
                           moving={movingFrom !== null && movingFrom !== i}
                           onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
                         />
