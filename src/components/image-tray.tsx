@@ -1,7 +1,7 @@
 "use client"
 
 import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
-import { useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { copyImage, downloadImage, dragOut, MAX_IMAGES, type ImageDrag, type StagedImage } from "@/lib/images"
@@ -193,6 +193,45 @@ export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   )
 }
 
+/**
+ * The x on a card thumbnail. The first click turns it red; the second leaves
+ * the image off. It backs out when the pointer or focus leaves, or after a
+ * few seconds.
+ */
+function LeaveOffButton({ label, onConfirm }: { label: string; onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    if (!confirming) return
+    const timer = setTimeout(() => setConfirming(false), 4000)
+    return () => clearTimeout(timer)
+  }, [confirming])
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (!confirming) return setConfirming(true)
+        setConfirming(false)
+        onConfirm()
+      }}
+      onBlur={() => setConfirming(false)}
+      onMouseLeave={() => setConfirming(false)}
+      onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
+      aria-label={confirming ? `${label}: click again to confirm` : label}
+      title={confirming ? "Click again to confirm" : label}
+      className={cn(
+        // Sits over the corner, poking out above the thumbnail.
+        "absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100",
+        confirming
+          ? "bg-destructive opacity-100"
+          : "bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600",
+      )}
+    >
+      <XIcon className="size-3" strokeWidth={3} />
+    </button>
+  )
+}
+
 type StripProps = {
   images: StagedImage[]
   platform: string
@@ -242,15 +281,10 @@ export function ImageStrip({ images, platform, copied, onCopied, hidden, onHidde
               <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
                 {i + 1}
               </span>
-              <button
-                type="button"
-                onClick={() => onHiddenChange(new Set(hidden).add(img.id))}
-                aria-label={`Leave image ${i + 1} off ${platform}`}
-                title={`Leave off ${platform}`}
-                className="absolute top-1 right-1 grid size-5 place-items-center rounded-md bg-black/60 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/thumb:opacity-100 hover:bg-black/80 focus-visible:opacity-100"
-              >
-                <XIcon className="size-3" />
-              </button>
+              <LeaveOffButton
+                label={`Leave image ${i + 1} off ${platform}`}
+                onConfirm={() => onHiddenChange(new Set(hidden).add(img.id))}
+              />
               {copied.has(img.id) && (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
                 // (placed like the post counts on the rail, the same blue on every card).
