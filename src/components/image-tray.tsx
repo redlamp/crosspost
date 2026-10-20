@@ -561,7 +561,7 @@ export function ImageStrip({
             dropHint && "border-(--brand) text-foreground",
           )}
         >
-          {dropHint === "only" ? `Move here on ${platform.name} only` : dropHint === "all" ? "Move here on all threads" : "Move here"}
+          {dropHint === "only" ? `Move here on ${platform.name} only` : dropHint === "all" ? "Move here on all threads. (+ctrl for solo)" : "Move here"}
         </div>
       )}
       {hiddenCount > 0 && (
