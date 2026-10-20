@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
 import { ConfirmButton } from "@/components/confirm-button"
-import { ImageTray } from "@/components/image-tray"
+import { ImageDropZone, ImageTray } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
@@ -237,20 +237,25 @@ export default function Composer() {
               </div>
               <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
             </div>
-            <ImageTray
-              images={images}
-              drag={drag}
-              onAdd={addImages}
-              onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
-            />
-            <div className="flex flex-wrap items-center justify-start gap-3">
+            {images.length > 0 && (
+              <ImageTray
+                images={images}
+                drag={drag}
+                onAdd={addImages}
+                onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
+              />
+            )}
+            <div className="flex items-start gap-3">
               <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
-              {images.length > 0 && (
+              {images.length > 0 ? (
                 <ConfirmButton
                   icon={<ImageMinusIcon />}
                   label={images.length === 1 ? "Clear Image" : "Clear Images"}
                   onConfirm={clearImages}
                 />
+              ) : (
+                // With nothing staged, the drop zone shares this row and grows while an image is dragged in.
+                <ImageDropZone drag={drag} onAdd={addImages} className="flex-1" />
               )}
             </div>
           </CardContent>

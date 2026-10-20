@@ -75,6 +75,55 @@ function DropGlow({ drag }: { drag: ImageDrag | null }) {
   )
 }
 
+type DropZoneProps = {
+  /** An image drag over the page: the zone grows and glows. */
+  drag?: ImageDrag | null
+  onAdd: (files: File[]) => void
+  className?: string
+}
+
+/**
+ * The image drop target while nothing is staged: a slim bar that sits beside
+ * Clear Post and grows taller while an image is dragged over the page.
+ */
+export function ImageDropZone({ drag = null, onAdd, className }: DropZoneProps) {
+  const input = useRef<HTMLInputElement>(null)
+  const active = drag?.phase === "in"
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          onAdd([...(e.target.files ?? [])])
+          e.target.value = ""
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => input.current?.click()}
+        className={cn(
+          "relative flex h-9 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-3 text-sm text-muted-foreground transition-[height,color,border-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-foreground/40 hover:text-foreground",
+          active && "h-24 flex-col gap-1.5 border-foreground/40 text-foreground",
+          className,
+        )}
+      >
+        <DropGlow drag={drag} />
+        <ImagePlusIcon className="relative size-4 shrink-0" />
+        <span
+          className={cn("relative", active ? "text-center text-balance" : "truncate")}
+          title={`Drop, paste, or pick up to ${MAX_IMAGES} images`}
+        >
+          {active ? `Drop, paste, or pick up to ${MAX_IMAGES} images` : "Drop, paste, or pick images"}
+        </span>
+      </button>
+    </>
+  )
+}
+
 type TrayProps = {
   images: StagedImage[]
   /** An image drag over the page, for the drop highlight. */
@@ -83,7 +132,7 @@ type TrayProps = {
   onRemove: (id: string) => void
 }
 
-/** Images staged for the post: drop, paste or pick them; copy, drag or download each one. */
+/** Staged images in one row: copy, drag, download or remove each one, or add more in the empty slot. */
 export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
   const picker = (
@@ -99,26 +148,6 @@ export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
       }}
     />
   )
-
-  if (images.length === 0) {
-    return (
-      <>
-        {picker}
-        <button
-          type="button"
-          onClick={() => input.current?.click()}
-          className={cn(
-            "relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
-            drag?.phase === "in" && "border-foreground/40 text-foreground",
-          )}
-        >
-          <DropGlow drag={drag} />
-          <ImagePlusIcon className="relative size-4" />
-          <span className="relative">Drop, paste, or pick up to {MAX_IMAGES} images</span>
-        </button>
-      </>
-    )
-  }
 
   return (
     <div className="space-y-2">
