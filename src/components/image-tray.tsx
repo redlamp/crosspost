@@ -58,8 +58,8 @@ function DropGlow({ drag }: { drag: ImageDrag | null }) {
     el.style.transition = entering
       ? // Expo-style ease-out: a quick burst from the entry point that glides to rest.
         "transform 1100ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out"
-      : // Ease-in-out: gathers, then pulls away toward the exit.
-        "transform 1000ms cubic-bezier(0.65, 0, 0.35, 1), opacity 300ms ease-out"
+      : // Accelerate: a short ramp up, then full speed out toward the exit, no settling.
+        "transform 700ms cubic-bezier(0.4, 0, 1, 1), opacity 300ms ease-out"
     el.style.transform = entering ? "scale(1)" : "scale(0)"
   }, [drag])
 
