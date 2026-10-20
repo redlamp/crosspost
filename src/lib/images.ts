@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 // Staged images live in this browser's IndexedDB (localStorage can't hold
 // files). Nothing is uploaded: the user copies or drags each image into the
@@ -85,6 +85,56 @@ export function useStagedImages() {
   }
 
   return { images, setImages, add }
+}
+
+/** Whether a drag carries image files. Chrome and Firefox show file types mid-drag; if not, any file counts. */
+function carriesImages(data: DataTransfer | null) {
+  if (!data?.types.includes("Files")) return false
+  const items = [...data.items]
+  return items.length === 0 || items.some((i) => i.kind === "file" && i.type.startsWith("image/"))
+}
+
+/**
+ * Accept files dropped anywhere on the page (so a missed drop never opens the
+ * image in place of the app), and report while images are dragged over it.
+ */
+export function useWindowImageDrop(onFiles: (files: File[]) => void) {
+  const [dragging, setDragging] = useState(false)
+  const handler = useRef(onFiles)
+  useEffect(() => {
+    handler.current = onFiles
+  })
+
+  useEffect(() => {
+    // dragover repeats every few hundred ms while a drag stays over the page,
+    // so the state ends shortly after the drag leaves or is dropped.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const over = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+      if (!carriesImages(e.dataTransfer)) return
+      setDragging(true)
+      clearTimeout(timer)
+      timer = setTimeout(() => setDragging(false), 400)
+    }
+    const drop = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return
+      e.preventDefault()
+      clearTimeout(timer)
+      setDragging(false)
+      handler.current([...e.dataTransfer.files])
+    }
+    window.addEventListener("dragover", over)
+    window.addEventListener("drop", drop)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("dragover", over)
+      window.removeEventListener("drop", drop)
+    }
+  }, [])
+
+  return dragging
 }
 
 /** Image files in a paste or drop, if any. */

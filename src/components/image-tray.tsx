@@ -19,14 +19,20 @@ export async function copyWithToast(img: StagedImage, what = "image") {
 const tileButton =
   "grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
 
+// Drop targets light up while images are dragged over the page.
+const dropReady =
+  "scale-[1.02] border-sky-500 bg-sky-500/10 text-sky-700 shadow-[0_0_0_4px] shadow-sky-500/15 dark:border-sky-400 dark:text-sky-300"
+
 type TrayProps = {
   images: StagedImage[]
+  /** Images are being dragged over the page. */
+  dragging?: boolean
   onAdd: (files: File[]) => void
   onRemove: (id: string) => void
 }
 
 /** Images staged for the post: drop, paste or pick them; copy, drag or download each one. */
-export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
+export function ImageTray({ images, dragging, onAdd, onRemove }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
   const picker = (
     <input
@@ -49,10 +55,15 @@ export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
         <button
           type="button"
           onClick={() => input.current?.click()}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-all duration-300 ease-out hover:border-foreground/40 hover:text-foreground",
+            dragging && dropReady,
+          )}
         >
-          <ImagePlusIcon className="size-4" />
-          Drop, paste or pick up to {MAX_IMAGES} images
+          <ImagePlusIcon
+            className={cn("size-4 transition-transform duration-300 ease-out", dragging && "-translate-y-0.5 scale-125")}
+          />
+          Drop, paste, or pick up to {MAX_IMAGES} images
         </button>
       </>
     )
@@ -116,9 +127,14 @@ export function ImageTray({ images, onAdd, onRemove }: TrayProps) {
               onClick={() => input.current?.click()}
               aria-label="Add images"
               title={`Add images (up to ${MAX_IMAGES})`}
-              className="grid aspect-square w-full place-items-center rounded-md border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+              className={cn(
+                "grid aspect-square w-full place-items-center rounded-md border border-dashed text-muted-foreground transition-all duration-300 ease-out hover:border-foreground/40 hover:text-foreground",
+                dragging && dropReady,
+              )}
             >
-              <ImagePlusIcon className="size-5" />
+              <ImagePlusIcon
+                className={cn("size-5 transition-transform duration-300 ease-out", dragging && "-translate-y-0.5 scale-125")}
+              />
             </button>
           </li>
         )}

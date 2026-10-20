@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { imageFiles, MAX_IMAGES, useStagedImages } from "@/lib/images"
+import { imageFiles, MAX_IMAGES, useStagedImages, useWindowImageDrop } from "@/lib/images"
 import { cn } from "@/lib/utils"
 import { useStoredState } from "@/lib/use-stored-state"
 
@@ -52,12 +52,12 @@ export default function Composer() {
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
   const { images, setImages, add: stageImages } = useStagedImages()
-  const [dropping, setDropping] = useState(false)
   const addImages = (files: File[]) => {
     const { added, skipped } = stageImages(files)
     if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
     else if (!added) toast.info("Only images can be staged for now.")
   }
+  const dragging = useWindowImageDrop(addImages)
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -202,29 +202,16 @@ export default function Composer() {
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
       <div className="space-y-4 lg:sticky lg:top-20">
         <Card
-          className={cn("gap-4 transition-shadow", dropping && "ring-2 ring-primary/50")}
-          // Images dropped or pasted anywhere on Compose are staged, not put in the text.
+          className={cn(
+            "gap-4 transition-[box-shadow,border-color] duration-300 ease-out",
+            dragging && "border-sky-500/50 shadow-[0_0_0_4px] shadow-sky-500/10",
+          )}
+          // Images pasted into Compose are staged, not put in the text.
           onPaste={(e) => {
             const files = imageFiles(e.clipboardData)
             if (!files.length) return
             e.preventDefault()
             addImages(files)
-          }}
-          onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes("Files")) return
-            e.preventDefault()
-            setDropping(true)
-          }}
-          onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false)
-          }}
-          onDrop={(e) => {
-            setDropping(false)
-            const files = imageFiles(e.dataTransfer)
-            if (!e.dataTransfer.types.includes("Files")) return
-            e.preventDefault()
-            if (files.length) addImages(files)
-            else toast.info("Only images can be staged for now.")
           }}
         >
           <CardContent className="space-y-4">
@@ -266,6 +253,7 @@ export default function Composer() {
             </div>
             <ImageTray
               images={images}
+              dragging={dragging}
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
             />
