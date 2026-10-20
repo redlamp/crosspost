@@ -1,18 +1,21 @@
 "use client"
 
-import { CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
 import { useLayoutEffect, useRef } from "react"
 import { toast } from "sonner"
 
 import { copyImage, downloadImage, dragOut, MAX_IMAGES, type ImageDrag, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
+/** Copy an image, with a toast either way. Resolves to whether it worked. */
 export async function copyWithToast(img: StagedImage, what = "image") {
   try {
     await copyImage(img)
     toast.success(`Copied ${what}. Paste it into the post.`)
+    return true
   } catch {
     toast.error(`Couldn't copy ${what}. Drag it or download it instead.`)
+    return false
   }
 }
 
@@ -190,18 +193,34 @@ export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   )
 }
 
-/** Small thumbnails on a platform card: click to copy, or drag into the post. */
-export function ImageStrip({ images, platform }: { images: StagedImage[]; platform: string }) {
+type StripProps = {
+  images: StagedImage[]
+  platform: string
+  /** Ids of the images already copied from this card. */
+  copied: ReadonlySet<string>
+  onCopied: (id: string) => void
+}
+
+/** Small thumbnails on a platform card: click to copy, or drag into the post. Copied ones get a check. */
+export function ImageStrip({ images, platform, copied, onCopied }: StripProps) {
   return (
     <ol className="flex flex-wrap gap-1.5" aria-label={`Images for ${platform}`}>
       {images.map((img, i) => (
         <li key={img.id}>
           <button
             type="button"
-            onClick={() => copyWithToast(img, `image ${i + 1}`)}
-            title={`Copy image ${i + 1}, or drag it into the post`}
+            onClick={async () => {
+              if (await copyWithToast(img, `image ${i + 1}`)) onCopied(img.id)
+            }}
+            title={
+              copied.has(img.id)
+                ? `Image ${i + 1} copied for ${platform}. Click to copy again.`
+                : `Copy image ${i + 1}, or drag it into the post`
+            }
+            aria-pressed={copied.has(img.id)}
             className={cn(
               "relative block size-10 overflow-hidden rounded border bg-muted outline-none",
+              copied.has(img.id) && "border-(--brand)",
               "focus-visible:ring-2 focus-visible:ring-(--brand) hover:ring-2 hover:ring-(--brand)",
             )}
           >
@@ -216,6 +235,11 @@ export function ImageStrip({ images, platform }: { images: StagedImage[]; platfo
             <span className="absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-0.5 text-[9px] leading-tight text-white tabular-nums">
               {i + 1}
             </span>
+            {copied.has(img.id) && (
+              <span className="absolute top-0.5 right-0.5 grid size-3.5 place-items-center rounded-full bg-(--brand) text-white">
+                <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
+              </span>
+            )}
           </button>
         </li>
       ))}

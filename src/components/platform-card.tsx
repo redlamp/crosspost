@@ -1,6 +1,7 @@
 "use client"
 
 import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, TriangleAlertIcon } from "lucide-react"
+import { useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
@@ -92,6 +93,8 @@ export function PlatformCard({
   const splits = adapter.chain && chunks.length > 1
   const switchId = `platform-${adapter.id}`
   const problem = firstProblem(adapter, chunks)
+  // Images copied from this card, so it's clear which are already in the post.
+  const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
   const needsImage = adapter.needsImage && images.length === 0 && chunks.length > 0
 
   return (
@@ -226,7 +229,12 @@ export function PlatformCard({
                   <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
                   {i === 0 && images.length > 0 && (
                     <div className="mt-2">
-                      <ImageStrip images={images} platform={adapter.name} />
+                      <ImageStrip
+                        images={images}
+                        platform={adapter.name}
+                        copied={copiedImages}
+                        onCopied={(id) => setCopiedImages((s) => new Set(s).add(id))}
+                      />
                     </div>
                   )}
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
