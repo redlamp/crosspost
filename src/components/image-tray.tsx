@@ -387,7 +387,7 @@ type StripProps = {
   platform: string
   /** Ids of the images already copied from this card. */
   copied: ReadonlySet<string>
-  onCopied: (id: string) => void
+  onCopiedChange: (id: string, copied: boolean) => void
   /** Ids of the images left off this platform's post. */
   hidden: ReadonlySet<string>
   onHiddenChange: (hidden: ReadonlySet<string>) => void
@@ -398,7 +398,7 @@ type StripProps = {
  * Copied ones get a check; the x leaves one off this platform only. Numbers
  * match the Compose tray, so a skipped image leaves a gap.
  */
-export function ImageStrip({ images, platform, copied, onCopied, hidden, onHiddenChange }: StripProps) {
+export function ImageStrip({ images, platform, copied, onCopiedChange, hidden, onHiddenChange }: StripProps) {
   const hiddenCount = images.filter((img) => hidden.has(img.id)).length
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -409,7 +409,7 @@ export function ImageStrip({ images, platform, copied, onCopied, hidden, onHidde
               <button
                 type="button"
                 onClick={async () => {
-                  if (await copyWithToast(img, `image ${i + 1}`)) onCopied(img.id)
+                  if (await copyWithToast(img, `image ${i + 1}`)) onCopiedChange(img.id, true)
                 }}
                 title={
                   copied.has(img.id)
@@ -441,9 +441,16 @@ export function ImageStrip({ images, platform, copied, onCopied, hidden, onHidde
               {copied.has(img.id) && (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
                 // (placed like the post counts on the rail, the same blue on every card).
-                <span className="pointer-events-none absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
-                  <CheckIcon className="size-2.5" strokeWidth={3.5} aria-label="Copied" />
-                </span>
+                // Hovering turns it red; clicking clears it.
+                <button
+                  type="button"
+                  onClick={() => onCopiedChange(img.id, false)}
+                  aria-label={`Image ${i + 1} copied. Clear the check`}
+                  title="Clear the copied check"
+                  className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                >
+                  <CheckIcon className="size-2.5" strokeWidth={3.5} />
+                </button>
               )}
             </li>
           ),

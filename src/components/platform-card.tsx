@@ -236,7 +236,14 @@ export function PlatformCard({
                         images={images}
                         platform={adapter.name}
                         copied={copiedImages}
-                        onCopied={(id) => setCopiedImages((s) => new Set(s).add(id))}
+                        onCopiedChange={(id, copied) =>
+                          setCopiedImages((s) => {
+                            const next = new Set(s)
+                            if (copied) next.add(id)
+                            else next.delete(id)
+                            return next
+                          })
+                        }
                         hidden={hiddenImages}
                         onHiddenChange={setHiddenImages}
                       />
