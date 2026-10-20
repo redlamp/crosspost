@@ -91,6 +91,13 @@ function DropGlow({ drag, frame }: { drag: ImageDrag | null; frame?: (el: HTMLEl
 
 const EASE = "ease-[cubic-bezier(0.16,1,0.3,1)]"
 
+/** The key that keeps an image move on one card: ⌘ on a Mac, Ctrl elsewhere (either works). */
+const MOVE_KEY =
+  typeof navigator !== "undefined" &&
+  /mac/i.test((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform)
+    ? "⌘"
+    : "Ctrl"
+
 const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
 
 /** The empty drop bar's label for a drag of `count` images (null: the browser doesn't say). */
@@ -552,16 +559,25 @@ export function ImageStrip({
       </ol>
       {moving && movable && (
         // Where a dragged image lands on this post: the rest of the row, as
-        // tall as a thumbnail. Hovered, it says whether the move mirrors to
-        // every threaded platform or stays on this one.
+        // tall as a thumbnail. Always two lines, so pressing or releasing the
+        // key only swaps words: what the drop does, then how to change it.
         <div
           aria-hidden
           className={cn(
-            "grid h-14 min-w-40 flex-1 place-items-center rounded border border-dashed px-3 text-center text-sm text-muted-foreground transition-colors",
+            "flex h-14 min-w-40 flex-1 flex-col items-center justify-center rounded border border-dashed px-3 text-center leading-tight text-muted-foreground transition-colors",
             dropHint && "border-(--brand) text-foreground",
           )}
         >
-          {dropHint === "only" ? `Move here on ${platform.name} only` : dropHint === "all" ? "Move here on all threads. (+ctrl for solo)" : "Move here"}
+          <span className="text-sm">
+            {dropHint === "only"
+              ? `Move here on ${platform.name} only`
+              : dropHint === "all"
+                ? "Move here on all threads"
+                : "Move here"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {dropHint === "only" ? `Release ${MOVE_KEY} for all threads` : `Hold ${MOVE_KEY} for ${platform.name} only`}
+          </span>
         </div>
       )}
       {hiddenCount > 0 && (
