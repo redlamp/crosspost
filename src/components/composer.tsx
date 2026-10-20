@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { cn } from "@/lib/utils"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -236,7 +237,11 @@ export default function Composer() {
                 disabled={nothingToClear}
               >
                 <BroomIcon />
-                {confirming ? "Confirm" : "Clear post"}
+                {/* Both labels share one grid cell, so the button keeps the wider one's width. */}
+                <span className="grid">
+                  <span className={cn("col-start-1 row-start-1", confirming && "invisible")}>Clear post</span>
+                  <span className={cn("col-start-1 row-start-1", !confirming && "invisible")}>Confirm</span>
+                </span>
               </Button>
             </div>
           </CardContent>
