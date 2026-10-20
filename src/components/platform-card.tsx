@@ -115,10 +115,13 @@ export function PlatformCard({
   // its dragend never reaches React. Catch the end of any drag on the window.
   useEffect(() => {
     if (movingFrom === null) return
-    const end = () => {
-      setMovingFrom(null)
-      setDropOn(null)
-    }
+    // Deferred: resetting first would remove the Move here row before a drop
+    // on it reaches the post.
+    const end = () =>
+      setTimeout(() => {
+        setMovingFrom(null)
+        setDropOn(null)
+      }, 0)
     window.addEventListener("dragend", end, true)
     window.addEventListener("drop", end, true)
     return () => {
