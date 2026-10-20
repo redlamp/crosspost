@@ -95,10 +95,18 @@ export function PlatformCard({
   const problem = firstProblem(adapter, chunks)
   // Images copied from this card, so it's clear which are already in the post.
   const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
-  // Images the user left off this platform; the rest go with its first post.
+  // Images the user left off this platform.
   const [hiddenImages, setHiddenImages] = useState<ReadonlySet<string>>(new Set())
-  const shownImages = images.filter((img) => !hiddenImages.has(img.id))
-  const needsImage = adapter.needsImage && shownImages.length === 0 && chunks.length > 0
+  // The rest, numbered as in the Compose tray.
+  const shown = images.map((img, i) => ({ img, n: i + 1 })).filter(({ img }) => !hiddenImages.has(img.id))
+  const hiddenCount = images.length - shown.length
+  const needsImage = adapter.needsImage && shown.length === 0 && chunks.length > 0
+  // Which post each image goes with: the first unless moved. Images on a
+  // post that no longer exists fall back to the last one.
+  const [placement, setPlacement] = useState<Record<string, number>>({})
+  // The post an image is being dragged from, while one is.
+  const [movingFrom, setMovingFrom] = useState<number | null>(null)
+  const postOf = (id: string) => (splits ? Math.min(placement[id] ?? 0, chunks.length - 1) : 0)
 
   return (
     <Card
@@ -230,25 +238,34 @@ export function PlatformCard({
               return (
                 <li key={i} className="rounded-md border bg-background/40 p-3">
                   <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
-                  {i === 0 && images.length > 0 && (
-                    <div className="mt-2">
-                      <ImageStrip
-                        images={images}
-                        platform={adapter.name}
-                        copied={copiedImages}
-                        onCopiedChange={(id, copied) =>
-                          setCopiedImages((s) => {
-                            const next = new Set(s)
-                            if (copied) next.add(id)
-                            else next.delete(id)
-                            return next
-                          })
-                        }
-                        hidden={hiddenImages}
-                        onHiddenChange={setHiddenImages}
-                      />
-                    </div>
-                  )}
+                  {(() => {
+                    const items = shown.filter(({ img }) => postOf(img.id) === i)
+                    const showHidden = i === 0 && hiddenCount > 0
+                    if (items.length === 0 && !showHidden && !(movingFrom !== null && splits)) return null
+                    return (
+                      <div className="mt-2">
+                        <ImageStrip
+                          items={items}
+                          platform={adapter}
+                          copied={copiedImages}
+                          onCopiedChange={(id, copied) =>
+                            setCopiedImages((s) => {
+                              const next = new Set(s)
+                              if (copied) next.add(id)
+                              else next.delete(id)
+                              return next
+                            })
+                          }
+                          onHide={(id) => setHiddenImages((s) => new Set(s).add(id))}
+                          hiddenCount={showHidden ? hiddenCount : 0}
+                          onShowHidden={() => setHiddenImages(new Set())}
+                          onMove={splits ? (id) => setPlacement((p) => ({ ...p, [id]: i })) : undefined}
+                          moving={movingFrom !== null && movingFrom !== i}
+                          onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
+                        />
+                      </div>
+                    )
+                  })()}
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
                       {chunks.length > 1 && `${i + 1} · `}

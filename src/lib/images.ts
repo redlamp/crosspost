@@ -138,7 +138,7 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       outTimer = setTimeout(() => setDrag(null), 1200)
     }
     const over = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return
+      if (!e.dataTransfer?.types.includes("Files") || isMoveDrag(e.dataTransfer)) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
       const count = imagesInDrag(e.dataTransfer)
@@ -160,7 +160,7 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       leaveTimer = setTimeout(leave, 50)
     }
     const drop = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files")) return
+      if (!e.dataTransfer?.types.includes("Files") || isMoveDrag(e.dataTransfer)) return
       e.preventDefault()
       clear()
       last = null
@@ -223,8 +223,20 @@ export function downloadImage(img: StagedImage) {
   a.click()
 }
 
-/** Lets the image be dragged out as a file: Chrome saves it on a drop onto the desktop. */
-export function dragOut(e: React.DragEvent, img: StagedImage) {
-  e.dataTransfer.effectAllowed = "copy"
+const MOVE_PREFIX = "application/x-crosspost-move-"
+
+/** Drag type for moving an image between one platform's posts. The type shows mid-drag; the image id only on drop. */
+export const moveType = (platformId: string) => MOVE_PREFIX + platformId
+
+/** A drag of one of the page's own images between posts, which adds nothing. */
+export const isMoveDrag = (data: DataTransfer | null) => !!data?.types.some((t) => t.startsWith(MOVE_PREFIX))
+
+/**
+ * Lets the image be dragged out as a file (Chrome saves it on a drop onto the
+ * desktop) and, given a platform, between that platform's posts.
+ */
+export function dragOut(e: React.DragEvent, img: StagedImage, platformId?: string) {
+  e.dataTransfer.effectAllowed = "copyMove"
   e.dataTransfer.setData("DownloadURL", `${img.blob.type}:${img.name}:${img.url}`)
+  if (platformId) e.dataTransfer.setData(moveType(platformId), img.id)
 }

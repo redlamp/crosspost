@@ -4,7 +4,8 @@ import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import { copyImage, downloadImage, dragOut, MAX_IMAGES, type ImageDrag, type StagedImage } from "@/lib/images"
+import type { PlatformAdapter } from "@/lib/adapters"
+import { copyImage, downloadImage, dragOut, MAX_IMAGES, moveType, type ImageDrag, type StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
@@ -383,83 +384,141 @@ function ConfirmX({ label, onConfirm, className, idleClassName, iconClassName = 
 }
 
 type StripProps = {
-  images: StagedImage[]
-  platform: string
+  /** This post's images, with their numbers in the Compose tray. */
+  items: { img: StagedImage; n: number }[]
+  platform: PlatformAdapter
   /** Ids of the images already copied from this card. */
   copied: ReadonlySet<string>
   onCopiedChange: (id: string, copied: boolean) => void
-  /** Ids of the images left off this platform's post. */
-  hidden: ReadonlySet<string>
-  onHiddenChange: (hidden: ReadonlySet<string>) => void
+  /** Leave an image off this platform. */
+  onHide: (id: string) => void
+  /** Images left off this platform, with a way back; shown on the first post. */
+  hiddenCount?: number
+  onShowHidden?: () => void
+  /** Set when images can move between this platform's posts: an image dropped here moves to this post. */
+  onMove?: (id: string) => void
+  /** One of this card's images is being dragged, so show where it can go. */
+  moving?: boolean
+  onMovingChange?: (moving: boolean) => void
 }
 
 /**
- * Small thumbnails on a platform card: click to copy, or drag into the post.
- * Copied ones get a check; the x leaves one off this platform only. Numbers
- * match the Compose tray, so a skipped image leaves a gap.
+ * Thumbnails on one of a platform card's posts: click to copy, or drag into
+ * the platform's composer or onto another post. Copied ones get a check; the
+ * x leaves one off this platform only. Numbers match the Compose tray.
  */
-export function ImageStrip({ images, platform, copied, onCopiedChange, hidden, onHiddenChange }: StripProps) {
-  const hiddenCount = images.filter((img) => hidden.has(img.id)).length
+export function ImageStrip({
+  items,
+  platform,
+  copied,
+  onCopiedChange,
+  onHide,
+  hiddenCount = 0,
+  onShowHidden,
+  onMove,
+  moving,
+  onMovingChange,
+}: StripProps) {
+  const [over, setOver] = useState(false)
+  const type = moveType(platform.id)
+  const accepts = (e: React.DragEvent) => !!onMove && e.dataTransfer.types.includes(type)
+
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform}`}>
-        {images.map((img, i) =>
-          hidden.has(img.id) ? null : (
-            <li key={img.id} className="group/thumb relative size-14">
+    <div
+      className={cn(
+        "-m-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md p-1 transition-colors",
+        over && "bg-(--brand)/10 ring-1 ring-(--brand)/50",
+      )}
+      onDragOver={(e) => {
+        if (!accepts(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = "move"
+        setOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+      }}
+      onDrop={(e) => {
+        setOver(false)
+        if (!accepts(e)) return
+        e.preventDefault()
+        onMove?.(e.dataTransfer.getData(type))
+      }}
+    >
+      <ol className="flex flex-wrap gap-2.5" aria-label={`Images for ${platform.name}`}>
+        {items.map(({ img, n }) => (
+          <li key={img.id} className="group/thumb relative size-14">
+            <button
+              type="button"
+              onClick={async () => {
+                if (await copyWithToast(img, `image ${n}`)) onCopiedChange(img.id, true)
+              }}
+              title={
+                copied.has(img.id)
+                  ? `Image ${n} copied for ${platform.name}. Click to copy again.`
+                  : onMove
+                    ? `Copy image ${n}, or drag it into the post or onto another post here`
+                    : `Copy image ${n}, or drag it into the post`
+              }
+              aria-pressed={copied.has(img.id)}
+              className="block size-full overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+              <img
+                src={img.url}
+                alt={`Image ${n}`}
+                draggable
+                onDragStart={(e) => {
+                  dragOut(e, img, onMove ? platform.id : undefined)
+                  onMovingChange?.(true)
+                }}
+                onDragEnd={() => onMovingChange?.(false)}
+                className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
+              />
+            </button>
+            <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
+              {n}
+            </span>
+            <ConfirmX
+              label={`Leave image ${n} off ${platform.name}`}
+              onConfirm={() => onHide(img.id)}
+              // Sits over the corner, poking out above the thumbnail.
+              className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
+              idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
+            />
+            {copied.has(img.id) && (
+              // Copied: grayed out like a done item, with a blue check badge on the corner
+              // (placed like the post counts on the rail, the same blue on every card).
+              // Hovering turns it red; clicking clears it.
               <button
                 type="button"
-                onClick={async () => {
-                  if (await copyWithToast(img, `image ${i + 1}`)) onCopiedChange(img.id, true)
-                }}
-                title={
-                  copied.has(img.id)
-                    ? `Image ${i + 1} copied for ${platform}. Click to copy again.`
-                    : `Copy image ${i + 1}, or drag it into the post`
-                }
-                aria-pressed={copied.has(img.id)}
-                className="block size-full overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+                onClick={() => onCopiedChange(img.id, false)}
+                aria-label={`Image ${n} copied. Clear the check`}
+                title="Clear the copied check"
+                className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                <img
-                  src={img.url}
-                  alt={`Image ${i + 1}`}
-                  draggable
-                  onDragStart={(e) => dragOut(e, img)}
-                  className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
-                />
+                <CheckIcon className="size-2.5" strokeWidth={3.5} />
               </button>
-              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
-                {i + 1}
-              </span>
-              <ConfirmX
-                label={`Leave image ${i + 1} off ${platform}`}
-                onConfirm={() => onHiddenChange(new Set(hidden).add(img.id))}
-                // Sits over the corner, poking out above the thumbnail.
-                className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
-                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
-              />
-              {copied.has(img.id) && (
-                // Copied: grayed out like a done item, with a blue check badge on the corner
-                // (placed like the post counts on the rail, the same blue on every card).
-                // Hovering turns it red; clicking clears it.
-                <button
-                  type="button"
-                  onClick={() => onCopiedChange(img.id, false)}
-                  aria-label={`Image ${i + 1} copied. Clear the check`}
-                  title="Clear the copied check"
-                  className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
-                >
-                  <CheckIcon className="size-2.5" strokeWidth={3.5} />
-                </button>
-              )}
-            </li>
-          ),
+            )}
+          </li>
+        ))}
+        {moving && onMove && (
+          // Where a dragged image lands on this post.
+          <li
+            aria-hidden
+            className={cn(
+              "grid size-14 place-items-center rounded border border-dashed text-center text-[10px] leading-tight text-muted-foreground transition-colors",
+              over && "border-(--brand) text-foreground",
+            )}
+          >
+            Move here
+          </li>
         )}
       </ol>
       {hiddenCount > 0 && (
         <button
           type="button"
-          onClick={() => onHiddenChange(new Set())}
+          onClick={onShowHidden}
           className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
           Show {hiddenCount} hidden
