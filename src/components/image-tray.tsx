@@ -28,13 +28,17 @@ const tileButton =
  * window, and recedes toward where it left. Place it inside a relatively
  * positioned, overflow-hidden parent.
  */
-function DropGlow({ drag }: { drag: ImageDrag | null }) {
+type Box = { left: number; top: number; width: number; height: number }
+
+function DropGlow({ drag, frame }: { drag: ImageDrag | null; frame?: (el: HTMLElement) => Box }) {
   const glow = useRef<HTMLSpanElement>(null)
 
   useLayoutEffect(() => {
     const el = glow.current
-    const box = el?.parentElement?.getBoundingClientRect()
-    if (!el || !box) return
+    const parent = el?.parentElement
+    if (!el || !parent) return
+    // Where the target will be once it settles; it may still be moving.
+    const box = frame ? frame(parent) : parent.getBoundingClientRect()
     if (!drag) {
       // Dropped: fade where it is.
       el.style.opacity = "0"
@@ -64,7 +68,7 @@ function DropGlow({ drag }: { drag: ImageDrag | null }) {
       : // Accelerate: a short ramp up, then full speed out toward the exit, no settling.
         "transform 700ms cubic-bezier(0.4, 0, 1, 1), opacity 300ms ease-out"
     el.style.transform = entering ? "scale(1)" : "scale(0)"
-  }, [drag])
+  }, [drag, frame])
 
   return (
     <span
@@ -75,20 +79,103 @@ function DropGlow({ drag }: { drag: ImageDrag | null }) {
   )
 }
 
-type DropZoneProps = {
-  /** An image drag over the page: the zone grows and glows. */
-  drag?: ImageDrag | null
+const EASE = "ease-[cubic-bezier(0.16,1,0.3,1)]"
+
+// The expanded drop bar is as tall as a tile in the 4-up row it turns into.
+const TILE_HEIGHT = "calc((100cqw - 1.5rem) / 4)"
+
+type AreaProps = {
+  images: StagedImage[]
+  /** An image drag over the page. */
+  drag: ImageDrag | null
   onAdd: (files: File[]) => void
-  className?: string
+  onRemove: (id: string) => void
+  /** The Clear Post button, first in the bottom row. */
+  clearPost: React.ReactNode
+  /** The Clear Image(s) button, beside it once images are staged. */
+  clearImages: React.ReactNode
 }
 
 /**
- * The image drop target while nothing is staged: a slim bar that sits beside
- * Clear Post and grows taller while an image is dragged over the page.
+ * The staged images and the clear buttons. With nothing staged, a slim drop
+ * bar sits beside Clear Post; while an image is dragged over the page it
+ * moves up and left into the full-width spot the image row will take, and it
+ * slides back when the images are cleared.
  */
-export function ImageDropZone({ drag = null, onAdd, className }: DropZoneProps) {
+export function ImageArea({ images, drag, onAdd, onRemove, clearPost, clearImages }: AreaProps) {
+  const box = useRef<HTMLDivElement>(null)
+  const first = useRef<HTMLDivElement>(null)
+
+  // Right after the last image goes, the bar starts in the image row's place
+  // for a frame, so it visibly slides back beside Clear Post.
+  const [count, setCount] = useState(images.length)
+  const [returning, setReturning] = useState(false)
+  if (count !== images.length) {
+    setCount(images.length)
+    if (count > 0 && images.length === 0) setReturning(true)
+  }
+  useEffect(() => {
+    if (!returning) return
+    void box.current?.offsetWidth // Lay out the start position so the slide animates.
+    const timer = setTimeout(() => setReturning(false), 0)
+    return () => clearTimeout(timer)
+  }, [returning])
+
+  // The compact bar starts just right of Clear Post.
+  useLayoutEffect(() => {
+    const el = first.current
+    const area = box.current
+    if (!el || !area) return
+    const sync = () => area.style.setProperty("--bar-left", `${el.offsetWidth + 12}px`)
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Transitions start once the bar is in place, so it doesn't slide in on load.
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 50)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const staged = images.length > 0
+  const expanded = !staged && (drag?.phase === "in" || returning)
+
+  return (
+    <div ref={box} className="@container relative">
+      {staged ? (
+        <div className="mb-4">
+          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} />
+        </div>
+      ) : (
+        // Makes room above the buttons while the bar is up there.
+        <div
+          aria-hidden
+          className={cn("transition-[height] duration-700", EASE)}
+          style={{ height: expanded ? `calc(${TILE_HEIGHT} + 1rem)` : 0 }}
+        />
+      )}
+      <div className="flex items-start gap-3">
+        <div ref={first}>{clearPost}</div>
+        {staged ? clearImages : <div className="h-9 flex-1" />}
+      </div>
+      {!staged && <DropBar expanded={expanded} animate={ready} drag={drag} onAdd={onAdd} />}
+    </div>
+  )
+}
+
+/** Where the expanded bar sits: the full width at the top of the area. */
+const expandedFrame = (bar: HTMLElement): Box => {
+  const area = (bar.offsetParent ?? bar).getBoundingClientRect()
+  return { left: area.left, top: area.top, width: area.width, height: (area.width - 24) / 4 }
+}
+
+type BarProps = { expanded: boolean; animate: boolean; drag: ImageDrag | null; onAdd: (files: File[]) => void }
+
+function DropBar({ expanded, animate, drag, onAdd }: BarProps) {
   const input = useRef<HTMLInputElement>(null)
-  const active = drag?.phase === "in"
   return (
     <>
       <input
@@ -105,19 +192,28 @@ export function ImageDropZone({ drag = null, onAdd, className }: DropZoneProps) 
       <button
         type="button"
         onClick={() => input.current?.click()}
+        // Anchored to the bottom of the area: compact, it fills the row beside
+        // Clear Post; expanded, it fills the room made above the row.
+        style={
+          expanded
+            ? { left: 0, bottom: "calc(2.25rem + 1rem)", height: TILE_HEIGHT }
+            : { left: "var(--bar-left, 0px)", bottom: 0, height: "2.25rem" }
+        }
         className={cn(
-          "relative flex h-9 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-3 text-sm text-muted-foreground transition-[height,color,border-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-foreground/40 hover:text-foreground",
-          active && "h-24 flex-col gap-1.5 border-foreground/40 text-foreground",
-          className,
+          "absolute right-0 flex min-w-0 items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed px-3 text-sm text-muted-foreground duration-700 hover:border-foreground/40 hover:text-foreground",
+          "transition-[left,bottom,height,color,border-color]",
+          EASE,
+          !animate && "transition-none",
+          expanded && "flex-col gap-1.5 border-foreground/40 text-foreground",
         )}
       >
-        <DropGlow drag={drag} />
+        <DropGlow drag={drag} frame={expandedFrame} />
         <ImagePlusIcon className="relative size-4 shrink-0" />
         <span
-          className={cn("relative", active ? "text-center text-balance" : "truncate")}
+          className={cn("relative", expanded ? "text-center text-balance" : "truncate")}
           title={`Drop, paste, or pick up to ${MAX_IMAGES} images`}
         >
-          {active ? `Drop, paste, or pick up to ${MAX_IMAGES} images` : "Drop, paste, or pick images"}
+          {expanded ? `Drop, paste, or pick up to ${MAX_IMAGES} images` : "Drop, paste, or pick images"}
         </span>
       </button>
     </>
@@ -133,7 +229,7 @@ type TrayProps = {
 }
 
 /** Staged images in one row: copy, drag, download or remove each one, or add more in the empty slot. */
-export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
+function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
   const picker = (
     <input
@@ -188,15 +284,13 @@ export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
                   <DownloadIcon className="size-3.5" />
                 </button>
               </span>
-              <button
-                type="button"
-                className={tileButton}
-                onClick={() => onRemove(img.id)}
-                aria-label={`Remove image ${i + 1}`}
-                title="Remove"
-              >
-                <XIcon className="size-3.5" />
-              </button>
+              <ConfirmX
+                label={`Remove image ${i + 1}`}
+                onConfirm={() => onRemove(img.id)}
+                className="grid size-6 place-items-center rounded-md text-white backdrop-blur-sm transition-colors"
+                idleClassName="bg-black/60 hover:bg-black/80"
+                iconClassName="size-3.5"
+              />
             </div>
           </li>
         ))}
@@ -222,12 +316,20 @@ export function ImageTray({ images, drag = null, onAdd, onRemove }: TrayProps) {
   )
 }
 
+type ConfirmXProps = {
+  label: string
+  onConfirm: () => void
+  /** Classes for both states, and for the resting (not yet clicked) state. */
+  className: string
+  idleClassName: string
+  iconClassName?: string
+}
+
 /**
- * The x on a card thumbnail. The first click turns it red; the second leaves
- * the image off. It backs out when the pointer or focus leaves, or after a
- * few seconds.
+ * An x that turns red on the first click and acts on the second. It backs
+ * out when the pointer or focus leaves, on Escape, or after a few seconds.
  */
-function LeaveOffButton({ label, onConfirm }: { label: string; onConfirm: () => void }) {
+function ConfirmX({ label, onConfirm, className, idleClassName, iconClassName = "size-3" }: ConfirmXProps) {
   const [confirming, setConfirming] = useState(false)
   useEffect(() => {
     if (!confirming) return
@@ -248,15 +350,9 @@ function LeaveOffButton({ label, onConfirm }: { label: string; onConfirm: () => 
       onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
       aria-label={confirming ? `${label}: click again to confirm` : label}
       title={confirming ? "Click again to confirm" : label}
-      className={cn(
-        // Sits over the corner, poking out above the thumbnail.
-        "absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100",
-        confirming
-          ? "bg-destructive opacity-100"
-          : "bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600",
-      )}
+      className={cn(className, confirming ? "bg-destructive opacity-100" : idleClassName)}
     >
-      <XIcon className="size-3" strokeWidth={3} />
+      <XIcon className={iconClassName} strokeWidth={3} />
     </button>
   )
 }
@@ -310,9 +406,12 @@ export function ImageStrip({ images, platform, copied, onCopied, hidden, onHidde
               <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
                 {i + 1}
               </span>
-              <LeaveOffButton
+              <ConfirmX
                 label={`Leave image ${i + 1} off ${platform}`}
                 onConfirm={() => onHiddenChange(new Set(hidden).add(img.id))}
+                // Sits over the corner, poking out above the thumbnail.
+                className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
+                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
               />
               {copied.has(img.id) && (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
