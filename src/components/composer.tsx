@@ -227,27 +227,17 @@ export default function Composer() {
               </div>
               <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
             </div>
-            <div
-              className="flex flex-wrap items-center justify-start gap-2"
-              onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
-            >
-              {confirming && !nothingToClear ? (
-                <>
-                  <span className="text-sm text-muted-foreground">Clear the text and splits?</span>
-                  <Button variant="destructive" onClick={startOver} autoFocus>
-                    <BroomIcon />
-                    Clear
-                  </Button>
-                  <Button variant="ghost" onClick={() => setConfirming(false)}>
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button variant="outline" onClick={() => setConfirming(true)} disabled={nothingToClear}>
-                  <BroomIcon />
-                  Clear post
-                </Button>
-              )}
+            <div className="flex flex-wrap items-center justify-start gap-3">
+              <Button
+                variant={confirming ? "destructive" : "outline"}
+                onClick={confirming ? startOver : () => setConfirming(true)}
+                onBlur={() => setConfirming(false)}
+                onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
+                disabled={nothingToClear}
+              >
+                <BroomIcon />
+                {confirming ? "Confirm" : "Clear post"}
+              </Button>
             </div>
           </CardContent>
         </Card>
