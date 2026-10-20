@@ -3,6 +3,7 @@
 import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, TriangleAlertIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/copy-button"
+import { ImageStrip } from "@/components/image-tray"
 import { PlatformLogo } from "@/components/platform-logo"
 import { cardId } from "@/components/status-rail"
 import { Button } from "@/components/ui/button"
@@ -10,6 +11,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
+import type { StagedImage } from "@/lib/images"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
@@ -21,6 +23,13 @@ export function firstProblem(adapter: PlatformAdapter, chunks: string[]): string
     if (problem) return chunks.length > 1 ? `Post ${i + 1}: ${problem}` : problem
   }
   return null
+}
+
+/** Too many staged images for one post here, described; or null. */
+export function imageProblem(adapter: PlatformAdapter, count: number): string | null {
+  const max = adapter.images?.max
+  if (!max || count <= max) return null
+  return `${adapter.name} takes up to ${max} images per post; ${count} are staged, so only the first ${max} are shown.`
 }
 
 function counterTone(count: number, limit: number) {
@@ -69,6 +78,7 @@ type Props = {
   numbering?: boolean
   /** Set for platforms that number threads themselves, to let the user add labels anyway. */
   onNumberingChange?: (on: boolean) => void
+  images?: StagedImage[]
 }
 
 export function PlatformCard({
@@ -81,13 +91,16 @@ export function PlatformCard({
   onResetSplits,
   numbering,
   onNumberingChange,
+  images = [],
 }: Props) {
   const total = adapter.count(text.trim())
   const over = total > adapter.limit
   // When the post becomes a chain anyway, the header total isn't a problem.
   const splits = adapter.chain && chunks.length > 1
   const switchId = `platform-${adapter.id}`
-  const problem = firstProblem(adapter, chunks)
+  const problem = firstProblem(adapter, chunks) ?? imageProblem(adapter, images.length)
+  const postImages = adapter.images ? images.slice(0, adapter.images.max) : images
+  const needsImage = adapter.images?.required && images.length === 0 && chunks.length > 0
 
   return (
     <Card
@@ -153,6 +166,12 @@ export function PlatformCard({
         </CardContent>
       )}
 
+      {enabled && needsImage && (
+        <CardContent className="px-4">
+          <p className="text-sm text-muted-foreground">{adapter.name} posts need a photo or video. Add one above.</p>
+        </CardContent>
+      )}
+
       {enabled && over && !adapter.chain && (
         <CardContent className="px-4">
           <p className="flex items-start gap-2 text-sm text-destructive">
@@ -213,6 +232,11 @@ export function PlatformCard({
               return (
                 <li key={i} className="rounded-md border bg-background/40 p-3">
                   <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
+                  {i === 0 && postImages.length > 0 && (
+                    <div className="mt-2">
+                      <ImageStrip images={postImages} platform={adapter.name} />
+                    </div>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
                       {chunks.length > 1 && `${i + 1} · `}

@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
-import { firstProblem, PlatformCard } from "@/components/platform-card"
+import { ImageTray } from "@/components/image-tray"
+import { firstProblem, imageProblem, PlatformCard } from "@/components/platform-card"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { imageFiles, useStagedImages } from "@/lib/images"
 import { cn } from "@/lib/utils"
 import { useStoredState } from "@/lib/use-stored-state"
 
@@ -49,6 +51,11 @@ export default function Composer() {
   const [prefs, setPrefs] = useStoredState<Prefs>("crosspost:prefs", DEFAULT_PREFS)
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
+  const { images, setImages, add: stageImages } = useStagedImages()
+  const [dropping, setDropping] = useState(false)
+  const addImages = (files: File[]) => {
+    if (!stageImages(files)) toast.info("Only images can be staged for now.")
+  }
 
   /** Whether this platform's split posts get " i/n" labels. */
   const numbers = (adapter: PlatformAdapter) =>
@@ -156,16 +163,17 @@ export default function Composer() {
     const issue =
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
-        : firstProblem(adapter, chunks.map((c) => c.text))
+        : (firstProblem(adapter, chunks.map((c) => c.text)) ?? imageProblem(adapter, images.length))
     const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "Fits in one post" : "Nothing to post"
     return { adapter, enabled: isEnabled(adapter.id), issue, note, posts: chunks.length }
   })
 
   /** Clear the draft and manual splits, with an undo in the toast. */
   const startOver = () => {
-    const saved = { draft, breaks }
+    const saved = { draft, breaks, images }
     setDraft("")
     setBreaks({})
+    setImages([])
     setConfirming(false)
     toast("Post cleared", {
       action: {
@@ -173,11 +181,12 @@ export default function Composer() {
         onClick: () => {
           setDraft(saved.draft)
           setBreaks(saved.breaks)
+          setImages(saved.images)
         },
       },
     })
   }
-  const nothingToClear = !draft && Object.keys(breaks).length === 0
+  const nothingToClear = !draft && Object.keys(breaks).length === 0 && images.length === 0
 
   // Clearing takes a second click; the question backs out on its own after a few seconds.
   const [confirming, setConfirming] = useState(false)
@@ -190,7 +199,32 @@ export default function Composer() {
   return (
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
       <div className="space-y-4 lg:sticky lg:top-20">
-        <Card className="gap-4">
+        <Card
+          className={cn("gap-4 transition-shadow", dropping && "ring-2 ring-primary/50")}
+          // Images dropped or pasted anywhere on Compose are staged, not put in the text.
+          onPaste={(e) => {
+            const files = imageFiles(e.clipboardData)
+            if (!files.length) return
+            e.preventDefault()
+            addImages(files)
+          }}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return
+            e.preventDefault()
+            setDropping(true)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false)
+          }}
+          onDrop={(e) => {
+            setDropping(false)
+            const files = imageFiles(e.dataTransfer)
+            if (!e.dataTransfer.types.includes("Files")) return
+            e.preventDefault()
+            if (files.length) addImages(files)
+            else toast.info("Only images can be staged for now.")
+          }}
+        >
           <CardContent className="space-y-4">
             <ComposeEditor
               value={draft}
@@ -228,6 +262,11 @@ export default function Composer() {
               </div>
               <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
             </div>
+            <ImageTray
+              images={images}
+              onAdd={addImages}
+              onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
+            />
             <div className="flex flex-wrap items-center justify-start gap-3">
               <Button
                 variant={confirming ? "destructive" : "outline"}
@@ -270,6 +309,7 @@ export default function Composer() {
                 : undefined
             }
             onResetSplits={() => resetBreaks(adapter.id)}
+            images={images}
             enabled={isEnabled(adapter.id)}
             onEnabledChange={(on) => setPrefs((p) => ({ ...p, enabled: { ...p.enabled, [adapter.id]: on } }))}
           />

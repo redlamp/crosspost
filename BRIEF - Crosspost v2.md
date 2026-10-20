@@ -52,6 +52,7 @@ Every platform is posted by hand: Crosspost shows the text per post with a Copy 
 - **Split markers:** a caret and logo flag where each threading platform's next post starts. Drag a flag to move a split; drag one out of the text to remove it; double-click to undo a manual one. A scissors handle moves splits shared by several platforms together. Splits before the drop point stay put; the rest reflow. Manual splits follow the text as it's edited.
 - **Split chips** in the Compose header (All plus one per threading platform): drag one into the text to add a split, or click to split at the cursor.
 - **Status rail:** a tile per platform with its post count; red when something needs attention (over the limit, too many links or hashtags). Click to jump to the card; drag to reorder platforms.
+- **Image staging:** drop, paste or pick images onto Compose; they're kept in this browser's IndexedDB, never uploaded. Each image can be copied (as PNG, to paste into a composer), dragged, downloaded or removed. Each card shows thumbnails of the images its first post can take (click to copy); Bluesky and Twitter take 4, Threads, LinkedIn and Instagram 20, and Instagram needs at least one. More than a platform allows flags its card and rail tile. Clear post clears images too.
 - **Clear post** (broom icon, left-aligned) turns red and reads "Confirm" on the first click; the second clears the draft and manual splits, with Undo in the toast.
 - **Split-view reminder** (Chrome only): "External link > Right-click > Open link in split view".
 - Dark grey theme by default, light/dark toggle, sticky header, responsive down to phone width, scrollbar space always reserved.
@@ -70,7 +71,7 @@ Counters (family emoji, flags, CJK, URLs as 23), URL finding (http, www, bare do
 
 - **Post history**, stored in the browser: each finished post with a link per platform (pasted after posting), listed under Compose; selecting one shows its details in the cards.
 - **Engagement:** Bluesky's public counts (`app.bsky.feed.getPosts`) work straight from the browser. Other platforms have no free public API; they'd need a local script checking pages logged out, or a person looking. Never automate a signed-in session.
-- **Media:** up to 4 images or 1 video. Manual platforms would offer the files for download alongside the text.
+- **Media, next steps:** reorder staged images; video; per-post images in threads; confirm which composers accept an image dragged straight from Crosspost (most take only real files, so copy and paste is the reliable path).
 - **Bluesky sign-in for direct posting**, if wanted again: Bluesky's OAuth for browser apps (`@atproto/oauth-client-browser`) keeps tokens in that browser only, bound to a non-exportable key. If added, host on a dedicated subdomain so no other site shares its storage.
 - **Threads and LinkedIn API posting** were built and then removed: Threads needs a Meta developer app, and LinkedIn's Token Generator kept failing. Both need a server for secrets, so they don't fit a static site. The code is in git history.
 
