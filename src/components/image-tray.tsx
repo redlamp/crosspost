@@ -469,8 +469,10 @@ type StripProps = {
   /** One of this card's images is being dragged from another post, so show where it can land. */
   moving?: boolean
   onMovingChange?: (moving: boolean) => void
-  /** The drag is over this post: the move mirrors to every threaded platform, or stays on this one (Ctrl held). */
-  dropHint?: "all" | "only" | null
+  /** The drag is over this post (and not beside one of its images). */
+  hovered?: boolean
+  /** Ctrl (Cmd) is held during the drag: a move stays on this card rather than mirroring. */
+  onlyHere?: boolean
   /** Where a dragged image would land among these: beside this one. */
   insert?: { id: string; after: boolean } | null
   /** Set when this platform has its own image order: go back to the tray's. */
@@ -493,7 +495,8 @@ export function ImageStrip({
   movable,
   moving,
   onMovingChange,
-  dropHint = null,
+  hovered = false,
+  onlyHere = false,
   insert = null,
   onMatchCompose,
 }: StripProps) {
@@ -577,19 +580,19 @@ export function ImageStrip({
           aria-hidden
           className={cn(
             "flex h-14 min-w-40 flex-1 flex-col items-center justify-center rounded border border-dashed px-3 text-center leading-tight text-muted-foreground transition-colors",
-            dropHint && "border-(--brand) text-foreground",
+            hovered && "border-(--brand) text-foreground",
           )}
         >
           <span className="text-sm">Move here</span>
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             {/* The choice in effect is bold; the key switches it. */}
-            <SteadyBold bold={dropHint !== "only"}>On all threads</SteadyBold>
+            <SteadyBold bold={!onlyHere}>On all threads</SteadyBold>
             <span aria-hidden>/</span>
-            <SteadyBold bold={dropHint === "only"}>{platform.name} only</SteadyBold>
+            <SteadyBold bold={onlyHere}>{platform.name} only</SteadyBold>
             <kbd
               className={cn(
                 "rounded border px-1 font-sans text-[10px] leading-4",
-                dropHint === "only" && "border-foreground/40 text-foreground",
+                onlyHere && "border-foreground/40 text-foreground",
               )}
             >
               {MOVE_KEY}

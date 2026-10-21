@@ -135,6 +135,8 @@ export function PlatformCard({
   // Where a dragged image is: the post it's over, whether Ctrl (Cmd) keeps a
   // move on this card, and the image it would land beside, if any.
   const [dropOn, setDropOn] = useState<DropOn | null>(null)
+  // Ctrl (Cmd) held at any point in the drag, so every post's hint follows it, hovered or not.
+  const [keyHeld, setKeyHeld] = useState(false)
   // A drop that moves the image removes the element the drag started on, so
   // its dragend never reaches React. Catch the end of any drag on the window.
   useEffect(() => {
@@ -145,12 +147,17 @@ export function PlatformCard({
       setTimeout(() => {
         setMovingFrom(null)
         setDropOn(null)
+        setKeyHeld(false)
       }, 0)
+    // dragover repeats over the whole page during a drag, carrying the modifier keys.
+    const over = (e: DragEvent) => setKeyHeld(e.ctrlKey || e.metaKey)
     window.addEventListener("dragend", end, true)
     window.addEventListener("drop", end, true)
+    window.addEventListener("dragover", over, true)
     return () => {
       window.removeEventListener("dragend", end, true)
       window.removeEventListener("drop", end, true)
+      window.removeEventListener("dragover", over, true)
     }
   }, [movingFrom])
   const fromThisCard = (e: React.DragEvent) => e.dataTransfer.types.includes(moveType(adapter.id))
@@ -351,7 +358,8 @@ export function PlatformCard({
                           movable={splits}
                           moving={movingFrom !== null && movingFrom !== i}
                           onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
-                          dropHint={dropOn?.post === i && !dropOn.target ? (dropOn.onlyHere ? "only" : "all") : null}
+                          hovered={dropOn?.post === i && !dropOn.target}
+                          onlyHere={keyHeld}
                           insert={dropOn?.post === i ? dropOn.target : null}
                           onMatchCompose={showMatch ? onMatchCompose : undefined}
                         />
