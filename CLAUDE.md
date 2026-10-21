@@ -18,7 +18,7 @@ Next.js 16 App Router with `output: "export"` (so no `cacheComponents`: partial 
 
 - Writing: no em dashes anywhere (UI copy, comments, commits); American English.
 - Static only: no API routes, server actions or secrets. The repo and site are public, so nothing personal or private goes in them.
-- Asset paths must work under the `/crosspost` base path: import images (`import logo from "@/assets/logo.png"`) rather than using `/public` paths.
+- Asset paths must work under the `/crosspost` base path: import images (`import logoLight from "@/assets/logo-light.svg"`) rather than using `/public` paths.
 - `src/lib/text.ts` holds counters, URL finding and splitting.
 - One adapter per platform in `src/lib/adapters/<platform>.ts`, registered in `adapters/index.ts`.
 - Browser storage keys start with `crosspost:`.
