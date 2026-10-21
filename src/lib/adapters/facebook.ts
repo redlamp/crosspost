@@ -19,7 +19,8 @@ export const facebook: PlatformAdapter = {
   breakpoints: [
     {
       limit: 130,
-      label: "Colored background",
+      // Facebook's own name for it in the composer (desktop: "Add background").
+      label: "Background color",
       within: "Available",
       beyond: "Plain text only",
       approximate: true,

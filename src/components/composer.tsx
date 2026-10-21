@@ -114,10 +114,17 @@ export default function Composer() {
   const imageNumber = (id: string) => images.findIndex((img) => img.id === id) + 1
 
   // A card has moved images between posts or set its own order.
+  // Only images still staged count; settings for removed ones are left over.
+  const staged = new Set(images.map((img) => img.id))
+  /** This platform's own order differs from the tray's for the images staged now. */
+  const hasOwnOrder = (platformId: string) => {
+    const order = cardOrder[platformId]
+    return !!order && imagesFor(platformId).some((img, i) => img.id !== images[i].id)
+  }
   const imagesCustomized =
-    Object.values(placement.shared).some((post) => post > 0) ||
-    Object.values(placement.only).some((posts) => Object.keys(posts).length > 0) ||
-    Object.keys(cardOrder).length > 0
+    Object.entries(placement.shared).some(([id, post]) => staged.has(id) && post > 0) ||
+    Object.values(placement.only).some((posts) => Object.keys(posts).some((id) => staged.has(id))) ||
+    Object.keys(cardOrder).some(hasOwnOrder)
   /** Put every card back on the tray's order, all images on the first post, with an undo. */
   const resetImages = () => {
     const saved = { placement, cardOrder }
@@ -246,28 +253,41 @@ export default function Composer() {
   })
 
   /** Clear the draft and manual splits, with an undo in the toast. */
+  /** Clear the images with how the cards placed and ordered them; returns how to put it all back. */
+  const takeImages = () => {
+    const saved = { images, placement, cardOrder }
+    setImages([])
+    setPlacement({ shared: {}, only: {} })
+    setCardOrder({})
+    return () => {
+      // Images added since the clear stay, after the restored ones, as room allows.
+      setImages((now) => [...saved.images, ...now.filter((img) => !saved.images.some((s) => s.id === img.id))].slice(0, MAX_IMAGES))
+      setPlacement(saved.placement)
+      setCardOrder(saved.cardOrder)
+    }
+  }
   const startOver = () => {
-    const saved = { draft, breaks, images }
+    const saved = { draft, breaks }
     setDraft("")
     setBreaks({})
-    setImages([])
+    const restoreImages = takeImages()
     toast("Post cleared", {
       action: {
         label: "Undo",
         onClick: () => {
           setDraft(saved.draft)
           setBreaks(saved.breaks)
-          setImages(saved.images)
+          restoreImages()
         },
       },
     })
   }
   const nothingToClear = !draft && Object.keys(breaks).length === 0 && images.length === 0
   const clearImages = () => {
-    const saved = images
-    setImages([])
-    toast(saved.length === 1 ? "Image cleared" : "Images cleared", {
-      action: { label: "Undo", onClick: () => setImages(saved) },
+    const count = images.length
+    const restoreImages = takeImages()
+    toast(count === 1 ? "Image cleared" : "Images cleared", {
+      action: { label: "Undo", onClick: restoreImages },
     })
   }
 
@@ -365,7 +385,7 @@ export default function Composer() {
             onResetSplits={() => resetBreaks(adapter.id)}
             images={imagesFor(adapter.id)}
             imageNumber={imageNumber}
-            ownOrder={!!cardOrder[adapter.id]}
+            ownOrder={hasOwnOrder(adapter.id)}
             onReorderImage={(id, target, after) => reorderOnCard(adapter.id, id, target, after)}
             onMatchCompose={() => matchCompose(adapter.id)}
             imagePost={(id) => imagePost(adapter.id, id)}

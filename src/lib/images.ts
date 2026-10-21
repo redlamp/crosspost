@@ -23,13 +23,20 @@ const DB = "crosspost"
 const STORE = "images"
 const KEY = "staged"
 
+// One connection for the page, opened on first use.
+let connection: Promise<IDBDatabase> | null = null
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  connection ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB, 1)
     req.onupgradeneeded = () => req.result.createObjectStore(STORE)
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
+  }).catch((err) => {
+    connection = null // Try again next time.
+    throw err
   })
+  return connection
 }
 
 async function load(): Promise<StoredImage[]> {
@@ -60,7 +67,16 @@ export function useStagedImages() {
 
   useEffect(() => {
     load()
-      .then((stored) => setImages(stored.slice(0, MAX_IMAGES).map(withUrl)))
+      // Images added while this loaded go after the stored ones, not in place of
+      // them. Merged by id, so a second load (React's dev double-run) adds nothing.
+      .then((stored) =>
+        setImages((list) => {
+          const fresh = stored.filter((s) => !list.some((img) => img.id === s.id)).map(withUrl)
+          const added = list.filter((img) => !stored.some((s) => s.id === img.id))
+          const kept = list.filter((img) => stored.some((s) => s.id === img.id))
+          return [...kept, ...fresh, ...added].slice(0, MAX_IMAGES)
+        }),
+      )
       .catch(() => {})
       .finally(() => setLoaded(true))
   }, [])
@@ -73,9 +89,26 @@ export function useStagedImages() {
     })
   }, [images, loaded])
 
+  // An object URL keeps its image in memory until revoked. One that leaves the
+  // list is revoked a minute later, unless an undo has brought it back.
+  const current = useRef(images)
+  const previous = useRef(images)
+  useEffect(() => {
+    current.current = images
+    const gone = previous.current.filter((old) => !images.some((img) => img.url === old.url))
+    previous.current = images
+    if (gone.length === 0) return
+    setTimeout(() => {
+      for (const old of gone) {
+        if (!current.current.some((img) => img.url === old.url)) URL.revokeObjectURL(old.url)
+      }
+    }, 60_000)
+  }, [images])
+
   /** Stage image files, up to MAX_IMAGES in all. Returns how many were added and how many didn't fit. */
   const add = (files: Iterable<File>) => {
     const candidates = [...files].filter((f) => f.type.startsWith("image/"))
+    // Until the stored images load, the count isn't known; the merge above trims any overflow.
     const room = Math.max(0, MAX_IMAGES - images.length)
     const added = candidates
       .slice(0, room)

@@ -42,7 +42,7 @@ Every platform is posted by hand: Crosspost shows the text per post with a Copy 
 
 **Twitter:** the UI calls X "Twitter", with the classic bird logo, on purpose. Counting uses twitter-text v3 weighting: code points in 0–4351, 8192–8205, 8208–8223 and 8242–8247 weigh 1, all others 2; an emoji sequence weighs 2; every URL weighs 23, bare domains included; NFC-normalize first.
 
-**Facebook:** breakpoints shown on the card (unofficial, widely reported): colored backgrounds up to ~130 characters and only without links; "See more" after ~480 on desktop.
+**Facebook:** breakpoints shown on the card (unofficial, widely reported): "Background color" (Facebook's name for colored-background text posts) up to ~130 characters and only without links; "See more" after ~480 on desktop.
 
 **Instagram:** caption only, links aren't clickable, and the feed cuts captions at ~125 characters ("more").
 
@@ -73,7 +73,7 @@ Counters (family emoji, flags, CJK, URLs as 23), URL finding (http, www, bare do
 
 - **Post history**, stored in the browser: each finished post with a link per platform (pasted after posting), listed under Compose; selecting one shows its details in the cards.
 - **Engagement:** Bluesky's public counts (`app.bsky.feed.getPosts`) work straight from the browser. Other platforms have no free public API; they'd need a local script checking pages logged out, or a person looking. Never automate a signed-in session.
-- **Media, next steps:** reorder staged images; video; per-post images in threads; confirm which composers accept an image dragged straight from Crosspost (most take only real files, so copy and paste is the reliable path).
+- **Media, next steps:** video; keep image placement, card orders, hidden images and copied checks across a reload; confirm which composers accept an image dragged straight from Crosspost (most take only real files, so copy and paste is the reliable path).
 - **Bluesky sign-in for direct posting**, if wanted again: Bluesky's OAuth for browser apps (`@atproto/oauth-client-browser`) keeps tokens in that browser only, bound to a non-exportable key. If added, host on a dedicated subdomain so no other site shares its storage.
 - **Threads and LinkedIn API posting** were built and then removed: Threads needs a Meta developer app, and LinkedIn's Token Generator kept failing. Both need a server for secrets, so they don't fit a static site. The code is in git history.
 

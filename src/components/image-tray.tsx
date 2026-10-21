@@ -503,74 +503,84 @@ export function ImageStrip({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
-        {items.map(({ img, n }) => (
-          <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
-            <button
-              type="button"
-              onClick={async () => {
-                if (await copyWithToast(img, `image ${n}`)) onCopiedChange(img.id, true)
-              }}
-              title={
-                copied.has(img.id)
-                  ? `Image ${n} copied for ${platform.name}. Click to copy again.`
-                  : movable
-                    ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold Ctrl for ${platform.name} only)`
-                    : `Copy image ${n}. Drag it into the post, or beside another image to reorder`
-              }
-              aria-pressed={copied.has(img.id)}
-              className="block size-full overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-              <img
-                src={img.url}
-                alt={`Image ${n}`}
-                draggable
-                onDragStart={(e) => {
-                  dragOut(e, img, { platformId: platform.id })
-                  // Chrome cancels a drag whose page changes during dragstart, so
-                  // show the drop slots just after it.
-                  setTimeout(() => onMovingChange?.(true), 0)
+        {items.map(({ img, n }) => {
+          const copy = async () => {
+            if (await copyWithToast(img, `image ${n}`)) onCopiedChange(img.id, true)
+          }
+          return (
+            <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
+              {/* A div acting as the button: Firefox won't start a drag from inside a real <button>. */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={copy}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return
+                  e.preventDefault()
+                  copy()
                 }}
-                onDragEnd={() => onMovingChange?.(false)}
-                className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
-              />
-            </button>
-            {insert?.id === img.id && (
-              // The gap this image would drop into.
-              <span
-                aria-hidden
-                className={cn(
-                  "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand)",
-                  insert.after ? "-right-1.5" : "-left-1.5",
-                )}
-              />
-            )}
-            <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
-              {n}
-            </span>
-            <ConfirmX
-              label={`Leave image ${n} off ${platform.name}`}
-              onConfirm={() => onHide(img.id)}
-              // Sits over the corner, poking out above the thumbnail.
-              className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
-              idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
-            />
-            {copied.has(img.id) && (
-              // Copied: grayed out like a done item, with a blue check badge on the corner
-              // (placed like the post counts on the rail, the same blue on every card).
-              // Hovering turns it red; clicking clears it.
-              <button
-                type="button"
-                onClick={() => onCopiedChange(img.id, false)}
-                aria-label={`Image ${n} copied. Clear the check`}
-                title="Clear the copied check"
-                className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
+                title={
+                  copied.has(img.id)
+                    ? `Image ${n} copied for ${platform.name}. Click to copy again.`
+                    : movable
+                      ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold ${MOVE_KEY} for ${platform.name} only)`
+                      : `Copy image ${n}. Drag it into the post, or beside another image to reorder`
+                }
+                className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
               >
-                <CheckIcon className="size-2.5" strokeWidth={3.5} />
-              </button>
-            )}
-          </li>
-        ))}
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                <img
+                  src={img.url}
+                  alt=""
+                  draggable
+                  onDragStart={(e) => {
+                    dragOut(e, img, { platformId: platform.id })
+                    // Chrome cancels a drag whose page changes during dragstart, so
+                    // show the drop slots just after it.
+                    setTimeout(() => onMovingChange?.(true), 0)
+                  }}
+                  onDragEnd={() => onMovingChange?.(false)}
+                  className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
+                />
+              </div>
+              {insert?.id === img.id && (
+                // The gap this image would drop into.
+                <span
+                  aria-hidden
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand)",
+                    insert.after ? "-right-1.5" : "-left-1.5",
+                  )}
+                />
+              )}
+              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
+                {n}
+              </span>
+              <ConfirmX
+                label={`Leave image ${n} off ${platform.name}`}
+                onConfirm={() => onHide(img.id)}
+                // Sits over the corner, poking out above the thumbnail.
+                className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
+                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
+              />
+              {copied.has(img.id) && (
+                // Copied: grayed out like a done item, with a blue check badge on the corner
+                // (placed like the post counts on the rail, the same blue on every card).
+                // Hovering turns it red; clicking clears it.
+                <button
+                  type="button"
+                  onClick={() => onCopiedChange(img.id, false)}
+                  aria-label={`Image ${n} copied. Clear the check`}
+                  title="Clear the copied check"
+                  className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                >
+                  <CheckIcon className="size-2.5" strokeWidth={3.5} />
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ol>
       {moving && movable && (
         // Where a dragged image lands on this post: the rest of the row, as
