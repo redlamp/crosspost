@@ -142,8 +142,8 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
           "group-has-[nav:hover]/rail:opacity-100 group-has-[nav:focus-visible]/rail:opacity-100",
         )}
       >
-        <RailHint gesture="Click" result="go to" />
-        <RailHint gesture="Drag" result="arrange" />
+        <RailHint gesture="Click" result="Jump" />
+        <RailHint gesture="Drag" result="Order" />
       </dl>
     </div>
   )
@@ -153,7 +153,7 @@ function RailHint({ gesture, result }: { gesture: string; result: string }) {
   return (
     <div className="flex flex-col">
       <dt className="font-medium tracking-wide text-foreground uppercase">{gesture}</dt>
-      <dd className="text-muted-foreground">{result}</dd>
+      <dd className="tracking-wide text-muted-foreground uppercase">{result}</dd>
     </div>
   )
 }

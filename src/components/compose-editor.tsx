@@ -409,19 +409,32 @@ export function ComposeEditor({
             const pos = positions.get(offset)
             if (!pos || pos.y < 0 || pos.y + pos.h > visibleHeight + 2) return null
             const here = markers.filter((m) => m.offset === offset)
+            // Every threading platform splits here (an All split): the caret and handle take the
+            // All chip's neutral color, and the platform flags stay tucked away until the handle
+            // is hovered or focused, so one can be dragged off on its own.
+            const all = here.length > 1 && here.length === palette.length
             return (
               <div key={offset} className="absolute" style={{ left: pos.x, top: pos.y }}>
                 <div
                   className="absolute top-0 -left-px w-0.5 rounded-full"
-                  style={{ height: pos.h, background: brandOf(here[0].adapter) }}
+                  style={{ height: pos.h, background: all ? "var(--foreground)" : brandOf(here[0].adapter) }}
                 />
-                <div className="absolute flex gap-0.5" style={{ top: -FLAG_HEIGHT + 2, left: -1 }}>
+                <div
+                  // No gap in an All group: the pointer must stay on a button between the
+                  // handle and the flags, or the hover that shows them would end.
+                  className={cn("absolute flex", all ? "group/split" : "gap-0.5")}
+                  style={{ top: -FLAG_HEIGHT + 2, left: -1 }}
+                >
                   {here.length > 1 && (
                     // Several platforms split here: one handle moves (or removes) them together.
                     <button
                       type="button"
-                      title={`${here.map((m) => m.adapter.name).join(", ")} split here. Drag to move them together, or drag out of the text to remove them. Drag one flag to move just that platform.`}
-                      aria-label={`Split for ${here.map((m) => m.adapter.name).join(", ")}`}
+                      title={
+                        all
+                          ? "Every threading platform splits here. Drag to move them together, or out of the text to remove them. Hover to show each platform's flag, then drag one away to split it on its own."
+                          : `${here.map((m) => m.adapter.name).join(", ")} split here. Drag to move them together, or drag out of the text to remove them. Drag one flag to move just that platform.`
+                      }
+                      aria-label={all ? "Split for all threading platforms" : `Split for ${here.map((m) => m.adapter.name).join(", ")}`}
                       onPointerDown={(e) => {
                         e.preventDefault()
                         beginDrag(
@@ -432,9 +445,10 @@ export function ComposeEditor({
                         )
                       }}
                       onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
-                      className="pointer-events-auto flex h-4 cursor-grab touch-none items-center rounded-sm rounded-bl-none bg-foreground px-1 text-background shadow-sm active:cursor-grabbing"
+                      className="pointer-events-auto flex h-4 cursor-grab touch-none items-center gap-0.5 rounded-sm rounded-bl-none bg-foreground px-1 text-[10px] leading-none font-semibold text-background shadow-sm active:cursor-grabbing"
                     >
                       <ScissorsIcon className="size-2.5" />
+                      {all && "All"}
                     </button>
                   )}
                   {here.map((m) => (
@@ -448,7 +462,11 @@ export function ComposeEditor({
                         beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
                       }}
                       onDoubleClick={() => m.manual && onRemove(m)}
-                      className="pointer-events-auto cursor-grab touch-none active:cursor-grabbing"
+                      className={cn(
+                        "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
+                        // In an All group the padding stands in for the gap, so it's part of the hover area.
+                        all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
+                      )}
                     >
                       <Flag adapter={m.adapter} label={m.index} />
                     </button>
