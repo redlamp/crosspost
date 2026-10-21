@@ -440,6 +440,18 @@ function ConfirmX({ label, onConfirm, className, idleClassName, iconClassName = 
   )
 }
 
+/** Text that can turn bold without changing width: a hidden bold copy holds the space. */
+function SteadyBold({ bold, children }: { bold: boolean; children: React.ReactNode }) {
+  return (
+    <span className="inline-grid">
+      <span aria-hidden className="invisible col-start-1 row-start-1 font-semibold">
+        {children}
+      </span>
+      <span className={cn("col-start-1 row-start-1", bold && "font-semibold text-foreground")}>{children}</span>
+    </span>
+  )
+}
+
 type StripProps = {
   /** This post's images, with their numbers in the Compose tray. */
   items: { img: StagedImage; n: number }[]
@@ -568,15 +580,20 @@ export function ImageStrip({
             dropHint && "border-(--brand) text-foreground",
           )}
         >
-          <span className="text-sm">
-            {dropHint === "only"
-              ? `Move here on ${platform.name} only`
-              : dropHint === "all"
-                ? "Move here on all threads"
-                : "Move here"}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {dropHint === "only" ? `Release ${MOVE_KEY} for all threads` : `Hold ${MOVE_KEY} for ${platform.name} only`}
+          <span className="text-sm">Move here</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            {/* The choice in effect is bold; the key switches it. */}
+            <SteadyBold bold={dropHint !== "only"}>On all threads</SteadyBold>
+            <span aria-hidden>/</span>
+            <SteadyBold bold={dropHint === "only"}>{platform.name} only</SteadyBold>
+            <kbd
+              className={cn(
+                "rounded border px-1 font-sans text-[10px] leading-4",
+                dropHint === "only" && "border-foreground/40 text-foreground",
+              )}
+            >
+              {MOVE_KEY}
+            </kbd>
           </span>
         </div>
       )}
