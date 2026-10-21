@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
-import { useHiddenPlatforms } from "@/lib/platform-visibility"
+import { isShown, usePlatformSettings } from "@/lib/platform-settings"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -155,7 +155,11 @@ export default function Composer() {
     return [...adapters].sort((a, b) => rank(a.id) - rank(b.id))
   }, [prefs.order])
   // Platforms hidden in Settings don't appear anywhere in the composer.
-  const hidden = useHiddenPlatforms()
+  const platformSettings = usePlatformSettings()
+  const hidden = useMemo(
+    () => adapters.filter((a) => !isShown(platformSettings, a)).map((a) => a.id),
+    [platformSettings],
+  )
   const shown = useMemo(() => ordered.filter((a) => !hidden.includes(a.id)), [ordered, hidden])
   /** Save a new order of the shown platforms; hidden ones keep their places among them. */
   const reorderPlatforms = (shownOrder: string[]) => {

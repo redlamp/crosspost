@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { adapters } from ".";
 import { bluesky } from "./bluesky";
 import { linkedin } from "./linkedin";
+import { mastodon } from "./mastodon";
 import { threads } from "./threads";
 
 describe("open links", () => {
@@ -10,6 +11,10 @@ describe("open links", () => {
     expect(bluesky.open.url("Hi & bye")).toBe("https://bsky.app/intent/compose?text=Hi%20%26%20bye");
     expect(threads.open.url("Hi & bye")).toBe("https://www.threads.com/intent/post?text=Hi%20%26%20bye");
     expect(linkedin.open.url("Hi & bye")).toBe("https://www.linkedin.com/feed/?shareActive=true&text=Hi%20%26%20bye");
+  });
+
+  it("open Mastodon's share page on the user's server", () => {
+    expect(mastodon.open.url("Hi & bye", "fosstodon.org")).toBe("https://fosstodon.org/share?text=Hi%20%26%20bye");
   });
 
   it("are https links for every platform", () => {

@@ -130,6 +130,23 @@ export function threadsLength(text: string): number {
   return n;
 }
 
+// Mastodon (StatusLengthValidator): graphemes, after replacing each link that
+// has a scheme with 23 characters and each @user@server mention with @user.
+const MASTODON_URL_WEIGHT = 23;
+const MASTODON_MENTION_RE = /(^|[^\w@/])@(\w+(?:[\w.-]*\w)?)@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+
+export function mastodonLength(text: string): number {
+  let rewritten = "";
+  let i = 0;
+  for (const { url, start, end } of findUrls(text)) {
+    if (!/^https?:\/\//i.test(url)) continue; // Mastodon doesn't link bare domains.
+    rewritten += text.slice(i, start) + "x".repeat(MASTODON_URL_WEIGHT);
+    i = end;
+  }
+  rewritten += text.slice(i);
+  return graphemeLength(rewritten.replace(MASTODON_MENTION_RE, "$1@$2"));
+}
+
 // ---------------------------------------------------------------------------
 // Splitting
 //

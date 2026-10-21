@@ -48,6 +48,13 @@ export type PlatformAdapter = {
   problems?: (post: string) => string | null;
   /** A post can't go out without a photo or video (Instagram). */
   needsImage?: boolean;
-  /** A button that opens the platform to post, given the first post's text. */
-  open: { label: string; url: (firstChunk: string) => string };
+  /**
+   * The platform has no single site: posts go through the user's own server,
+   * entered in Settings. `open.url` gets it, already reduced to a host name.
+   */
+  server?: { placeholder: string };
+  /** Starts hidden until the user shows it in Settings (newer or niche platforms). */
+  hiddenByDefault?: boolean;
+  /** A button that opens the platform to post, given the first post's text (and the server, if it needs one). */
+  open: { label: string; url: (firstChunk: string, server?: string) => string };
 };

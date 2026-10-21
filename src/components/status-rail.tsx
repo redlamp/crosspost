@@ -123,7 +123,7 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
   }
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="group/rail flex flex-col items-center">
       <DndContext id="status-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={ids} strategy={rectSortingStrategy}>
           <nav aria-label="Platform status" className="flex gap-2 lg:flex-col">
@@ -133,8 +133,14 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
           </nav>
         </SortableContext>
       </DndContext>
-      {/* What the tiles do. Only in the side column; on narrow screens the tiles sit in a row up top. */}
-      <dl className="mt-5 hidden flex-col items-center gap-3 text-center text-[11px] leading-tight whitespace-nowrap lg:flex">
+      {/* What the tiles do. Only in the side column; on narrow screens the tiles sit in a row up top.
+          Faded until the tiles are hovered or focused, so it's there when wanted without competing. */}
+      <dl
+        className={cn(
+          "mt-5 hidden flex-col items-center gap-3 text-center text-[11px] leading-tight whitespace-nowrap opacity-50 transition-opacity duration-200 lg:flex",
+          "group-has-[nav:hover]/rail:opacity-100 group-has-[nav:focus-visible]/rail:opacity-100",
+        )}
+      >
         <RailHint gesture="Click" result="go to" />
         <RailHint gesture="Drag" result="arrange" />
       </dl>
@@ -145,7 +151,7 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
 function RailHint({ gesture, result }: { gesture: string; result: string }) {
   return (
     <div className="flex flex-col">
-      <dt className="font-medium text-foreground">{gesture}</dt>
+      <dt className="font-medium tracking-wide text-foreground uppercase">{gesture}</dt>
       <dd className="text-muted-foreground">{result}</dd>
     </div>
   )

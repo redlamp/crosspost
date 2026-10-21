@@ -2,7 +2,7 @@
 
 # Crosspost
 
-A static site (GitHub Pages) for writing a post once and copying or opening it on Bluesky, Threads, LinkedIn, Twitter, Facebook and Instagram. No accounts, tokens or server: everything runs and is stored in the browser. The UI calls X "Twitter" with the classic bird, on purpose. Spec, platform rules and backlog live in `BRIEF - Crosspost v2.md`; read the relevant section before touching a platform.
+A static site (GitHub Pages) for writing a post once and copying or opening it on Bluesky, Threads, LinkedIn, Twitter, Facebook, Instagram and Mastodon. No accounts, tokens or server: everything runs and is stored in the browser. The UI calls X "Twitter" with the classic bird, on purpose. Spec, platform rules and backlog live in `BRIEF - Crosspost v2.md`; read the relevant section before touching a platform.
 
 ## Commands
 

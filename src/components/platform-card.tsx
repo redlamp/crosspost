@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, TriangleAlertIcon } from "lucide-react"
+import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, Settings2Icon, TriangleAlertIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
 import { dropTarget, moveType, type StagedImage } from "@/lib/images"
+import { serverHost, setSettingsOpen, usePlatformSettings } from "@/lib/platform-settings"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
@@ -120,6 +121,9 @@ export function PlatformCard({
   const splits = adapter.chain && chunks.length > 1
   const switchId = `platform-${adapter.id}`
   const problem = firstProblem(adapter, chunks)
+  // The server to open, for platforms that need one (Mastodon); empty until set in Settings.
+  const platformSettings = usePlatformSettings()
+  const server = adapter.server ? serverHost(platformSettings.servers[adapter.id] ?? "") : ""
   // Images copied from this card, so it's clear which are already in the post.
   const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
   // Images the user left off this platform.
@@ -371,14 +375,21 @@ export function PlatformCard({
                       {chunks.length > 1 && `${i + 1} · `}
                       {n.toLocaleString()} / {adapter.limit.toLocaleString()}
                     </span>
-                    {i === 0 && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={adapter.open.url(chunk)} target="_blank" rel="noopener noreferrer">
-                          <ExternalLinkIcon />
-                          {adapter.open.label}
-                        </a>
-                      </Button>
-                    )}
+                    {i === 0 &&
+                      (adapter.server && !server ? (
+                        // Mastodon has no one site to open: ask for the user's server first.
+                        <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+                          <Settings2Icon />
+                          Set your server
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={adapter.open.url(chunk, server || undefined)} target="_blank" rel="noopener noreferrer">
+                            <ExternalLinkIcon />
+                            {adapter.open.label}
+                          </a>
+                        </Button>
+                      ))}
                     <CopyButton text={chunk} what={what} />
                   </div>
                 </li>

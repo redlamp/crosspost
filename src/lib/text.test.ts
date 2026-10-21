@@ -7,6 +7,7 @@ import {
   splitChunks,
   findUrls,
   graphemeLength,
+  mastodonLength,
   splitText,
   threadsLength,
   utf8Length,
@@ -81,6 +82,18 @@ describe("threadsLength", () => {
     expect(threadsLength("hi")).toBe(2);
     expect(threadsLength("😀")).toBe(4);
     expect(threadsLength(`a${FAMILY}`)).toBe(1 + 25);
+  });
+});
+
+describe("mastodonLength", () => {
+  it("counts graphemes, links with a scheme as 23, and mentions without their server", () => {
+    expect(mastodonLength(`hi ${FAMILY}`)).toBe(4);
+    expect(mastodonLength("see https://example.com/a/very/long/path?with=query")).toBe(4 + 23);
+    // Bare domains aren't links on Mastodon, so they count in full.
+    expect(mastodonLength("see example.com")).toBe(15);
+    expect(mastodonLength("hey @alice@example.social and @bob")).toBe("hey @alice and @bob".length);
+    // An email address isn't a mention.
+    expect(mastodonLength("me@example.com")).toBe(14);
   });
 });
 
