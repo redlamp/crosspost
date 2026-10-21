@@ -63,7 +63,15 @@ export function SettingsDialog() {
           <Settings2Icon />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm">
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm"
+        // Focus the dialog itself on open, not its first button: a focused sort button
+        // would show its tooltip before anyone hovers it.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement).focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Saved in this browser.</DialogDescription>

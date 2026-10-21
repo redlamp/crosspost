@@ -1,6 +1,9 @@
 "use client"
 
-import { ChevronRightIcon, Columns2Icon, LightbulbIcon } from "lucide-react"
+import { ChevronRightIcon, Columns2Icon, LightbulbIcon, XIcon } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { useStoredState } from "@/lib/use-stored-state"
 
 /** Chrome (not Edge or other Chromium browsers) has "Open link in split view" in its link menu. */
 function isChrome() {
@@ -8,9 +11,10 @@ function isChrome() {
   return !!brands?.some((b) => b.brand === "Google Chrome")
 }
 
-/** A reminder about opening the manual platforms beside Crosspost. Only shown in Chrome. */
+/** A reminder about opening the manual platforms beside Crosspost. Only shown in Chrome, until closed. */
 export function SplitViewTip() {
-  if (!isChrome()) return null
+  const [closed, setClosed] = useStoredState("crosspost:split-view-tip-closed", false)
+  if (closed || !isChrome()) return null
 
   return (
     <aside
@@ -28,6 +32,16 @@ export function SplitViewTip() {
         <Columns2Icon className="size-3.5" />
         Open link in split view
       </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setClosed(true)}
+        aria-label="Close the reminder"
+        title="Close"
+        className="-my-2 -mr-2 ml-auto text-muted-foreground hover:text-foreground"
+      >
+        <XIcon />
+      </Button>
     </aside>
   )
 }

@@ -51,8 +51,11 @@
   --radius: 0.625rem;
   /* Crosspost's own blue, from the logo (#40A8F8). */
   --brand-blue: oklch(0.708 0.15 246);
-  /* The brand end of the header's and Compose card's gradient edges. */
-  --brand-edge: color-mix(in oklab, var(--brand-blue) 75%, var(--border));
+  /* The header's and Compose card's gradient edges: the brand blue, softened with
+     transparency, easing into the text box's border color with a hint of the blue,
+     a touch brighter than the plain border so the edge reads clearly. */
+  --brand-edge: color-mix(in oklab, var(--brand-blue) 55%, transparent);
+  --brand-edge-end: color-mix(in oklab, var(--brand-blue) 20%, var(--input));
   --background: oklch(1 0 0);
   /* Where the page background fades to: the logo's blue (hue 246), a little darker than the background. */
   --background-end: oklch(0.95 0.025 246);
@@ -146,11 +149,11 @@
   }
 }
 
-/* Edges that run from the brand blue at the upper left to the neutral border on the
+/* Edges that run from the brand blue at the upper left to a near-neutral border on the
    right, set against the background's neutral-to-blue. Unlayered, so they win over the
    components' own border colors. */
 .brand-edge-b {
-  border-image: linear-gradient(90deg, var(--brand-edge), var(--border) 70%) 1;
+  border-image: linear-gradient(90deg, var(--brand-edge), var(--brand-edge-end) 70%) 1;
 }
 .brand-edge {
   /* A rounded border can't take border-image, so the gradient is a background
@@ -158,5 +161,5 @@
   border-color: transparent;
   background:
     linear-gradient(var(--card), var(--card)) padding-box,
-    linear-gradient(120deg, var(--brand-edge), var(--border) 70%) border-box;
+    linear-gradient(120deg, var(--brand-edge), var(--brand-edge-end) 70%) border-box;
 }

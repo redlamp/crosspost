@@ -2,6 +2,7 @@
 
 import { ScissorsIcon } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 
 import { PlatformLogo } from "@/components/platform-logo"
 import { Label } from "@/components/ui/label"
@@ -493,23 +494,29 @@ export function ComposeEditor({
       </div>
 
       {/* The dragged split, following the pointer while it's outside the text. An existing
-          split there would be removed on release, so it's dimmed and turns destructive red. */}
-      {drag && !drag.inside && dragAdapters && (
-        <div
-          aria-hidden
-          className={cn("pointer-events-none fixed z-50 flex gap-0.5", drag.moving && "opacity-60")}
-          style={{ left: drag.x - 6, top: drag.y - 8 }}
-        >
-          {dragAdapters.map((a) => (
-            <Flag
-              key={a.id}
-              adapter={a}
-              label={drag.moving ? "×" : "+"}
-              className={drag.moving ? "bg-destructive text-white" : undefined}
-            />
-          ))}
-        </div>
-      )}
+          split there would be removed on release, so it's dimmed and turns destructive red.
+          Portaled to the body: as a child here it would count in the spacing between this
+          editor's rows and push everything below the text box down while it shows. */}
+      {drag &&
+        !drag.inside &&
+        dragAdapters &&
+        createPortal(
+          <div
+            aria-hidden
+            className={cn("pointer-events-none fixed z-50 flex gap-0.5", drag.moving && "opacity-60")}
+            style={{ left: drag.x - 6, top: drag.y - 8 }}
+          >
+            {dragAdapters.map((a) => (
+              <Flag
+                key={a.id}
+                adapter={a}
+                label={drag.moving ? "×" : "+"}
+                className={drag.moving ? "bg-destructive text-white" : undefined}
+              />
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
