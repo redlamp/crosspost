@@ -10,7 +10,8 @@ export const facebook: PlatformAdapter = {
   chain: false,
   countNote: "Counts characters",
   launched: "2004-02",
-  popularity: 1,
+  // Meta, January 2025: more than 3 billion monthly.
+  users: { millions: 3050, label: "3B+" },
   brand: {
     color: "#0866FF",
     whiteGlyph: "circle",

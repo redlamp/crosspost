@@ -8,7 +8,8 @@ export const linkedin: PlatformAdapter = {
   chain: false,
   countNote: "No threads: shorten to fit",
   launched: "2003-05",
-  popularity: 5,
+  // The commonly cited monthly figure; LinkedIn reports members (1B+), a different measure.
+  users: { millions: 310, label: "~310M" },
   brand: {
     color: "#0A66C2",
     whiteGlyph: "square",

@@ -22,6 +22,13 @@ export type PlatformSettings = {
 }
 
 const DEFAULT_SORT: PlatformSort = { by: "name", dir: "asc" }
+
+/** The direction each sort starts in: A to Z, oldest first, most users first. */
+export const SORT_DEFAULT_DIR: Record<PlatformSort["by"], PlatformSort["dir"]> = {
+  name: "asc",
+  launched: "asc",
+  popularity: "desc",
+}
 const DEFAULTS: PlatformSettings = { shown: {}, servers: {}, sort: DEFAULT_SORT }
 const listeners = new Set<() => void>()
 
@@ -85,14 +92,19 @@ export function updatePlatformSettings(change: (current: PlatformSettings) => Pl
 export const isShown = (settings: PlatformSettings, adapter: PlatformAdapter) =>
   settings.shown[adapter.id] ?? !adapter.hiddenByDefault
 
-/** Platforms in the given order: by name, by users (rank 1 has the most), or by launch date. */
+/** Platforms in the given order: by name, by rough monthly users, or by launch date. Ties go by name. */
 export function sortPlatforms(list: PlatformAdapter[], { by, dir }: PlatformSort): PlatformAdapter[] {
-  const key = (a: PlatformAdapter) => (by === "name" ? a.name.toLowerCase() : by === "launched" ? a.launched : "")
-  const sorted = [...list].sort((a, b) =>
-    // Ascending popularity means fewest users first, so higher ranks come first.
-    by === "popularity" ? b.popularity - a.popularity : key(a).localeCompare(key(b)),
-  )
-  return dir === "asc" ? sorted : sorted.reverse()
+  const sign = dir === "asc" ? 1 : -1
+  const byName = (a: PlatformAdapter, b: PlatformAdapter) => a.name.localeCompare(b.name)
+  return [...list].sort((a, b) => {
+    const order =
+      by === "popularity"
+        ? a.users.millions - b.users.millions
+        : by === "launched"
+          ? a.launched.localeCompare(b.launched)
+          : byName(a, b)
+    return sign * order || byName(a, b)
+  })
 }
 
 /**

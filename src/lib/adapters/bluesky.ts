@@ -12,7 +12,8 @@ export const bluesky: PlatformAdapter = {
   countNote: "Counts graphemes; an emoji is 1",
   // The app's first public beta; open to everyone from February 2024.
   launched: "2023-02",
-  popularity: 6,
+  // 2026 estimates range from under 5M to about 10M monthly; 40M+ registered.
+  users: { millions: 7, label: "5–10M" },
   brand: {
     color: "#1185FE",
     iconPath:

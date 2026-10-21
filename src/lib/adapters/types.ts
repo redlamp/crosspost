@@ -45,11 +45,12 @@ export type PlatformAdapter = {
   /** When the platform opened to the public ("YYYY-MM"), for sorting in Settings. */
   launched: string;
   /**
-   * Rank by monthly active users, 1 for the most, for sorting in Settings.
-   * A rank rather than a count: the published figures mix monthly, daily
-   * and registered users, so only the order is dependable.
+   * Rough monthly active users, for sorting and showing in Settings: a
+   * number in millions to sort by, and how to show it ("3B+", "~500M").
+   * Rough on purpose: the published figures mix monthly, daily and
+   * registered users, and some platforms no longer publish any.
    */
-  popularity: number;
+  users: { millions: number; label: string };
   brand: PlatformBrand;
   breakpoints?: Breakpoint[];
   /** Why a single post can't be published as is (beyond its length), or null. */

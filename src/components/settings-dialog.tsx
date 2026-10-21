@@ -4,7 +4,7 @@ import {
   ArrowDownWideNarrowIcon,
   ArrowUpNarrowWideIcon,
   CalendarIcon,
-  CaseSensitiveIcon,
+  ArrowDownAZIcon,
   Settings2Icon,
   UsersIcon,
   type LucideIcon,
@@ -28,6 +28,7 @@ import {
   isShown,
   serverHost,
   setSettingsOpen,
+  SORT_DEFAULT_DIR,
   sortPlatforms,
   updatePlatformSettings,
   usePlatformSettings,
@@ -37,7 +38,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const SORTS: { by: PlatformSort["by"]; icon: LucideIcon; label: string; asc: string; desc: string }[] = [
-  { by: "name", icon: CaseSensitiveIcon, label: "Alphabetical", asc: "A to Z", desc: "Z to A" },
+  { by: "name", icon: ArrowDownAZIcon, label: "Alphabetical", asc: "A to Z", desc: "Z to A" },
   { by: "popularity", icon: UsersIcon, label: "Popularity", asc: "Fewest users first", desc: "Most users first" },
   { by: "launched", icon: CalendarIcon, label: "Launch date", asc: "Oldest first", desc: "Newest first" },
 ]
@@ -84,8 +85,9 @@ export function SettingsDialog() {
                     size="icon"
                     aria-label={`Sort by ${label.toLowerCase()}`}
                     aria-pressed={settings.sort.by === by}
-                    onClick={() => setSort({ by })}
-                    className={cn("size-8", settings.sort.by === by && "bg-accent text-foreground")}
+                    // Each sort starts the way it's usually read: A to Z, oldest first, most users first.
+                    onClick={() => settings.sort.by !== by && setSort({ by, dir: SORT_DEFAULT_DIR[by] })}
+                    className={cn(settings.sort.by === by && "bg-accent text-foreground")}
                   >
                     <Icon />
                   </Button>
@@ -101,7 +103,6 @@ export function SettingsDialog() {
                   size="icon"
                   aria-label={`Order: ${current[settings.sort.dir]}. Click to reverse.`}
                   onClick={() => setSort({ dir: settings.sort.dir === "asc" ? "desc" : "asc" })}
-                  className="size-8"
                 >
                   {settings.sort.dir === "asc" ? <ArrowUpNarrowWideIcon /> : <ArrowDownWideNarrowIcon />}
                 </Button>
@@ -127,8 +128,11 @@ export function SettingsDialog() {
                       {adapter.name}
                     </label>
                     {settings.sort.by === "launched" && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {adapter.launched.slice(0, 4)}
+                      <span className="text-sm text-muted-foreground tabular-nums">{adapter.launched.slice(0, 4)}</span>
+                    )}
+                    {settings.sort.by === "popularity" && (
+                      <span className="text-sm text-muted-foreground tabular-nums" title="Rough monthly users">
+                        {adapter.users.label}
                       </span>
                     )}
                     <Switch

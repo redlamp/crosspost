@@ -19,7 +19,8 @@ export const instagram: PlatformAdapter = {
   chain: false,
   countNote: "Caption only: add the photo or video in Instagram. Links aren't clickable; at most 30 hashtags",
   launched: "2010-10",
-  popularity: 2,
+  // Meta, September 2025.
+  users: { millions: 3000, label: "3B" },
   problems,
   // Instagram doesn't publish this; ~125 is the widely reported feed cutoff.
   breakpoints: [

@@ -33,7 +33,7 @@ describe("sortPlatforms", () => {
       "threads",
       "twitter",
     ])
-    expect(ids(sortPlatforms(adapters, { by: "popularity", dir: "desc" })).slice(0, 2)).toEqual(["facebook", "instagram"])
+    expect(ids(sortPlatforms(adapters, { by: "popularity", dir: "desc" })).slice(0, 3)).toEqual(["facebook", "instagram", "twitter"])
     expect(ids(sortPlatforms(adapters, { by: "popularity", dir: "asc" }))[0]).toBe("mastodon")
     expect(ids(sortPlatforms(adapters, { by: "launched", dir: "asc" }))[0]).toBe("linkedin")
     expect(ids(sortPlatforms(adapters, { by: "launched", dir: "desc" }))[0]).toBe("threads")

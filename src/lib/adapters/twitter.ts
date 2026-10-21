@@ -10,7 +10,8 @@ export const twitter: PlatformAdapter = {
   chain: true,
   countNote: "Links count as 23; CJK and emoji as 2",
   launched: "2006-07",
-  popularity: 3,
+  // Aggregator estimates (611M to 660M, 2026); X no longer publishes figures.
+  users: { millions: 600, label: "~600M" },
   // Shown as Twitter with the classic bird, by choice. The API and intent URL are X's.
   brand: {
     color: "#1DA1F2",
