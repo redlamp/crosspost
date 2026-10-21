@@ -78,6 +78,8 @@ type Props = {
   /** The user has moved this platform's splits by hand. */
   customSplits?: boolean
   onResetSplits?: () => void
+  /** Set when Compose's shared splits differ from this platform's: take them. */
+  onMatchComposeSplits?: () => void
   /** Whether split posts get " i/n" labels here. */
   numbering?: boolean
   /** Set for platforms that number threads themselves, to let the user add labels anyway. */
@@ -105,6 +107,7 @@ export function PlatformCard({
   onEnabledChange,
   customSplits,
   onResetSplits,
+  onMatchComposeSplits,
   numbering,
   onNumberingChange,
   images = [],
@@ -260,11 +263,9 @@ export function PlatformCard({
 
       {enabled && chunks.length > 0 && (
         <CardContent className="space-y-2 px-4">
-          {splits && (
+          {(splits || onMatchComposeSplits) && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs whitespace-nowrap text-muted-foreground">
-              <span>
-                {chunks.length} posts to copy
-              </span>
+              {splits && <span>{chunks.length} posts to copy</span>}
               {customSplits && (
                 <>
                   <span>· split by hand ·</span>
@@ -277,7 +278,19 @@ export function PlatformCard({
                   </button>
                 </>
               )}
-              {onNumberingChange && (
+              {onMatchComposeSplits && (
+                <>
+                  {splits && <span aria-hidden>·</span>}
+                  <button
+                    type="button"
+                    onClick={onMatchComposeSplits}
+                    className="underline underline-offset-4 hover:text-foreground"
+                  >
+                    Match Compose splits
+                  </button>
+                </>
+              )}
+              {splits && onNumberingChange && (
                 <span className="ml-auto flex items-center gap-1.5">
                   <Tooltip>
                     <TooltipTrigger asChild>

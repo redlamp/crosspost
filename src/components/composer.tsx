@@ -14,6 +14,7 @@ import { cardId, StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
@@ -257,6 +258,25 @@ export default function Composer() {
       delete rest[id]
       return rest
     })
+  /**
+   * Compose's splits as seen from one platform: the hand-placed ones most of the other
+   * threading platforms share (what a split dragged in with All leaves on each of them).
+   */
+  const composeBreaks = (id: string) => {
+    const others = previews.filter(({ adapter }) => adapter.chain && adapter.id !== id && isEnabled(adapter.id))
+    const counts = new Map<number, number>()
+    for (const { adapter } of others) for (const o of breaks[adapter.id] ?? []) counts.set(o, (counts.get(o) ?? 0) + 1)
+    return [...counts]
+      .filter(([, n]) => n > others.length / 2)
+      .map(([o]) => o)
+      .sort((x, y) => x - y)
+  }
+  /** Taking Compose's splits, offered when a threading platform's own differ from them. */
+  const matchComposeBreaks = (id: string) => {
+    const shared = composeBreaks(id)
+    if (!shared.length || shared.join() === (breaks[id] ?? []).join()) return undefined
+    return () => setBreaks((b) => ({ ...b, [id]: shared }))
+  }
 
   const markers: SplitMarker[] = previews
     .filter(({ adapter, chunks }) => adapter.chain && isEnabled(adapter.id) && chunks.length > 1)
@@ -334,7 +354,7 @@ export default function Composer() {
         data-compose-column
         className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col"
       >
-        <Card className="brand-edge gap-4">
+        <Card className="brand-edge gap-4 border-2">
           <CardContent className="space-y-4 lg:flex lg:flex-col">
             <ComposeEditor
               value={draft}
@@ -365,9 +385,14 @@ export default function Composer() {
                     <span className="flex items-center gap-0.5">
                       <span className="sr-only">on {listNames(switchPlatforms.map((p) => p.adapter.name))}</span>
                       {switchPlatforms.map(({ adapter }) => (
-                        <span key={adapter.id} title={adapter.name}>
-                          <Flag adapter={adapter} className="rounded-bl-sm px-0.5" />
-                        </span>
+                        <Tooltip key={adapter.id}>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Flag adapter={adapter} className="rounded-bl-sm px-0.5" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{adapter.name}</TooltipContent>
+                        </Tooltip>
                       ))}
                     </span>
                   )}
@@ -429,6 +454,7 @@ export default function Composer() {
                 : undefined
             }
             onResetSplits={() => resetBreaks(adapter.id)}
+            onMatchComposeSplits={adapter.chain ? matchComposeBreaks(adapter.id) : undefined}
             images={imagesFor(adapter.id)}
             imageNumber={imageNumber}
             ownOrder={hasOwnOrder(adapter.id)}

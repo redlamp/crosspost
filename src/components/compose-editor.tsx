@@ -493,45 +493,63 @@ export function ComposeEditor({
                 >
                   {all && (
                     // One tag moves (or removes) the whole group.
-                    <button
-                      type="button"
-                      title={`${names} split here, before post ${allIndex}. Drag to move them together, or out of the text to remove them. Hover to show each platform's flag, then drag one away to split it on its own.`}
-                      aria-label={`Split for ${names}, before post ${allIndex}`}
-                      onPointerDown={(e) => {
-                        e.preventDefault()
-                        beginDrag(
-                          here.map((m) => m.adapter),
-                          e.clientX,
-                          e.clientY,
-                          { offset },
-                        )
-                      }}
-                      onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
-                      className="pointer-events-auto flex h-4 cursor-grab touch-none items-center gap-0.5 rounded-sm rounded-bl-none bg-foreground px-1 text-[10px] leading-none font-semibold text-background tabular-nums whitespace-nowrap shadow-sm active:cursor-grabbing"
-                    >
-                      <ScissorsIcon className="size-2.5" />
-                      {allIndex}
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`Split for ${names}, before post ${allIndex}`}
+                          onPointerDown={(e) => {
+                            e.preventDefault()
+                            beginDrag(
+                              here.map((m) => m.adapter),
+                              e.clientX,
+                              e.clientY,
+                              { offset },
+                            )
+                          }}
+                          onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
+                          className="pointer-events-auto flex h-4 cursor-grab touch-none items-center gap-0.5 rounded-sm rounded-bl-none bg-foreground px-1 text-[10px] leading-none font-semibold text-background tabular-nums whitespace-nowrap shadow-sm active:cursor-grabbing"
+                        >
+                          <ScissorsIcon className="size-2.5" />
+                          {allIndex}
+                        </button>
+                      </TooltipTrigger>
+                      {!drag && (
+                        <TooltipContent className="max-w-64">
+                          {names} split here, before post {allIndex}. Drag to move them together, or out of the
+                          text to remove them. Hover to show each platform&apos;s flag, then drag one away to split
+                          it on its own.
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   )}
                   {here.map((m) => (
-                    <button
-                      key={m.adapter.id}
-                      type="button"
-                      title={`${m.adapter.name} post ${m.index} starts here. Drag to move, or drag out of the text to remove${m.manual ? "; double-click to undo" : ""}.`}
-                      aria-label={`${m.adapter.name} split before post ${m.index}`}
-                      onPointerDown={(e) => {
-                        e.preventDefault()
-                        beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
-                      }}
-                      onDoubleClick={() => m.manual && onRemove(m)}
-                      className={cn(
-                        "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
-                        // In an All group the padding stands in for a gap, so it's part of the hover area.
-                        all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
+                    <Tooltip key={m.adapter.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`${m.adapter.name} split before post ${m.index}`}
+                          onPointerDown={(e) => {
+                            e.preventDefault()
+                            beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
+                          }}
+                          onDoubleClick={() => m.manual && onRemove(m)}
+                          className={cn(
+                            "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
+                            // In an All group the padding stands in for a gap, so it's part of the hover area.
+                            all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
+                          )}
+                        >
+                          <Flag adapter={m.adapter} label={all && m.index === allIndex ? undefined : m.index} />
+                        </button>
+                      </TooltipTrigger>
+                      {!drag && (
+                        <TooltipContent className="max-w-64">
+                          {m.adapter.name} post {m.index} starts here. Drag to move, or drag out of the text to remove
+                          {m.manual ? "; double-click to undo" : ""}.
+                        </TooltipContent>
                       )}
-                    >
-                      <Flag adapter={m.adapter} label={all && m.index === allIndex ? undefined : m.index} />
-                    </button>
+                    </Tooltip>
                   ))}
                 </div>
               </div>

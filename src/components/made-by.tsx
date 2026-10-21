@@ -28,7 +28,7 @@ const LINKS = [
 /** Who made Crosspost, and where to find them. The caller places it. */
 export function MadeBy({ className }: { className?: string }) {
   return (
-    <footer className={cn("flex items-center justify-between gap-3 text-sm text-muted-foreground", className)}>
+    <footer className={cn("flex items-center justify-between gap-3 text-sm text-foreground/70", className)}>
       {/* Rendered at build time; the year may differ from the visitor's clock until the next deploy. */}
       <p suppressHydrationWarning>{new Date().getFullYear()} · Made by Taylor Dale Wright</p>
       <ul className="flex items-center gap-1">

@@ -139,18 +139,28 @@ export function SettingsDialog() {
                       <span className="text-sm text-muted-foreground tabular-nums">{adapter.launched.slice(0, 4)}</span>
                     )}
                     {settings.sort.by === "popularity" && (
-                      <span className="text-sm text-muted-foreground tabular-nums" title="Rough monthly users">
-                        {adapter.users.label}
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-sm text-muted-foreground tabular-nums">{adapter.users.label}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>Rough monthly users</TooltipContent>
+                      </Tooltip>
                     )}
-                    <Switch
-                      id={id}
-                      checked={shown}
-                      disabled={last}
-                      onCheckedChange={(on) => setShown(adapter.id, on)}
-                      title={last ? "Keep at least one platform" : undefined}
-                      className="data-[state=checked]:bg-(--brand)"
-                    />
+                    <Tooltip>
+                      {/* A disabled switch gets no pointer events, so a wrapper carries the hint. */}
+                      <TooltipTrigger asChild>
+                        <span className="flex">
+                          <Switch
+                            id={id}
+                            checked={shown}
+                            disabled={last}
+                            onCheckedChange={(on) => setShown(adapter.id, on)}
+                            className="data-[state=checked]:bg-(--brand)"
+                          />
+                        </span>
+                      </TooltipTrigger>
+                      {last && <TooltipContent>Keep at least one platform</TooltipContent>}
+                    </Tooltip>
                   </div>
                   {shown && adapter.server && (
                     <ServerField

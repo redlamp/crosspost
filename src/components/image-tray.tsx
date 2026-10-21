@@ -15,6 +15,7 @@ import {
   type ImageDrag,
   type StagedImage,
 } from "@/lib/images"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
@@ -242,16 +243,18 @@ function DropBar({ expanded, animate, drag, onAdd }: BarProps) {
       >
         <DropGlow drag={drag} frame={expandedFrame} />
         <ImagePlusIcon className="relative size-4 shrink-0" />
-        <span
-          className={cn("relative", expanded ? "text-center text-balance" : "truncate")}
-          title={`Drop, paste, or pick up to ${MAX_IMAGES} images`}
-        >
-          {drag?.phase === "in"
-            ? dropLabel(drag.count)
-            : expanded
-              ? `Drop, paste, or pick up to ${MAX_IMAGES} images`
-              : "Drop, paste, or pick images"}
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={cn("relative", expanded ? "text-center text-balance" : "truncate")}>
+              {drag?.phase === "in"
+                ? dropLabel(drag.count)
+                : expanded
+                  ? `Drop, paste, or pick up to ${MAX_IMAGES} images`
+                  : "Drop, paste, or pick images"}
+            </span>
+          </TooltipTrigger>
+          {!expanded && !drag && <TooltipContent>Drop, paste, or pick up to {MAX_IMAGES} images</TooltipContent>}
+        </Tooltip>
       </button>
     </>
   )
@@ -317,16 +320,20 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
             data-image-id={img.id}
             className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
-            <img
-              src={img.url}
-              alt={img.name}
-              title={`${img.name}: drag into a post, or copy and paste`}
-              draggable
-              onDragStart={(e) => dragOut(e, img, "tray")}
-              onDragEnd={() => setInsert(null)}
-              className="size-full cursor-grab object-cover"
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
+                <img
+                  src={img.url}
+                  alt={img.name}
+                  draggable
+                  onDragStart={(e) => dragOut(e, img, "tray")}
+                  onDragEnd={() => setInsert(null)}
+                  className="size-full cursor-grab object-cover"
+                />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-64">{img.name}: drag into a post, or copy and paste</TooltipContent>
+            </Tooltip>
             {insert?.id === img.id && (
               <span
                 aria-hidden
@@ -341,24 +348,32 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
             </span>
             <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
               <span className="flex gap-1">
-                <button
-                  type="button"
-                  className={tileButton}
-                  onClick={() => copyWithToast(img, `image ${i + 1}`)}
-                  aria-label={`Copy image ${i + 1}`}
-                  title="Copy"
-                >
-                  <CopyIcon className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className={tileButton}
-                  onClick={() => downloadImage(img)}
-                  aria-label={`Download image ${i + 1}`}
-                  title="Download"
-                >
-                  <DownloadIcon className="size-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className={tileButton}
+                      onClick={() => copyWithToast(img, `image ${i + 1}`)}
+                      aria-label={`Copy image ${i + 1}`}
+                    >
+                      <CopyIcon className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Copy</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className={tileButton}
+                      onClick={() => downloadImage(img)}
+                      aria-label={`Download image ${i + 1}`}
+                    >
+                      <DownloadIcon className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Download</TooltipContent>
+                </Tooltip>
               </span>
               <ConfirmX
                 label={`Remove image ${i + 1}`}
@@ -372,26 +387,30 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
         ))}
         {images.length < MAX_IMAGES && (
           <li>
-            <button
-              type="button"
-              onClick={() => input.current?.click()}
-              aria-label="Add images"
-              title={`Add images (up to ${MAX_IMAGES})`}
-              className={cn(
-                "relative grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-dashed text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
-                drag?.phase === "in" && "border-foreground/40 text-foreground",
-              )}
-            >
-              <DropGlow drag={drag} />
-              <span className="relative flex flex-col items-center gap-1">
-                <ImagePlusIcon className="size-5" />
-                {drag?.phase === "in" && drag.count !== null && (
-                  <span className="text-xs tabular-nums">
-                    {fitLabel(drag.count, MAX_IMAGES - images.length)}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => input.current?.click()}
+                  aria-label="Add images"
+                  className={cn(
+                    "relative grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-dashed text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
+                    drag?.phase === "in" && "border-foreground/40 text-foreground",
+                  )}
+                >
+                  <DropGlow drag={drag} />
+                  <span className="relative flex flex-col items-center gap-1">
+                    <ImagePlusIcon className="size-5" />
+                    {drag?.phase === "in" && drag.count !== null && (
+                      <span className="text-xs tabular-nums">
+                        {fitLabel(drag.count, MAX_IMAGES - images.length)}
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-            </button>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Add images (up to {MAX_IMAGES})</TooltipContent>
+            </Tooltip>
           </li>
         )}
       </ol>
@@ -414,6 +433,7 @@ type ConfirmXProps = {
  */
 function ConfirmX({ label, onConfirm, className, idleClassName, iconClassName = "size-3" }: ConfirmXProps) {
   const [confirming, setConfirming] = useState(false)
+  const [hint, setHint] = useState(false)
   useEffect(() => {
     if (!confirming) return
     const timer = setTimeout(() => setConfirming(false), 4000)
@@ -421,22 +441,26 @@ function ConfirmX({ label, onConfirm, className, idleClassName, iconClassName = 
   }, [confirming])
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!confirming) return setConfirming(true)
-        setConfirming(false)
-        onConfirm()
-      }}
-      onBlur={() => setConfirming(false)}
-      onMouseLeave={() => setConfirming(false)}
-      onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
-      aria-label={confirming ? `${label}: click again to confirm` : label}
-      title={confirming ? "Click again to confirm" : label}
-      className={cn(className, confirming ? "bg-destructive opacity-100" : idleClassName)}
-    >
-      <XIcon className={iconClassName} strokeWidth={3} />
-    </button>
+    <Tooltip open={hint || confirming} onOpenChange={setHint}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => {
+            if (!confirming) return setConfirming(true)
+            setConfirming(false)
+            onConfirm()
+          }}
+          onBlur={() => setConfirming(false)}
+          onMouseLeave={() => setConfirming(false)}
+          onKeyDown={(e) => e.key === "Escape" && setConfirming(false)}
+          aria-label={confirming ? `${label}: click again to confirm` : label}
+          className={cn(className, confirming ? "bg-destructive opacity-100" : idleClassName)}
+        >
+          <XIcon className={iconClassName} strokeWidth={3} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{confirming ? "Click again to confirm" : label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -510,40 +534,46 @@ export function ImageStrip({
           return (
             <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
               {/* A div acting as the button: Firefox won't start a drag from inside a real <button>. */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={copy}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" && e.key !== " ") return
-                  e.preventDefault()
-                  copy()
-                }}
-                aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
-                title={
-                  copied.has(img.id)
-                    ? `Image ${n} copied for ${platform.name}. Click to copy again.`
-                    : movable
-                      ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold ${MOVE_KEY} for ${platform.name} only)`
-                      : `Copy image ${n}. Drag it into the post, or beside another image to reorder`
-                }
-                className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                <img
-                  src={img.url}
-                  alt=""
-                  draggable
-                  onDragStart={(e) => {
-                    dragOut(e, img, { platformId: platform.id })
-                    // Chrome cancels a drag whose page changes during dragstart, so
-                    // show the drop slots just after it.
-                    setTimeout(() => onMovingChange?.(true), 0)
-                  }}
-                  onDragEnd={() => onMovingChange?.(false)}
-                  className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
-                />
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={copy}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return
+                      e.preventDefault()
+                      copy()
+                    }}
+                    aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
+                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
+                    <img
+                      src={img.url}
+                      alt=""
+                      draggable
+                      onDragStart={(e) => {
+                        dragOut(e, img, { platformId: platform.id })
+                        // Chrome cancels a drag whose page changes during dragstart, so
+                        // show the drop slots just after it.
+                        setTimeout(() => onMovingChange?.(true), 0)
+                      }}
+                      onDragEnd={() => onMovingChange?.(false)}
+                      className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
+                    />
+                  </div>
+                </TooltipTrigger>
+                {!moving && (
+                  <TooltipContent className="max-w-64">
+                    {copied.has(img.id)
+                      ? `Image ${n} copied for ${platform.name}. Click to copy again.`
+                      : movable
+                        ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold ${MOVE_KEY} for ${platform.name} only)`
+                        : `Copy image ${n}. Drag it into the post, or beside another image to reorder`}
+                  </TooltipContent>
+                )}
+              </Tooltip>
               {insert?.id === img.id && (
                 // The gap this image would drop into.
                 <span
@@ -568,15 +598,19 @@ export function ImageStrip({
                 // Copied: grayed out like a done item, with a blue check badge on the corner
                 // (placed like the post counts on the rail, the same blue on every card).
                 // Hovering turns it red; clicking clears it.
-                <button
-                  type="button"
-                  onClick={() => onCopiedChange(img.id, false)}
-                  aria-label={`Image ${n} copied. Clear the check`}
-                  title="Clear the copied check"
-                  className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
-                >
-                  <CheckIcon className="size-2.5" strokeWidth={3.5} />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onCopiedChange(img.id, false)}
+                      aria-label={`Image ${n} copied. Clear the check`}
+                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                    >
+                      <CheckIcon className="size-2.5" strokeWidth={3.5} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear the copied check</TooltipContent>
+                </Tooltip>
               )}
             </li>
           )

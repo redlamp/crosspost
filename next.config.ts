@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   basePath: process.env.BASE_PATH ?? "",
   // The default image optimizer needs a server.
   images: { unoptimized: true },
+  // No on-screen Next.js badge in development; compile and runtime errors still show.
+  devIndicators: false,
   turbopack: {
     rules: {
       "*.css": {
