@@ -341,7 +341,10 @@ export default function Composer() {
                   onCheckedChange={(numbering) => setPrefs((p) => ({ ...p, numbering }))}
                 />
                 <Label htmlFor="numbering" className="font-normal">
-                  Number split posts ({maxPosts > 1 ? `1/${maxPosts}` : "x/y"})
+                  {/* One span, so the label's flex gap doesn't open up around the parentheses. */}
+                  <span>
+                    Number split posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
+                  </span>
                   {switchPlatforms.length > 0 && (
                     <span className="flex items-center gap-0.5">
                       <span className="sr-only">on {listNames(switchPlatforms.map((p) => p.adapter.name))}</span>
