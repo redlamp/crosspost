@@ -1,6 +1,7 @@
 import Image from "next/image";
 
-import logo from "@/assets/logo.png";
+import logoDark from "@/assets/logo-dark.svg";
+import logoLight from "@/assets/logo-light.svg";
 import { ComposerLoader } from "@/components/composer-loader";
 import { DevTools } from "@/components/dev-tools";
 import { MadeBy } from "@/components/made-by";
@@ -14,9 +15,13 @@ export default function Home() {
       {/* The bar spans the window; its content lines up with the page's centered column. */}
       <header className="sticky top-0 z-40 h-14 shrink-0 border-b-2 brand-edge-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-            <Image src={logo} alt="" width={28} height={28} loading="eager" />
-            Crosspost
+          <h1 className="flex items-center gap-2.5 text-[2rem]/10 font-bold uppercase">
+            {/* The Threads plank is white on dark and black on light, so each theme gets its own file. */}
+            <Image src={logoLight} alt="" loading="eager" className="h-8 w-auto dark:hidden" />
+            <Image src={logoDark} alt="" loading="eager" className="hidden h-8 w-auto dark:block" />
+            {/* Trim the line box to the capitals (cap height to baseline, no descender room) so the name centers
+                on the logo by its letters. Browsers without text-box support keep the normal line box. */}
+            <span className="[text-box:trim-both_cap_alphabetic]">Crosspost</span>
           </h1>
           <div className="flex items-center gap-1">
             <ThemeToggle />

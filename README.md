@@ -1,4 +1,10 @@
-# Crosspost
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/assets/logo-dark.svg">
+    <img src="src/assets/logo-light.svg" alt="" height="40" align="absmiddle">
+  </picture>
+  Crosspost
+</h1>
 
 Write a post once, then copy or open it on Bluesky, Threads, LinkedIn, Twitter, Facebook and Instagram, plus Mastodon and X if you switch them on in Settings.
 
