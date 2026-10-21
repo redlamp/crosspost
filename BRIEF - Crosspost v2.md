@@ -62,7 +62,7 @@ Every platform is posted by hand: Crosspost shows the text per post with a Copy 
 - **Clear Post** and, with images staged, **Clear Image(s)** (left-aligned): the first click turns the button red and reads "Confirm"; the second clears, with Undo in the toast. Clear Post clears the draft, manual splits and images.
 - **Split-view reminder** (Chrome only): "External link > Right-click > Open link in split view".
 - Dark grey theme by default, light/dark toggle, sticky header whose content lines up with the page's centered column, responsive down to phone width, scrollbar space always reserved.
-- **Made by** line under the Compose column: the year, "Made by Taylor Dale Wright", and icon links to the portfolio (redlamp.org), GitHub and LinkedIn.
+- **Made by** footer at the bottom of the page (after the content on a tall page, at the window's bottom on a short one), lined up with the page column: the year, "Made by Taylor Dale Wright", and icon links to the portfolio (redlamp.org), GitHub and LinkedIn.
 
 ## Architecture
 

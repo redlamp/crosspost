@@ -27,10 +27,10 @@ const LINKS = [
 /** Who made Crosspost, and where to find them. */
 export function MadeBy() {
   return (
-    <footer className="flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
-      <p>
-        {new Date().getFullYear()} · Made by Taylor Dale Wright
-      </p>
+    // Pushed to the bottom of the page; lines up with the page's centered column.
+    <footer className="mx-auto mt-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 pt-2 pb-6 text-xs text-muted-foreground sm:px-6">
+      {/* Rendered at build time; the year may differ from the visitor's clock until the next deploy. */}
+      <p suppressHydrationWarning>{new Date().getFullYear()} · Made by Taylor Dale Wright</p>
       <ul className="flex items-center gap-1">
         {LINKS.map(({ label, href, Icon }) => (
           <li key={label}>

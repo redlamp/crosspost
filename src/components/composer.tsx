@@ -8,7 +8,6 @@ import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-edit
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
-import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
@@ -377,7 +376,6 @@ export default function Composer() {
           </CardContent>
         </Card>
         <SplitViewTip />
-        <MadeBy />
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
