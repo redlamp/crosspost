@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import logo from "@/assets/logo.png";
 import { ComposerLoader } from "@/components/composer-loader";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
@@ -12,7 +13,10 @@ export default function Home() {
           <Image src={logo} alt="" width={28} height={28} loading="eager" />
           Crosspost
         </h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <SettingsDialog />
+          <ThemeToggle />
+        </div>
       </header>
       <ComposerLoader />
     </div>

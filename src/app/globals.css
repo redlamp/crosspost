@@ -124,6 +124,11 @@
   html {
     scrollbar-gutter: stable;
   }
+  /* Dialogs lock scrolling and add a right margin the width of the scrollbar;
+     the gutter above already holds that space, so the margin would shift the page. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
   body {
     @apply bg-background text-foreground;
   }

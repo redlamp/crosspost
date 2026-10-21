@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
+import { useHiddenPlatforms } from "@/lib/platform-visibility"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -153,15 +154,24 @@ export default function Composer() {
     }
     return [...adapters].sort((a, b) => rank(a.id) - rank(b.id))
   }, [prefs.order])
+  // Platforms hidden in Settings don't appear anywhere in the composer.
+  const hidden = useHiddenPlatforms()
+  const shown = useMemo(() => ordered.filter((a) => !hidden.includes(a.id)), [ordered, hidden])
+  /** Save a new order of the shown platforms; hidden ones keep their places among them. */
+  const reorderPlatforms = (shownOrder: string[]) => {
+    let next = 0
+    const order = ordered.map((a) => (hidden.includes(a.id) ? a.id : shownOrder[next++]))
+    setPrefs((p) => ({ ...p, order }))
+  }
 
   const previews = useMemo(
     () =>
-      ordered.map((adapter) => ({
+      shown.map((adapter) => ({
         adapter,
         chunks: chunksFor(adapter, draft, numbers(adapter), breaks[adapter.id]),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- numbers() reads only prefs
-    [ordered, draft, prefs.numbering, prefs.numberingFor, breaks],
+    [shown, draft, prefs.numbering, prefs.numberingFor, breaks],
   )
 
   const isEnabled = (id: string) => prefs.enabled[id] ?? true
@@ -365,7 +375,7 @@ export default function Composer() {
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-        <StatusRail items={railItems} onReorder={(order) => setPrefs((p) => ({ ...p, order }))} />
+        <StatusRail items={railItems} onReorder={reorderPlatforms} />
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4">

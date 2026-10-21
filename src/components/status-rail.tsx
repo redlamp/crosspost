@@ -123,14 +123,30 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
   }
 
   return (
-    <DndContext id="status-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <SortableContext items={ids} strategy={rectSortingStrategy}>
-        <nav aria-label="Platform status" className="flex gap-2 lg:flex-col">
-          {items.map((item) => (
-            <RailTile key={item.adapter.id} item={item} />
-          ))}
-        </nav>
-      </SortableContext>
-    </DndContext>
+    <div className="flex flex-col items-center">
+      <DndContext id="status-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={ids} strategy={rectSortingStrategy}>
+          <nav aria-label="Platform status" className="flex gap-2 lg:flex-col">
+            {items.map((item) => (
+              <RailTile key={item.adapter.id} item={item} />
+            ))}
+          </nav>
+        </SortableContext>
+      </DndContext>
+      {/* What the tiles do. Only in the side column; on narrow screens the tiles sit in a row up top. */}
+      <dl className="mt-5 hidden flex-col items-center gap-3 text-center text-[11px] leading-tight whitespace-nowrap lg:flex">
+        <RailHint gesture="Click" result="go to" />
+        <RailHint gesture="Drag" result="arrange" />
+      </dl>
+    </div>
+  )
+}
+
+function RailHint({ gesture, result }: { gesture: string; result: string }) {
+  return (
+    <div className="flex flex-col">
+      <dt className="font-medium text-foreground">{gesture}</dt>
+      <dd className="text-muted-foreground">{result}</dd>
+    </div>
   )
 }
