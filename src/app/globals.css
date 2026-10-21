@@ -49,7 +49,13 @@
 
 :root {
   --radius: 0.625rem;
+  /* Crosspost's own blue, from the logo (#40A8F8). */
+  --brand-blue: oklch(0.708 0.15 246);
+  /* As a border: mixed toward the theme's border color, like the platform cards' tinted edges. */
+  --brand-border: color-mix(in oklab, var(--brand-blue) 45%, var(--border));
   --background: oklch(1 0 0);
+  /* Where the page background fades to: the logo's blue (hue 246), a little darker than the background. */
+  --background-end: oklch(0.95 0.025 246);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -84,6 +90,8 @@
 
 .dark {
   --background: oklch(0.24 0 0);
+  /* The logo's blue, a little lighter than the dark background. */
+  --background-end: oklch(0.29 0.04 246);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.28 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -131,5 +139,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Plain at the top, easing into a hint of the logo's blue toward the bottom of the window. */
+    background-image: linear-gradient(to bottom, var(--background) 33%, var(--background-end));
+    background-attachment: fixed;
   }
 }

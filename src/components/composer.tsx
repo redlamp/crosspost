@@ -8,6 +8,7 @@ import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-edit
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
+import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
@@ -308,8 +309,10 @@ export default function Composer() {
 
   return (
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-      <div className="space-y-4 lg:sticky lg:top-20">
-        <Card className="gap-4">
+      {/* Pinned below the header and as tall as the rest of the window, so the footer at its
+          end sits at the bottom of the screen, the width of this column. */}
+      <div className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col">
+        <Card className="gap-4 border-(--brand-border)">
           <CardContent className="space-y-4">
             <ComposeEditor
               value={draft}
@@ -376,6 +379,7 @@ export default function Composer() {
           </CardContent>
         </Card>
         <SplitViewTip />
+        <MadeBy className="hidden lg:mt-auto lg:flex" />
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">

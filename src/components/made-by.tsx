@@ -4,6 +4,7 @@ import { GlobeIcon } from "lucide-react"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { linkedin } from "@/lib/adapters/linkedin"
+import { cn } from "@/lib/utils"
 
 // Simple Icons' GitHub mark (lucide no longer ships brand logos).
 const GITHUB_PATH =
@@ -24,11 +25,10 @@ const LINKS = [
   { label: "LinkedIn", href: "https://www.linkedin.com/in/redlamp/", Icon: brandMark(linkedin.brand.iconPath) },
 ]
 
-/** Who made Crosspost, and where to find them. */
-export function MadeBy() {
+/** Who made Crosspost, and where to find them. The caller places it. */
+export function MadeBy({ className }: { className?: string }) {
   return (
-    // Pushed to the bottom of the page; lines up with the page's centered column.
-    <footer className="mx-auto mt-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 pt-2 pb-6 text-xs text-muted-foreground sm:px-6">
+    <footer className={cn("flex items-center justify-between gap-3 text-sm text-muted-foreground", className)}>
       {/* Rendered at build time; the year may differ from the visitor's clock until the next deploy. */}
       <p suppressHydrationWarning>{new Date().getFullYear()} · Made by Taylor Dale Wright</p>
       <ul className="flex items-center gap-1">
@@ -41,7 +41,7 @@ export function MadeBy() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={label}
-                  className="grid size-7 place-items-center rounded-md transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="grid size-9 place-items-center rounded-md transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <Icon />
                 </a>
