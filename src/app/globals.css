@@ -58,7 +58,12 @@
   --brand-edge-end: color-mix(in oklab, var(--brand-blue) 20%, var(--input));
   --background: oklch(1 0 0);
   /* The center of the page background: the logo's blue (hue 246), a little darker than the background. */
-  --background-end: oklch(0.95 0.025 246);
+  --background-end: oklch(0.92 0.045 246);
+  /* Fine gray grain over the page background (an SVG noise tile), fainter in light mode,
+     where it shows more. It also breaks up any banding in the gradient. Tune it live on the
+     dev server with ?lab (src/components/noise-lab.tsx). */
+  --background-noise-size: 200px;
+  --background-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -94,7 +99,8 @@
 .dark {
   --background: oklch(0.24 0 0);
   /* The logo's blue, a little lighter than the dark background. */
-  --background-end: oklch(0.29 0.04 246);
+  --background-end: oklch(0.32 0.065 246);
+  --background-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.09'/%3E%3C/svg%3E");
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.28 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -142,9 +148,17 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* A hint of the logo's blue at the center of the window, easing out to the theme's
-       background toward the edges. */
-    background-image: radial-gradient(ellipse at center, var(--background-end), var(--background) 75%);
+    /* A hint of the logo's blue centered on the bottom-right corner of the content area
+       (the page column is at most 80rem wide, centered, with 1.5rem of padding), easing
+       out to the theme's background most of the way to the far corner. */
+    background-image:
+      var(--background-noise),
+      radial-gradient(
+        ellipse at calc(50% + min(50%, 40rem) - 1.5rem) 100%,
+        var(--background-end),
+        var(--background) 90%
+      );
+    background-size: var(--background-noise-size) var(--background-noise-size), auto;
     background-attachment: fixed;
   }
 }

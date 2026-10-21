@@ -60,6 +60,8 @@ const MIRRORED = [
 ] as const
 
 const FLAG_HEIGHT = 16
+/** The text box's usual height (12rem) on wide screens, when the window has room for it. */
+const TEXT_BOX_HEIGHT = 192
 /** How close to the textarea's top or bottom edge a drag starts scrolling it. */
 const SCROLL_ZONE = 28
 /** Pointer movement before pressing a chip becomes a drag rather than a click. */
@@ -194,6 +196,45 @@ export function ComposeEditor({
   }, [])
 
   useLayoutEffect(measure, [measure, value, offsetsKey, style])
+
+  // Wide screens (fitToWindow): the text box takes up to 12rem of the room the Compose
+  // column has left in the window after everything else, shrinking with the window but never
+  // below its text (it grows to fit its text and doesn't scroll inside). When the column still
+  // doesn't fit, its pinned top moves up by the overflow, so the page scroll carries it until
+  // its bottom is in view, with no scrollbar of its own.
+  useLayoutEffect(() => {
+    const ta = taRef.current
+    const column = ta?.closest<HTMLElement>("[data-compose-column]")
+    if (!ta || !column) return
+    const wide = window.matchMedia("(min-width: 64rem)")
+    const fit = () => {
+      if (!wide.matches) {
+        ta.style.minHeight = ""
+        column.style.top = ""
+        return
+      }
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+      const children = [...column.children] as HTMLElement[]
+      // Everything but the text box, with the 1rem gaps between the column's parts.
+      const others = children.reduce((sum, el) => sum + el.offsetHeight, 0) + rem * (children.length - 1) - ta.offsetHeight
+      const available = parseFloat(getComputedStyle(column).minHeight) // the window less 6rem
+      ta.style.minHeight = `${Math.max(0, Math.min(TEXT_BOX_HEIGHT, available - others))}px`
+      // Pinned 5rem down (below the header) when it fits; higher by the overflow when it
+      // doesn't, so its bottom can still reach 1rem above the window's edge.
+      column.style.top = `${Math.min(5 * rem, window.innerHeight - rem - column.offsetHeight)}px`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(column)
+    for (const child of column.children) ro.observe(child)
+    wide.addEventListener("change", fit)
+    window.addEventListener("resize", fit)
+    return () => {
+      ro.disconnect()
+      wide.removeEventListener("change", fit)
+      window.removeEventListener("resize", fit)
+    }
+  }, [])
 
   const dragAdapters = drag?.adapters
 
@@ -347,7 +388,7 @@ export function ComposeEditor({
   ]
 
   return (
-    <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-col">
+    <div className="space-y-3 lg:flex lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Label htmlFor="compose" className="text-base font-semibold">
           Compose
@@ -391,7 +432,7 @@ export function ComposeEditor({
         )}
       </div>
 
-      <div ref={wrapRef} className="relative lg:flex lg:min-h-0 lg:flex-col">
+      <div ref={wrapRef} className="relative lg:flex lg:flex-col">
         <Textarea
           ref={taRef}
           id="compose"
@@ -399,7 +440,8 @@ export function ComposeEditor({
           onChange={(e) => onChange(e.target.value)}
           onScroll={measure}
           placeholder="What's happening?"
-          // Wide screens: as tall as the Compose column leaves room for, scrolling past that.
+          // Wide screens: grows with its text, never scrolling inside; its minimum height is set
+          // below (fitToWindow) from the room the Compose column has left.
           className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none"
           autoFocus
         />
@@ -433,7 +475,12 @@ export function ComposeEditor({
             const allIndex = all ? mostCommon(here.map((m) => m.index)) : 0
             const names = here.map((m) => m.adapter.name).join(", ")
             return (
-              <div key={offset} className="absolute" style={{ left: pos.x, top: pos.y }}>
+              <div
+                key={offset}
+                // 80% at rest, so the text behind a marker shows through; full while handled.
+                className="absolute opacity-80 transition-opacity focus-within:opacity-100 hover:opacity-100"
+                style={{ left: pos.x, top: pos.y }}
+              >
                 <div
                   className="absolute top-0 -left-px w-0.5 rounded-full"
                   style={{ height: pos.h, background: all ? "var(--foreground)" : brandOf(here[0].adapter) }}

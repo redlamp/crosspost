@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import logo from "@/assets/logo.png";
 import { ComposerLoader } from "@/components/composer-loader";
+import { DevTools } from "@/components/dev-tools";
 import { MadeBy } from "@/components/made-by";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -26,6 +27,8 @@ export default function Home() {
       <ComposerLoader />
       {/* On wide screens the footer sits under the Compose column instead (see the composer). */}
       <MadeBy className="mx-auto mt-auto w-full max-w-7xl px-4 pb-4 sm:px-6 lg:hidden" />
+      {/* A tuning panel for the background noise, on the dev server only (?lab). */}
+      <DevTools />
     </div>
   );
 }

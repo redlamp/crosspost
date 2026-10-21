@@ -8,6 +8,8 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core"
 import { arrayMove, rectSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
@@ -106,7 +108,16 @@ function RailTile({ item }: { item: RailItem }) {
  * One tile per platform: brand color when fine, red when something needs
  * attention. Click to jump to its card; drag to reorder the platforms.
  */
-export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder: (ids: string[]) => void }) {
+export function StatusRail({
+  items,
+  onReorder,
+  onPreview,
+}: {
+  items: RailItem[]
+  onReorder: (ids: string[]) => void
+  /** While a tile is dragged: the order it would make, and which platform is moving; null when it's over. */
+  onPreview?: (preview: { ids: string[]; moving: string } | null) => void
+}) {
   const ids = items.map((i) => i.adapter.id)
   const sensors = useSensors(
     // A few pixels of movement before a drag starts, so a click still jumps to the card.
@@ -118,14 +129,30 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
     }),
   )
 
+  const orderFor = (active: string, over: string) => arrayMove(ids, ids.indexOf(active), ids.indexOf(over))
+
+  const onDragStart = ({ active }: DragStartEvent) => onPreview?.({ ids, moving: String(active.id) })
+  // Show the cards in the order the drop would make, as the tile moves.
+  const onDragOver = ({ active, over }: DragOverEvent) => {
+    if (over) onPreview?.({ ids: orderFor(String(active.id), String(over.id)), moving: String(active.id) })
+  }
   const onDragEnd = ({ active, over }: DragEndEvent) => {
+    onPreview?.(null)
     if (!over || active.id === over.id) return
-    onReorder(arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id))))
+    onReorder(orderFor(String(active.id), String(over.id)))
   }
 
   return (
     <div className="group/rail flex flex-col items-center">
-      <DndContext id="status-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext
+        id="status-rail"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => onPreview?.(null)}
+      >
         <SortableContext items={ids} strategy={rectSortingStrategy}>
           <nav aria-label="Platform status" className="flex gap-2 lg:flex-col">
             {items.map((item) => (
@@ -138,8 +165,11 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
           Faded until the tiles are hovered or focused, so it's there when wanted without competing. */}
       <dl
         className={cn(
-          "mt-5 hidden flex-col items-center gap-3 text-center text-[11px] leading-tight whitespace-nowrap opacity-50 transition-opacity duration-200 lg:flex",
-          "group-has-[nav:hover]/rail:opacity-100 group-has-[nav:focus-visible]/rail:opacity-100",
+          // A label, not content: it can't be selected. It brightens while the pointer is
+          // anywhere on the rail (tiles, legend, or the gap between, which belongs to the
+          // rail's box), or while a tile has keyboard focus.
+          "mt-5 hidden cursor-default flex-col items-center gap-3 text-center text-[11px] leading-tight whitespace-nowrap opacity-25 transition-opacity duration-200 select-none lg:flex",
+          "group-hover/rail:opacity-100 group-has-[nav:focus-visible]/rail:opacity-100",
         )}
       >
         <RailHint gesture="Click" result="Jump" />
@@ -152,7 +182,7 @@ export function StatusRail({ items, onReorder }: { items: RailItem[]; onReorder:
 function RailHint({ gesture, result }: { gesture: string; result: string }) {
   return (
     <div className="flex flex-col">
-      <dt className="font-medium tracking-wide text-foreground uppercase">{gesture}</dt>
+      <dt className="font-bold tracking-wide text-foreground uppercase">{gesture}</dt>
       <dd className="tracking-wide text-muted-foreground uppercase">{result}</dd>
     </div>
   )

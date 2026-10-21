@@ -1,7 +1,7 @@
 "use client"
 
 import { BroomIcon, ImageMinusIcon, RotateCcwIcon } from "lucide-react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
@@ -10,7 +10,7 @@ import { ImageArea } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
-import { StatusRail, type RailItem } from "@/components/status-rail"
+import { cardId, StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -162,6 +162,18 @@ export default function Composer() {
     [platformSettings],
   )
   const shown = useMemo(() => ordered.filter((a) => !hidden.includes(a.id)), [ordered, hidden])
+  // While a side-column tile is dragged, the cards take the order the drop would make,
+  // and the moving platform's card is kept in view.
+  const [railDrag, setRailDrag] = useState<{ ids: string[]; moving: string } | null>(null)
+  const railOrderKey = railDrag?.ids.join(",")
+  useEffect(() => {
+    if (!railDrag) return
+    document
+      .getElementById(cardId(railDrag.moving))
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll when the order or the dragged card changes
+  }, [railOrderKey, railDrag?.moving])
+
   /** Save a new order of the shown platforms; hidden ones keep their places among them. */
   const reorderPlatforms = (shownOrder: string[]) => {
     let next = 0
@@ -313,13 +325,17 @@ export default function Composer() {
     // padding it would ride up at the bottom of the page, and twitch whenever the
     // platform cards change the page's height.
     <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:pb-4">
-      {/* Pinned below the header and exactly as tall as the rest of the window, so nothing in
+      {/* Pinned below the header and at least as tall as the rest of the window, so nothing in
           the platform column can move it, and the footer at its end sits at the bottom of the
-          screen. When the post is long, the Compose card gives up height (min-h-0 down the
-          chain) and the text box scrolls inside itself. */}
-      <div className="space-y-4 lg:sticky lg:top-20 lg:flex lg:h-[calc(100dvh-6rem)] lg:flex-col">
-        <Card className="brand-edge gap-4 lg:min-h-0">
-          <CardContent className="space-y-4 lg:flex lg:min-h-0 lg:flex-col">
+          screen. In a short window the text box shrinks first, down to the height of its text;
+          past that (or for a long post) the column rides the page scroll until its bottom is in
+          view, then stays pinned there (the editor sets its top; see fitToWindow). */}
+      <div
+        data-compose-column
+        className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col"
+      >
+        <Card className="brand-edge gap-4">
+          <CardContent className="space-y-4 lg:flex lg:flex-col">
             <ComposeEditor
               value={draft}
               onChange={editDraft}
@@ -392,11 +408,14 @@ export default function Composer() {
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-        <StatusRail items={railItems} onReorder={reorderPlatforms} />
+        <StatusRail items={railItems} onReorder={reorderPlatforms} onPreview={setRailDrag} />
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        {previews.map(({ adapter, chunks }) => (
+        {(railDrag
+          ? [...previews].sort((a, b) => railDrag.ids.indexOf(a.adapter.id) - railDrag.ids.indexOf(b.adapter.id))
+          : previews
+        ).map(({ adapter, chunks }) => (
           <PlatformCard
             key={adapter.id}
             adapter={adapter}
