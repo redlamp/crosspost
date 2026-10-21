@@ -57,7 +57,7 @@
   --brand-edge: color-mix(in oklab, var(--brand-blue) 55%, transparent);
   --brand-edge-end: color-mix(in oklab, var(--brand-blue) 20%, var(--input));
   --background: oklch(1 0 0);
-  /* Where the page background fades to: the logo's blue (hue 246), a little darker than the background. */
+  /* The center of the page background: the logo's blue (hue 246), a little darker than the background. */
   --background-end: oklch(0.95 0.025 246);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -142,9 +142,9 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* The theme's background in the upper-left corner, easing into a hint of the logo's blue
-       toward the lower right: straight down, turned 15 degrees counterclockwise. */
-    background-image: linear-gradient(165deg, var(--background) 33%, var(--background-end));
+    /* A hint of the logo's blue at the center of the window, easing out to the theme's
+       background toward the edges. */
+    background-image: radial-gradient(ellipse at center, var(--background-end), var(--background) 75%);
     background-attachment: fixed;
   }
 }
