@@ -161,7 +161,11 @@ export function SettingsDialog() {
   )
 }
 
-/** Where a platform without one central site (Mastodon) should open: the user's own server. */
+/**
+ * Which server a platform without one central site (Mastodon) opens. Empty
+ * means the default server; Tab fills it in while the field is empty or
+ * holds the start of it.
+ */
 function ServerField({
   adapter,
   value,
@@ -172,42 +176,42 @@ function ServerField({
   onChange: (value: string) => void
 }) {
   const id = `server-${adapter.id}`
-  const host = serverHost(value)
-  // Tab fills in the suggested server while the field is empty or holds the start of it.
-  const suggestion = adapter.server!.placeholder
+  const fallback = adapter.server!.default
   const typed = value.trim().toLowerCase()
-  const canComplete = typed !== suggestion && suggestion.startsWith(typed)
+  const canComplete = typed !== fallback && fallback.startsWith(typed)
+  const invalid = typed !== "" && !serverHost(value)
   return (
     <div className="mt-2.5 space-y-1.5 pl-8">
-      <label htmlFor={id} className="text-xs text-muted-foreground">
-        Your server
+      <label htmlFor={id} className="text-sm text-muted-foreground">
+        Opens to server
       </label>
-      <Input
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Tab" || e.shiftKey || !canComplete) return
-          e.preventDefault()
-          onChange(suggestion)
-        }}
-        placeholder={suggestion}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-8"
-      />
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        {canComplete ? (
-          <>
-            Press <kbd className="rounded border px-1 font-sans text-[10px]">Tab</kbd> for {suggestion}, or type
-            your server or handle
-          </>
-        ) : host ? (
-          `Open goes to ${host}/share`
-        ) : (
-          `Enter a server name, like ${suggestion}`
+      <div className="relative">
+        <Input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Tab" || e.shiftKey || !canComplete) return
+            e.preventDefault()
+            onChange(fallback)
+          }}
+          placeholder={fallback}
+          aria-invalid={invalid || undefined}
+          aria-describedby={canComplete ? `${id}-tab` : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          className={cn(canComplete && "pr-14")}
+        />
+        {canComplete && (
+          <kbd
+            id={`${id}-tab`}
+            aria-label={`Press Tab for ${fallback}`}
+            className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border bg-muted px-1.5 font-sans text-xs text-muted-foreground"
+          >
+            Tab
+          </kbd>
         )}
-      </p>
+      </div>
     </div>
   )
 }
