@@ -7,6 +7,8 @@ export const linkedin: PlatformAdapter = {
   count: (text) => text.length,
   chain: false,
   countNote: "No threads: shorten to fit",
+  launched: "2003-05",
+  popularity: 5,
   brand: {
     color: "#0A66C2",
     whiteGlyph: "square",

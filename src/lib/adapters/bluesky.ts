@@ -10,6 +10,9 @@ export const bluesky: PlatformAdapter = {
   chain: true,
   numbersThreads: true,
   countNote: "Counts graphemes; an emoji is 1",
+  // The app's first public beta; open to everyone from February 2024.
+  launched: "2023-02",
+  popularity: 6,
   brand: {
     color: "#1185FE",
     iconPath:

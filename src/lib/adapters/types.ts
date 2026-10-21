@@ -42,6 +42,14 @@ export type PlatformAdapter = {
   numbersThreads?: boolean;
   /** Short note on the counting rule, shown on the card. */
   countNote: string;
+  /** When the platform opened to the public ("YYYY-MM"), for sorting in Settings. */
+  launched: string;
+  /**
+   * Rank by monthly active users, 1 for the most, for sorting in Settings.
+   * A rank rather than a count: the published figures mix monthly, daily
+   * and registered users, so only the order is dependable.
+   */
+  popularity: number;
   brand: PlatformBrand;
   breakpoints?: Breakpoint[];
   /** Why a single post can't be published as is (beyond its length), or null. */

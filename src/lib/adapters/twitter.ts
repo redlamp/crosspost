@@ -9,6 +9,8 @@ export const twitter: PlatformAdapter = {
   count: xWeightedLength,
   chain: true,
   countNote: "Links count as 23; CJK and emoji as 2",
+  launched: "2006-07",
+  popularity: 3,
   // Shown as Twitter with the classic bird, by choice. The API and intent URL are X's.
   brand: {
     color: "#1DA1F2",

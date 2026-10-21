@@ -17,6 +17,8 @@ export const threads: PlatformAdapter = {
   count: threadsLength,
   chain: true,
   countNote: "Emoji count as their UTF-8 bytes; at most 5 links per post",
+  launched: "2023-07",
+  popularity: 4,
   problems,
   brand: {
     // Threads' mark is black. A neutral gray near the other brands' OKLCH

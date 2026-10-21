@@ -10,6 +10,9 @@ export const mastodon: PlatformAdapter = {
   count: mastodonLength,
   chain: true,
   countNote: "Links count as 23; a mention counts as @name only; 500 on most servers",
+  // Public launch; the software's first release was earlier that year.
+  launched: "2016-10",
+  popularity: 7,
   brand: {
     color: "#6364FF",
     iconPath:

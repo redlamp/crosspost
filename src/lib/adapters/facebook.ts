@@ -9,6 +9,8 @@ export const facebook: PlatformAdapter = {
   count: (text) => text.length,
   chain: false,
   countNote: "Counts characters",
+  launched: "2004-02",
+  popularity: 1,
   brand: {
     color: "#0866FF",
     whiteGlyph: "circle",

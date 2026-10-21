@@ -10,14 +10,19 @@ import type { PlatformAdapter } from "@/lib/adapters"
 
 const KEY = "crosspost:platforms"
 
+export type PlatformSort = { by: "name" | "popularity" | "launched"; dir: "asc" | "desc" }
+
 export type PlatformSettings = {
   /** Shown (true) or hidden (false), where the user chose; otherwise the platform's default. */
   shown: Record<string, boolean>
   /** What the user typed for each platform's server. */
   servers: Record<string, string>
+  /** How Settings lists the platforms. */
+  sort: PlatformSort
 }
 
-const DEFAULTS: PlatformSettings = { shown: {}, servers: {} }
+const DEFAULT_SORT: PlatformSort = { by: "name", dir: "asc" }
+const DEFAULTS: PlatformSettings = { shown: {}, servers: {}, sort: DEFAULT_SORT }
 const listeners = new Set<() => void>()
 
 // The snapshot must keep its identity between reads, so it's cached.
@@ -29,12 +34,13 @@ function read(): PlatformSettings {
     const stored = JSON.parse(localStorage.getItem(KEY) ?? "null") as {
       shown?: Record<string, boolean>
       servers?: Record<string, string>
+      sort?: PlatformSort
       hidden?: string[]
     } | null
     const shown = { ...stored?.shown }
     // The first version kept a list of hidden ids.
     for (const id of stored?.hidden ?? []) shown[id] ??= false
-    cache = { shown, servers: { ...stored?.servers } }
+    cache = { shown, servers: { ...stored?.servers }, sort: { ...DEFAULT_SORT, ...stored?.sort } }
   } catch {
     cache = DEFAULTS
   }
@@ -66,8 +72,8 @@ export function usePlatformSettings(): PlatformSettings {
 }
 
 export function updatePlatformSettings(change: (current: PlatformSettings) => PlatformSettings) {
-  const { shown, servers } = change(read())
-  cache = { shown, servers }
+  const { shown, servers, sort } = change(read())
+  cache = { shown, servers, sort }
   try {
     localStorage.setItem(KEY, JSON.stringify(cache))
   } catch {
@@ -78,6 +84,16 @@ export function updatePlatformSettings(change: (current: PlatformSettings) => Pl
 
 export const isShown = (settings: PlatformSettings, adapter: PlatformAdapter) =>
   settings.shown[adapter.id] ?? !adapter.hiddenByDefault
+
+/** Platforms in the given order: by name, by users (rank 1 has the most), or by launch date. */
+export function sortPlatforms(list: PlatformAdapter[], { by, dir }: PlatformSort): PlatformAdapter[] {
+  const key = (a: PlatformAdapter) => (by === "name" ? a.name.toLowerCase() : by === "launched" ? a.launched : "")
+  const sorted = [...list].sort((a, b) =>
+    // Ascending popularity means fewest users first, so higher ranks come first.
+    by === "popularity" ? b.popularity - a.popularity : key(a).localeCompare(key(b)),
+  )
+  return dir === "asc" ? sorted : sorted.reverse()
+}
 
 /**
  * A server's host name from whatever was typed: a host, a URL or a full

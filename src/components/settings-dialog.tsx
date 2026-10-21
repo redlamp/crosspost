@@ -1,6 +1,14 @@
 "use client"
 
-import { Settings2Icon } from "lucide-react"
+import {
+  ArrowDownWideNarrowIcon,
+  ArrowUpNarrowWideIcon,
+  CalendarIcon,
+  CaseSensitiveIcon,
+  Settings2Icon,
+  UsersIcon,
+  type LucideIcon,
+} from "lucide-react"
 
 import { PlatformLogo } from "@/components/platform-logo"
 import { Button } from "@/components/ui/button"
@@ -14,15 +22,25 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import {
   isShown,
   serverHost,
   setSettingsOpen,
+  sortPlatforms,
   updatePlatformSettings,
   usePlatformSettings,
   useSettingsOpen,
+  type PlatformSort,
 } from "@/lib/platform-settings"
+import { cn } from "@/lib/utils"
+
+const SORTS: { by: PlatformSort["by"]; icon: LucideIcon; label: string; asc: string; desc: string }[] = [
+  { by: "name", icon: CaseSensitiveIcon, label: "Alphabetical", asc: "A to Z", desc: "Z to A" },
+  { by: "popularity", icon: UsersIcon, label: "Popularity", asc: "Fewest users first", desc: "Most users first" },
+  { by: "launched", icon: CalendarIcon, label: "Launch date", asc: "Oldest first", desc: "Newest first" },
+]
 
 export function SettingsDialog() {
   const settings = usePlatformSettings()
@@ -33,6 +51,9 @@ export function SettingsDialog() {
     updatePlatformSettings((s) => ({ ...s, shown: { ...s.shown, [id]: shown } }))
   const setServer = (id: string, server: string) =>
     updatePlatformSettings((s) => ({ ...s, servers: { ...s.servers, [id]: server } }))
+  const setSort = (sort: Partial<PlatformSort>) =>
+    updatePlatformSettings((s) => ({ ...s, sort: { ...s.sort, ...sort } }))
+  const current = SORTS.find((o) => o.by === settings.sort.by)!
 
   return (
     <Dialog open={open} onOpenChange={setSettingsOpen}>
@@ -52,12 +73,44 @@ export function SettingsDialog() {
             <h3 id="settings-platforms" className="text-sm font-medium">
               Platforms
             </h3>
-            <p className="text-sm text-muted-foreground">
-              Show the ones you post to. Hidden platforms leave the cards, the side column and the split buttons.
-            </p>
+            <p className="text-sm text-muted-foreground">Adjust which platforms are displayed in the app.</p>
+          </div>
+          <div className="flex items-center gap-1" role="group" aria-label="Sort platforms">
+            {SORTS.map(({ by, icon: Icon, label }) => (
+              <Tooltip key={by}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Sort by ${label.toLowerCase()}`}
+                    aria-pressed={settings.sort.by === by}
+                    onClick={() => setSort({ by })}
+                    className={cn("size-8", settings.sort.by === by && "bg-accent text-foreground")}
+                  >
+                    <Icon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{label}</TooltipContent>
+              </Tooltip>
+            ))}
+            <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Order: ${current[settings.sort.dir]}. Click to reverse.`}
+                  onClick={() => setSort({ dir: settings.sort.dir === "asc" ? "desc" : "asc" })}
+                  className="size-8"
+                >
+                  {settings.sort.dir === "asc" ? <ArrowUpNarrowWideIcon /> : <ArrowDownWideNarrowIcon />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{current[settings.sort.dir]}</TooltipContent>
+            </Tooltip>
           </div>
           <ul className="divide-y rounded-md border">
-            {adapters.map((adapter) => {
+            {sortPlatforms(adapters, settings.sort).map((adapter) => {
               const shown = isShown(settings, adapter)
               // At least one platform stays, or there'd be nothing to post to.
               const last = shown && shownCount === 1
@@ -73,6 +126,11 @@ export function SettingsDialog() {
                     <label htmlFor={id} className="flex-1 text-sm">
                       {adapter.name}
                     </label>
+                    {settings.sort.by === "launched" && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {adapter.launched.slice(0, 4)}
+                      </span>
+                    )}
                     <Switch
                       id={id}
                       checked={shown}
@@ -111,6 +169,10 @@ function ServerField({
 }) {
   const id = `server-${adapter.id}`
   const host = serverHost(value)
+  // Tab fills in the suggested server while the field is empty or holds the start of it.
+  const suggestion = adapter.server!.placeholder
+  const typed = value.trim().toLowerCase()
+  const canComplete = typed !== suggestion && suggestion.startsWith(typed)
   return (
     <div className="mt-2.5 space-y-1.5 pl-8">
       <label htmlFor={id} className="text-xs text-muted-foreground">
@@ -120,17 +182,27 @@ function ServerField({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={adapter.server!.placeholder}
+        onKeyDown={(e) => {
+          if (e.key !== "Tab" || e.shiftKey || !canComplete) return
+          e.preventDefault()
+          onChange(suggestion)
+        }}
+        placeholder={suggestion}
         autoComplete="off"
         spellCheck={false}
         className="h-8"
       />
       <p className="text-xs text-muted-foreground" aria-live="polite">
-        {host
-          ? `Open goes to ${host}/share`
-          : value.trim()
-            ? "Enter a server name, like mastodon.social"
-            : `Your server's address or your handle, like @you@${adapter.server!.placeholder}`}
+        {canComplete ? (
+          <>
+            Press <kbd className="rounded border px-1 font-sans text-[10px]">Tab</kbd> for {suggestion}, or type
+            your server or handle
+          </>
+        ) : host ? (
+          `Open goes to ${host}/share`
+        ) : (
+          `Enter a server name, like ${suggestion}`
+        )}
       </p>
     </div>
   )

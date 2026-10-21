@@ -18,6 +18,8 @@ export const instagram: PlatformAdapter = {
   count: (text) => text.length,
   chain: false,
   countNote: "Caption only: add the photo or video in Instagram. Links aren't clickable; at most 30 hashtags",
+  launched: "2010-10",
+  popularity: 2,
   problems,
   // Instagram doesn't publish this; ~125 is the widely reported feed cutoff.
   breakpoints: [

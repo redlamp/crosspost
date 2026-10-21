@@ -91,8 +91,9 @@ function RailTile({ item }: { item: RailItem }) {
             )}
           </button>
         </TooltipTrigger>
+        {/* Away from the cards, flipping to the left when the window has no room on the right. */}
         {!isDragging && (
-          <TooltipContent side="left">
+          <TooltipContent side="right" collisionPadding={8}>
             {adapter.name}: {status}
           </TooltipContent>
         )}
