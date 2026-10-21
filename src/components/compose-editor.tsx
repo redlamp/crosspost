@@ -226,6 +226,13 @@ export function ComposeEditor({
       const inside = px >= r.left && px <= r.right && py >= r.top - FLAG_HEIGHT && py <= r.bottom
       if (!inside) return null
       hit.scrollTop = ta.scrollTop
+      // Well below the last line of text (over a line and a half of empty box) counts as
+      // dragging it out, so the split can be removed without leaving the box.
+      const end = document.createRange()
+      end.setStart(node, node.textContent?.length ?? 0)
+      const lastLine = end.getClientRects()[0] ?? end.getBoundingClientRect()
+      const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 28
+      if (py + FLAG_HEIGHT > lastLine.bottom + 1.5 * lineHeight) return null
       const ty = Math.min(Math.max(py + FLAG_HEIGHT, r.top + 4), r.bottom - 4)
       const raw = caretOffsetAt(px, ty, node)
       const { value } = latest.current
@@ -485,7 +492,8 @@ export function ComposeEditor({
         </div>
       </div>
 
-      {/* The dragged split, following the pointer while it's outside the text. */}
+      {/* The dragged split, following the pointer while it's outside the text. An existing
+          split there would be removed on release, so it's dimmed and turns destructive red. */}
       {drag && !drag.inside && dragAdapters && (
         <div
           aria-hidden
@@ -493,7 +501,12 @@ export function ComposeEditor({
           style={{ left: drag.x - 6, top: drag.y - 8 }}
         >
           {dragAdapters.map((a) => (
-            <Flag key={a.id} adapter={a} label={drag.moving ? "×" : "+"} />
+            <Flag
+              key={a.id}
+              adapter={a}
+              label={drag.moving ? "×" : "+"}
+              className={drag.moving ? "bg-destructive text-white" : undefined}
+            />
           ))}
         </div>
       )}

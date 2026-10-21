@@ -51,8 +51,8 @@
   --radius: 0.625rem;
   /* Crosspost's own blue, from the logo (#40A8F8). */
   --brand-blue: oklch(0.708 0.15 246);
-  /* As a border: mixed toward the theme's border color, like the platform cards' tinted edges. */
-  --brand-border: color-mix(in oklab, var(--brand-blue) 45%, var(--border));
+  /* The brand end of the header's and Compose card's gradient edges. */
+  --brand-edge: color-mix(in oklab, var(--brand-blue) 75%, var(--border));
   --background: oklch(1 0 0);
   /* Where the page background fades to: the logo's blue (hue 246), a little darker than the background. */
   --background-end: oklch(0.95 0.025 246);
@@ -139,8 +139,24 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Plain at the top, easing into a hint of the logo's blue toward the bottom of the window. */
-    background-image: linear-gradient(to bottom, var(--background) 33%, var(--background-end));
+    /* The theme's background in the upper-left corner, easing into a hint of the logo's blue
+       toward the lower right: straight down, turned 15 degrees counterclockwise. */
+    background-image: linear-gradient(165deg, var(--background) 33%, var(--background-end));
     background-attachment: fixed;
   }
+}
+
+/* Edges that run from the brand blue at the upper left to the neutral border on the
+   right, set against the background's neutral-to-blue. Unlayered, so they win over the
+   components' own border colors. */
+.brand-edge-b {
+  border-image: linear-gradient(90deg, var(--brand-edge), var(--border) 70%) 1;
+}
+.brand-edge {
+  /* A rounded border can't take border-image, so the gradient is a background
+     clipped to the border box, under the card's own fill. */
+  border-color: transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(120deg, var(--brand-edge), var(--border) 70%) border-box;
 }

@@ -318,7 +318,7 @@ export default function Composer() {
           screen. When the post is long, the Compose card gives up height (min-h-0 down the
           chain) and the text box scrolls inside itself. */}
       <div className="space-y-4 lg:sticky lg:top-20 lg:flex lg:h-[calc(100dvh-6rem)] lg:flex-col">
-        <Card className="gap-4 border-(--brand-border) lg:min-h-0">
+        <Card className="brand-edge gap-4 lg:min-h-0">
           <CardContent className="space-y-4 lg:flex lg:min-h-0 lg:flex-col">
             <ComposeEditor
               value={draft}
