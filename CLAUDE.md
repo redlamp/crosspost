@@ -26,4 +26,4 @@ Next.js 16 App Router with `output: "export"` (so no `cacheComponents`: partial 
 
 ## Workflow
 
-- Verify changes in the browser, then commit on `main` and push; the Pages workflow deploys.
+- Verify changes in the browser and leave them uncommitted. Commit and push only when Taylor asks: pushing to `main` deploys the public site through the Pages workflow.
