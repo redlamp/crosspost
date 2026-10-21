@@ -1,7 +1,7 @@
 "use client"
 
 import { BroomIcon, ImageMinusIcon, RotateCcwIcon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
@@ -50,6 +50,9 @@ function listNames(names: string[]) {
   if (names.length <= 2) return names.join(" and ")
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }
+
+/** The id of the animation that glides a card to its new place when the cards reorder. */
+const CARD_GLIDE = "card-glide"
 
 export default function Composer() {
   const [draft, setDraft] = useStoredState("crosspost:draft", "")
@@ -166,14 +169,6 @@ export default function Composer() {
   // While a side-column tile is dragged, the cards take the order the drop would make,
   // and the moving platform's card is kept in view.
   const [railDrag, setRailDrag] = useState<{ ids: string[]; moving: string } | null>(null)
-  const railOrderKey = railDrag?.ids.join(",")
-  useEffect(() => {
-    if (!railDrag) return
-    document
-      .getElementById(cardId(railDrag.moving))
-      ?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll when the order or the dragged card changes
-  }, [railOrderKey, railDrag?.moving])
 
   /** Save a new order of the shown platforms; hidden ones keep their places among them. */
   const reorderPlatforms = (shownOrder: string[]) => {
@@ -288,6 +283,53 @@ export default function Composer() {
   // Its label names them and previews the most posts any of them needs.
   const switchPlatforms = previews.filter((p) => p.adapter.chain && !p.adapter.numbersThreads && isEnabled(p.adapter.id))
   const maxPosts = Math.max(1, ...switchPlatforms.map((p) => p.chunks.length))
+
+  const cardList = railDrag
+    ? [...previews].sort((a, b) => railDrag.ids.indexOf(a.adapter.id) - railDrag.ids.indexOf(b.adapter.id))
+    : previews
+  const cardKey = cardList.map((p) => p.adapter.id).join(",")
+  // When the cards change places, each glides from where it showed to its new place, with the
+  // side column's tiles' timing (250ms ease). Each render notes where every card sits on the
+  // page, leaving out any glide in progress, so the next reorder knows where they start.
+  const cardTops = useRef(new Map<string, number>())
+  const lastCards = useRef<{ key: string; moving?: string }>({ key: cardKey })
+  useLayoutEffect(() => {
+    const reordered = lastCards.current.key !== cardKey
+    const tops = new Map<string, number>()
+    const shifts = new Map<string, number>()
+    for (const { adapter } of cardList) {
+      const el = document.getElementById(cardId(adapter.id))
+      if (!el) continue
+      const glide = el.getAnimations().find((a) => a.id === CARD_GLIDE)
+      // How far the card shows from its place, mid-glide.
+      const shift = glide ? new DOMMatrixReadOnly(getComputedStyle(el).transform).m42 : 0
+      if (reordered) glide?.cancel()
+      tops.set(adapter.id, el.getBoundingClientRect().top + scrollY - (reordered ? 0 : shift))
+      shifts.set(adapter.id, shift)
+    }
+    // Keep the dragged platform's card in view, measured before any glide offsets it.
+    const moving = railDrag?.moving
+    if (moving && (reordered || moving !== lastCards.current.moving)) {
+      document.getElementById(cardId(moving))?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    }
+    if (reordered && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      for (const [id, top] of tops) {
+        const before = cardTops.current.get(id)
+        if (before === undefined) continue
+        const dy = before + (shifts.get(id) ?? 0) - top
+        if (Math.abs(dy) < 1) continue
+        document
+          .getElementById(cardId(id))
+          ?.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], {
+            id: CARD_GLIDE,
+            duration: 250,
+            easing: "ease",
+          })
+      }
+    }
+    cardTops.current = tops
+    lastCards.current = { key: cardKey, moving }
+  })
 
   const railItems: RailItem[] = previews.map(({ adapter, chunks }) => {
     const total = adapter.count(draft.trim())
@@ -437,10 +479,7 @@ export default function Composer() {
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        {(railDrag
-          ? [...previews].sort((a, b) => railDrag.ids.indexOf(a.adapter.id) - railDrag.ids.indexOf(b.adapter.id))
-          : previews
-        ).map(({ adapter, chunks }) => (
+        {cardList.map(({ adapter, chunks }) => (
           <PlatformCard
             key={adapter.id}
             adapter={adapter}
