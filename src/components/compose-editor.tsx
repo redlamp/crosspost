@@ -339,7 +339,7 @@ export function ComposeEditor({
   ]
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Label htmlFor="compose" className="text-base font-semibold">
           Compose
@@ -383,7 +383,7 @@ export function ComposeEditor({
         )}
       </div>
 
-      <div ref={wrapRef} className="relative">
+      <div ref={wrapRef} className="relative lg:flex lg:min-h-0 lg:flex-col">
         <Textarea
           ref={taRef}
           id="compose"
@@ -391,7 +391,8 @@ export function ComposeEditor({
           onChange={(e) => onChange(e.target.value)}
           onScroll={measure}
           placeholder="What's happening?"
-          className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base"
+          // Wide screens: as tall as the Compose column leaves room for, scrolling past that.
+          className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none"
           autoFocus
         />
         {style && (

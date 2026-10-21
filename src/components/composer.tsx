@@ -308,12 +308,18 @@ export default function Composer() {
 
 
   return (
-    <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-      {/* Pinned below the header and as tall as the rest of the window, so the footer at its
-          end sits at the bottom of the screen, the width of this column. */}
-      <div className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col">
-        <Card className="gap-4 border-(--brand-border)">
-          <CardContent className="space-y-4">
+    // On wide screens the bottom padding matches the Compose column's gap to the window's
+    // edge (1rem): a pinned column can't reach past the end of its grid row, so with more
+    // padding it would ride up at the bottom of the page, and twitch whenever the
+    // platform cards change the page's height.
+    <main className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:pb-4">
+      {/* Pinned below the header and exactly as tall as the rest of the window, so nothing in
+          the platform column can move it, and the footer at its end sits at the bottom of the
+          screen. When the post is long, the Compose card gives up height (min-h-0 down the
+          chain) and the text box scrolls inside itself. */}
+      <div className="space-y-4 lg:sticky lg:top-20 lg:flex lg:h-[calc(100dvh-6rem)] lg:flex-col">
+        <Card className="gap-4 border-(--brand-border) lg:min-h-0">
+          <CardContent className="space-y-4 lg:flex lg:min-h-0 lg:flex-col">
             <ComposeEditor
               value={draft}
               onChange={editDraft}
