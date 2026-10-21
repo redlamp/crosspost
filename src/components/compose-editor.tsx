@@ -7,7 +7,6 @@ import { createPortal } from "react-dom"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { PlatformAdapter } from "@/lib/adapters"
 import { graphemes, snapToWordStart } from "@/lib/text"
 import { cn } from "@/lib/utils"
@@ -138,7 +137,8 @@ export function Flag({ adapter, label, className }: { adapter: PlatformAdapter; 
       )}
     >
       <PlatformLogo adapter={adapter} className="size-2.5 fill-current" />
-      {label}
+      {/* Trimmed to the figures (no descender room), so the flag centers them. */}
+      {label != null && <span className="[text-box:trim-both_cap_alphabetic]">{label}</span>}
     </span>
   )
 }
@@ -395,38 +395,31 @@ export function ComposeEditor({
         </Label>
         {chips.length > 0 && (
           <div role="group" aria-label="Add a split" className="flex items-center gap-1.5">
-            <span className="mr-0.5 text-xs text-muted-foreground">Split</span>
+            <span className="mr-0.5 text-sm text-muted-foreground">Drag to split</span>
             {chips.map((chip) => (
-              <Tooltip key={chip.key}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onPointerDown={chipPointerDown(chip.adapters)}
-                    onClick={() => splitAtCursor(chip.adapters)}
-                    aria-label={`Split ${chip.name} at the cursor, or drag into the text`}
-                    style={{ "--brand": brandOf(chip.adapters[0]) } as React.CSSProperties}
-                    className={cn(
-                      "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border px-1.5 transition-colors active:cursor-grabbing",
-                      chip.key === "all"
-                        ? "border-border bg-secondary text-xs font-medium hover:bg-accent"
-                        : "border-[color-mix(in_oklab,var(--brand)_45%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_14%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand)_24%,var(--card))]",
-                    )}
-                  >
-                    {chip.key === "all" ? (
-                      <>
-                        <ScissorsIcon className="size-3.5" />
-                        All
-                      </>
-                    ) : (
-                      <PlatformLogo adapter={chip.adapters[0]} className="size-4" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Drag into the text to split {chip.key === "all" ? "every threading platform" : chip.name} there, or
-                  click to split at the cursor
-                </TooltipContent>
-              </Tooltip>
+              <button
+                key={chip.key}
+                type="button"
+                onPointerDown={chipPointerDown(chip.adapters)}
+                onClick={() => splitAtCursor(chip.adapters)}
+                aria-label={`Split ${chip.name} at the cursor, or drag into the text`}
+                style={{ "--brand": brandOf(chip.adapters[0]) } as React.CSSProperties}
+                className={cn(
+                  "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border px-1.5 transition-colors active:cursor-grabbing",
+                  chip.key === "all"
+                    ? "border-border bg-secondary text-xs font-medium hover:bg-accent"
+                    : "border-[color-mix(in_oklab,var(--brand)_45%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_14%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand)_24%,var(--card))]",
+                )}
+              >
+                {chip.key === "all" ? (
+                  <>
+                    <ScissorsIcon className="size-3.5" />
+                    All
+                  </>
+                ) : (
+                  <PlatformLogo adapter={chip.adapters[0]} className="size-4" />
+                )}
+              </button>
             ))}
           </div>
         )}
@@ -493,63 +486,43 @@ export function ComposeEditor({
                 >
                   {all && (
                     // One tag moves (or removes) the whole group.
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={`Split for ${names}, before post ${allIndex}`}
-                          onPointerDown={(e) => {
-                            e.preventDefault()
-                            beginDrag(
-                              here.map((m) => m.adapter),
-                              e.clientX,
-                              e.clientY,
-                              { offset },
-                            )
-                          }}
-                          onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
-                          className="pointer-events-auto flex h-4 cursor-grab touch-none items-center gap-0.5 rounded-sm rounded-bl-none bg-foreground px-1 text-[10px] leading-none font-semibold text-background tabular-nums whitespace-nowrap shadow-sm active:cursor-grabbing"
-                        >
-                          <ScissorsIcon className="size-2.5" />
-                          {allIndex}
-                        </button>
-                      </TooltipTrigger>
-                      {!drag && (
-                        <TooltipContent className="max-w-64">
-                          {names} split here, before post {allIndex}. Drag to move them together, or out of the
-                          text to remove them. Hover to show each platform&apos;s flag, then drag one away to split
-                          it on its own.
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
+                    <button
+                      type="button"
+                      aria-label={`Split for ${names}, before post ${allIndex}`}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        beginDrag(
+                          here.map((m) => m.adapter),
+                          e.clientX,
+                          e.clientY,
+                          { offset },
+                        )
+                      }}
+                      onDoubleClick={() => here.filter((m) => m.manual).forEach(onRemove)}
+                      className="pointer-events-auto flex h-4 cursor-grab touch-none items-center gap-0.5 rounded-sm rounded-bl-none bg-foreground px-1 text-[10px] leading-none font-semibold text-background tabular-nums whitespace-nowrap shadow-sm active:cursor-grabbing"
+                    >
+                      <ScissorsIcon className="size-2.5" />
+                      <span className="[text-box:trim-both_cap_alphabetic]">{allIndex}</span>
+                    </button>
                   )}
                   {here.map((m) => (
-                    <Tooltip key={m.adapter.id}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={`${m.adapter.name} split before post ${m.index}`}
-                          onPointerDown={(e) => {
-                            e.preventDefault()
-                            beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
-                          }}
-                          onDoubleClick={() => m.manual && onRemove(m)}
-                          className={cn(
-                            "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
-                            // In an All group the padding stands in for a gap, so it's part of the hover area.
-                            all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
-                          )}
-                        >
-                          <Flag adapter={m.adapter} label={all && m.index === allIndex ? undefined : m.index} />
-                        </button>
-                      </TooltipTrigger>
-                      {!drag && (
-                        <TooltipContent className="max-w-64">
-                          {m.adapter.name} post {m.index} starts here. Drag to move, or drag out of the text to remove
-                          {m.manual ? "; double-click to undo" : ""}.
-                        </TooltipContent>
+                    <button
+                      key={m.adapter.id}
+                      type="button"
+                      aria-label={`${m.adapter.name} split before post ${m.index}`}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        beginDrag([m.adapter], e.clientX, e.clientY, { offset: m.offset })
+                      }}
+                      onDoubleClick={() => m.manual && onRemove(m)}
+                      className={cn(
+                        "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
+                        // In an All group the padding stands in for a gap, so it's part of the hover area.
+                        all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
                       )}
-                    </Tooltip>
+                    >
+                      <Flag adapter={m.adapter} label={all && m.index === allIndex ? undefined : m.index} />
+                    </button>
                   ))}
                 </div>
               </div>

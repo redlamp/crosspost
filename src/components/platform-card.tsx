@@ -6,6 +6,7 @@ import { useEffect, useState } from "react"
 import { CopyButton } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
 import { PlatformLogo } from "@/components/platform-logo"
+import { Dot } from "@/components/dot"
 import { cardId } from "@/components/status-rail"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -80,9 +81,9 @@ type Props = {
   onResetSplits?: () => void
   /** Set when Compose's shared splits differ from this platform's: take them. */
   onMatchComposeSplits?: () => void
-  /** Whether split posts get " i/n" labels here. */
-  numbering?: boolean
-  /** Set for platforms that number threads themselves, to let the user add labels anyway. */
+  /** Whether this platform follows Compose's numbering switch. */
+  followsCompose?: boolean
+  /** Set for platforms that number threads themselves, to let them follow Compose's switch. */
   onNumberingChange?: (on: boolean) => void
   images?: StagedImage[]
   /** Which post an image goes with on this platform (0 for the first). */
@@ -108,7 +109,7 @@ export function PlatformCard({
   customSplits,
   onResetSplits,
   onMatchComposeSplits,
-  numbering,
+  followsCompose,
   onNumberingChange,
   images = [],
   imagePost = () => 0,
@@ -268,7 +269,9 @@ export function PlatformCard({
               {splits && <span>{chunks.length} posts to copy</span>}
               {customSplits && (
                 <>
-                  <span>· split by hand ·</span>
+                  <Dot className="mx-0" />
+                  <span>split by hand</span>
+                  <Dot className="mx-0" />
                   <button
                     type="button"
                     onClick={onResetSplits}
@@ -280,7 +283,7 @@ export function PlatformCard({
               )}
               {onMatchComposeSplits && (
                 <>
-                  {splits && <span aria-hidden>·</span>}
+                  {splits && <Dot className="mx-0" />}
                   <button
                     type="button"
                     onClick={onMatchComposeSplits}
@@ -298,15 +301,12 @@ export function PlatformCard({
                         Add 1/{chunks.length} anyway
                       </label>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-60">
-                      {adapter.name} shows each post&apos;s place in a thread itself. Other apps and embeds may not, so
-                      you can add the label to the text too.
-                    </TooltipContent>
+                    <TooltipContent>Follow Compose setting</TooltipContent>
                   </Tooltip>
                   <Switch
                     id={`${adapter.id}-numbering`}
                     size="sm"
-                    checked={!!numbering}
+                    checked={!!followsCompose}
                     onCheckedChange={onNumberingChange}
                     className="data-[state=checked]:bg-(--brand)"
                   />
@@ -387,7 +387,13 @@ export function PlatformCard({
                   })()}
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
-                      {chunks.length > 1 && `${i + 1} · `}
+                      {chunks.length > 1 && (
+                        <>
+                          {/* Its own width: a tabular "1" is padded out to a "0"'s and would crowd the dot. */}
+                          <span className="proportional-nums">{i + 1}</span>
+                          <Dot />
+                        </>
+                      )}
                       {n.toLocaleString()} / {adapter.limit.toLocaleString()}
                     </span>
                     {i === 0 && (

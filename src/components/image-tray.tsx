@@ -343,8 +343,8 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
                 )}
               />
             )}
-            <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
-              {i + 1}
+            <span className="absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
+              <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
             </span>
             <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
               <span className="flex gap-1">
@@ -584,8 +584,8 @@ export function ImageStrip({
                   )}
                 />
               )}
-              <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white tabular-nums">
-                {n}
+              <span className="pointer-events-none absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
+                <span className="[text-box:trim-both_cap_alphabetic]">{n}</span>
               </span>
               <ConfirmX
                 label={`Leave image ${n} off ${platform.name}`}

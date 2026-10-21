@@ -2,6 +2,7 @@
 
 import { GlobeIcon } from "lucide-react"
 
+import { Dot } from "@/components/dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { linkedin } from "@/lib/adapters/linkedin"
 import { cn } from "@/lib/utils"
@@ -30,7 +31,11 @@ export function MadeBy({ className }: { className?: string }) {
   return (
     <footer className={cn("flex items-center justify-between gap-3 text-sm text-foreground/70", className)}>
       {/* Rendered at build time; the year may differ from the visitor's clock until the next deploy. */}
-      <p suppressHydrationWarning>{new Date().getFullYear()} · Made by Taylor Wright</p>
+      <p suppressHydrationWarning>
+        {new Date().getFullYear()}
+        <Dot />
+        Made by Taylor Wright
+      </p>
       <ul className="flex items-center gap-1">
         {LINKS.map(({ label, href, Icon }) => (
           <li key={label}>

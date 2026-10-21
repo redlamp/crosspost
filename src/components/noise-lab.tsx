@@ -3,6 +3,7 @@
 import { RotateCcwIcon } from "lucide-react"
 import { useEffect, useState, useSyncExternalStore } from "react"
 
+import { Dot } from "@/components/dot"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 
@@ -108,7 +109,10 @@ export function NoiseLab() {
     >
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">
-          Noise lab <span className="font-normal text-muted-foreground">· {theme} theme</span>
+          Noise lab <span className="font-normal text-muted-foreground">
+            <Dot />
+            {theme} theme
+          </span>
         </h2>
         <label className="flex items-center gap-2 text-muted-foreground">
           {visible ? "On" : "Off"}

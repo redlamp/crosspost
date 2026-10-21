@@ -4,17 +4,17 @@ import { BroomIcon, ImageMinusIcon, RotateCcwIcon } from "lucide-react"
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import { ComposeEditor, Flag, type SplitMarker } from "@/components/compose-editor"
+import { ComposeEditor, type SplitMarker } from "@/components/compose-editor"
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
 import { firstProblem, PlatformCard } from "@/components/platform-card"
+import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
 import { cardId, StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
@@ -148,8 +148,10 @@ export default function Composer() {
   }
 
   /** Whether this platform's split posts get " i/n" labels. */
-  const numbers = (adapter: PlatformAdapter) =>
-    prefs.numberingFor?.[adapter.id] ?? (adapter.numbersThreads ? false : prefs.numbering)
+  // Platforms that number threads themselves (Bluesky) follow Compose's setting only when
+  // their card's switch says to.
+  const follows = (adapter: PlatformAdapter) => !adapter.numbersThreads || !!prefs.numberingFor?.[adapter.id]
+  const numbers = (adapter: PlatformAdapter) => prefs.numbering && follows(adapter)
 
   // Platforms in the user's order; any not in the saved order (new ones) go last.
   const ordered = useMemo(() => {
@@ -279,9 +281,9 @@ export default function Composer() {
       chunks.slice(1).map((c, i) => ({ adapter, offset: c.start, index: i + 2, manual: c.manual })),
     )
 
-  // The compose switch covers platforms that don't number threads themselves.
-  // Its label names them and previews the most posts any of them needs.
-  const switchPlatforms = previews.filter((p) => p.adapter.chain && !p.adapter.numbersThreads && isEnabled(p.adapter.id))
+  // The compose switch covers the threading platforms that follow it. Its label names
+  // them and previews the most posts any of them needs.
+  const switchPlatforms = previews.filter((p) => p.adapter.chain && follows(p.adapter) && isEnabled(p.adapter.id))
   const maxPosts = Math.max(1, ...switchPlatforms.map((p) => p.chunks.length))
 
   const cardList = railDrag
@@ -424,17 +426,20 @@ export default function Composer() {
                     Number split posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
                   </span>
                   {switchPlatforms.length > 0 && (
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-1">
                       <span className="sr-only">on {listNames(switchPlatforms.map((p) => p.adapter.name))}</span>
+                      {/* Each platform's mark in a circle of its brand color. */}
                       {switchPlatforms.map(({ adapter }) => (
-                        <Tooltip key={adapter.id}>
-                          <TooltipTrigger asChild>
-                            <span>
-                              <Flag adapter={adapter} className="rounded-bl-sm px-0.5" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{adapter.name}</TooltipContent>
-                        </Tooltip>
+                        <span
+                          key={adapter.id}
+                          style={{ "--brand": adapter.brand.color ?? "var(--foreground)" } as React.CSSProperties}
+                          className={`grid size-5 place-items-center rounded-full bg-(--brand) ${
+                            // Black-branded marks invert in dark mode, so their glyph must too.
+                            adapter.brand.color ? "text-white" : "text-background"
+                          }`}
+                        >
+                          <PlatformLogo adapter={adapter} className="size-3 fill-current" />
+                        </span>
                       ))}
                     </span>
                   )}
@@ -486,7 +491,7 @@ export default function Composer() {
             text={draft}
             chunks={chunks.map((c) => c.text)}
             customSplits={(breaks[adapter.id]?.length ?? 0) > 0}
-            numbering={numbers(adapter)}
+            followsCompose={follows(adapter)}
             onNumberingChange={
               adapter.numbersThreads
                 ? (on) => setPrefs((p) => ({ ...p, numberingFor: { ...p.numberingFor, [adapter.id]: on } }))

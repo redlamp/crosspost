@@ -122,7 +122,9 @@ function TileFace({ item: { adapter, enabled, issue, posts } }: { item: RailItem
             !adapter.brand.color && "text-background",
           )}
         >
-          {posts}
+          {/* Trimmed to the figures (cap height to baseline, no descender room), as the header's
+              name is, so the dot centers the number itself. */}
+          <span className="[text-box:trim-both_cap_alphabetic]">{posts}</span>
         </span>
       )}
     </>
