@@ -12,7 +12,8 @@ export const twitter: PlatformAdapter = {
   launched: "2006-07",
   // Aggregator estimates (611M to 660M, 2026); X no longer publishes figures.
   users: { millions: 600, label: "~600M" },
-  // Shown as Twitter with the classic bird, by choice. The API and intent URL are X's.
+  // Shown as Twitter with the classic bird by default; the X entry (./x.ts) is the same
+  // service under its current name, for anyone who prefers it. The intent URL is X's.
   brand: {
     color: "#1DA1F2",
     iconPath:

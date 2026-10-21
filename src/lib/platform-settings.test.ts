@@ -32,6 +32,7 @@ describe("sortPlatforms", () => {
       "mastodon",
       "threads",
       "twitter",
+      "x",
     ])
     expect(ids(sortPlatforms(adapters, { by: "popularity", dir: "desc" })).slice(0, 3)).toEqual(["facebook", "instagram", "twitter"])
     expect(ids(sortPlatforms(adapters, { by: "popularity", dir: "asc" }))[0]).toBe("mastodon")

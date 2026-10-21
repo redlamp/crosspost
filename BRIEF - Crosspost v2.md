@@ -41,7 +41,7 @@ Every platform is posted by hand: Crosspost shows the text per post with a Copy 
 
 **Threads:** its mark is black, so the UI uses a neutral gray, `oklch(0.66 0 0)`, near the other brand colors' OKLCH lightness (0.52 to 0.68), so it sits level with them in both themes.
 
-**Twitter:** the UI calls X "Twitter", with the classic bird logo, on purpose. Counting uses twitter-text v3 weighting: code points in 0–4351, 8192–8205, 8208–8223 and 8242–8247 weigh 1, all others 2; an emoji sequence weighs 2; every URL weighs 23, bare domains included; NFC-normalize first.
+**Twitter / X:** two entries for the same service, so each person can pick the name they prefer: "Twitter" with the classic bird (shown by default) and "X" with the X logo (hidden until switched on in Settings). Both post through X's intent link and count the same way. Counting uses twitter-text v3 weighting: code points in 0–4351, 8192–8205, 8208–8223 and 8242–8247 weigh 1, all others 2; an emoji sequence weighs 2; every URL weighs 23, bare domains included; NFC-normalize first.
 
 **Facebook:** breakpoints shown on the card (unofficial, widely reported): "Background color" (Facebook's name for colored-background text posts) up to ~130 characters and only without links; "See more" after ~480 on desktop.
 

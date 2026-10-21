@@ -1,6 +1,6 @@
 # Crosspost
 
-Write a post once, then copy or open it on each platform: Bluesky, Threads, LinkedIn, Twitter, Facebook and Instagram, plus Mastodon (switch it on in Settings). Crosspost counts characters the way each platform does, splits long posts into threads, and opens each platform with your text filled in where it can.
+Write a post once, then copy or open it on each platform: Bluesky, Threads, LinkedIn, Twitter, Facebook and Instagram, plus Mastodon and X (switch them on in Settings). Crosspost counts characters the way each platform does, splits long posts into threads, and opens each platform with your text filled in where it can.
 
 There are no accounts or sign-ins. Your draft and preferences stay in your browser.
 
