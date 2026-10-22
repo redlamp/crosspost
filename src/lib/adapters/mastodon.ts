@@ -22,9 +22,12 @@ export const mastodon: PlatformAdapter = {
   server: { default: "mastodon.social" },
   hiddenByDefault: true,
   open: {
-    label: "Open prefilled",
+    label: "Open Prefilled",
     // Every Mastodon server has a share page that opens the composer with text.
     url: (firstChunk, server = "mastodon.social") =>
       `https://${server}/share?text=${encodeURIComponent(firstChunk)}`,
   },
+  // The official apps, from their source: Android delivers text and media together; the iOS
+  // extension accepts text, one link and up to 4 images (or 1 video), the combination unverified.
+  share: { note: "Share sends the text and up to 4 images to the Mastodon app. On an iPhone, check both arrived; the text is copied in case." },
 };

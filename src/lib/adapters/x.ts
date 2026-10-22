@@ -2,9 +2,9 @@ import type { PlatformAdapter } from "./types";
 import { twitter } from "./twitter";
 
 /**
- * The same service as Twitter, under its current name and logo, for people
- * who'd rather see X. Hidden by default: Twitter shows unless the user picks
- * this one in Settings.
+ * Twitter under its current name and logo: the one shown by default. The
+ * Twitter entry (the classic bird) is the same service, off unless switched on
+ * in Settings.
  */
 export const x: PlatformAdapter = {
   ...twitter,
@@ -17,5 +17,6 @@ export const x: PlatformAdapter = {
   },
   // Sorted by when the name changed (Twitter became X in July 2023), not Twitter's launch.
   launched: "2023-07",
-  hiddenByDefault: true,
+  // Twitter's entry starts hidden; this one doesn't.
+  hiddenByDefault: false,
 };

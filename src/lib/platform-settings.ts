@@ -4,9 +4,10 @@ import { useSyncExternalStore } from "react"
 
 import type { PlatformAdapter } from "@/lib/adapters"
 
-// Platform choices from Settings: which platforms show, and the server for
-// platforms that need one (Mastodon). The Settings button lives in the page
-// header, outside the composer, so both read it through this store.
+// Platform choices: which platforms show, the server for platforms that need
+// one (Mastodon), and the order the cards and rail take. Settings and the
+// introduction live in the page header, outside the composer, so all of them
+// read these through this store.
 
 const KEY = "crosspost:platforms"
 
@@ -19,6 +20,8 @@ export type PlatformSettings = {
   servers: Record<string, string>
   /** How Settings lists the platforms. */
   sort: PlatformSort
+  /** Platform ids in the order the user arranged the cards; any missing go last. */
+  order: string[]
 }
 
 const DEFAULT_SORT: PlatformSort = { by: "name", dir: "asc" }
@@ -29,7 +32,7 @@ export const SORT_DEFAULT_DIR: Record<PlatformSort["by"], PlatformSort["dir"]> =
   launched: "asc",
   popularity: "desc",
 }
-const DEFAULTS: PlatformSettings = { shown: {}, servers: {}, sort: DEFAULT_SORT }
+const DEFAULTS: PlatformSettings = { shown: {}, servers: {}, sort: DEFAULT_SORT, order: [] }
 const listeners = new Set<() => void>()
 
 // The snapshot must keep its identity between reads, so it's cached.
@@ -42,16 +45,32 @@ function read(): PlatformSettings {
       shown?: Record<string, boolean>
       servers?: Record<string, string>
       sort?: PlatformSort
+      order?: string[]
       hidden?: string[]
     } | null
     const shown = { ...stored?.shown }
     // The first version kept a list of hidden ids.
     for (const id of stored?.hidden ?? []) shown[id] ??= false
-    cache = { shown, servers: { ...stored?.servers }, sort: { ...DEFAULT_SORT, ...stored?.sort } }
+    cache = {
+      shown,
+      servers: { ...stored?.servers },
+      sort: { ...DEFAULT_SORT, ...stored?.sort },
+      order: stored?.order ?? legacyOrder(),
+    }
   } catch {
     cache = DEFAULTS
   }
   return cache
+}
+
+/** The order once lived with Compose's preferences. */
+function legacyOrder(): string[] {
+  try {
+    const order = (JSON.parse(localStorage.getItem("crosspost:prefs") ?? "null") as { order?: string[] } | null)?.order
+    return Array.isArray(order) ? order : []
+  } catch {
+    return []
+  }
 }
 
 function notify() {
@@ -79,8 +98,8 @@ export function usePlatformSettings(): PlatformSettings {
 }
 
 export function updatePlatformSettings(change: (current: PlatformSettings) => PlatformSettings) {
-  const { shown, servers, sort } = change(read())
-  cache = { shown, servers, sort }
+  const { shown, servers, sort, order } = change(read())
+  cache = { shown, servers, sort, order }
   try {
     localStorage.setItem(KEY, JSON.stringify(cache))
   } catch {
@@ -91,6 +110,15 @@ export function updatePlatformSettings(change: (current: PlatformSettings) => Pl
 
 export const isShown = (settings: PlatformSettings, adapter: PlatformAdapter) =>
   settings.shown[adapter.id] ?? !adapter.hiddenByDefault
+
+/** Platforms in the user's arranged order; any not in it (new ones) go last. */
+export function arrangePlatforms(list: PlatformAdapter[], order: string[]): PlatformAdapter[] {
+  const rank = (id: string) => {
+    const i = order.indexOf(id)
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i
+  }
+  return [...list].sort((a, b) => rank(a.id) - rank(b.id))
+}
 
 /** Platforms in the given order: by name, by rough monthly users, or by launch date. Ties go by name. */
 export function sortPlatforms(list: PlatformAdapter[], { by, dir }: PlatformSort): PlatformAdapter[] {
