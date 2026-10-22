@@ -5,7 +5,6 @@ import {
   ArrowUpNarrowWideIcon,
   CalendarIcon,
   ArrowDownAZIcon,
-  RotateCcwIcon,
   Settings2Icon,
   Trash2Icon,
   UsersIcon,
@@ -48,29 +47,6 @@ const SORTS: { by: PlatformSort["by"]; icon: LucideIcon; label: string; asc: str
   { by: "launched", icon: CalendarIcon, label: "Launch date", asc: "Oldest first", desc: "Newest first" },
 ]
 
-/**
- * Every preference back to its default, platforms in A to Z order, with the reminder and the
- * introduction showing again; the post, its splits and the images stay. The page reloads, so
- * everything that read the old values starts over from the defaults.
- */
-function resetSettings(setTheme: (theme: string) => void) {
-  for (const key of ["crosspost:prefs", "crosspost:split-view-tip-closed", "crosspost:intro-seen"]) {
-    try {
-      localStorage.removeItem(key)
-    } catch {
-      // Storage blocked: nothing was kept to reset.
-    }
-  }
-  updatePlatformSettings(() => ({
-    shown: {},
-    servers: {},
-    sort: { by: "name", dir: "asc" },
-    order: sortPlatforms(adapters, { by: "name", dir: "asc" }).map((a) => a.id),
-  }))
-  setTheme("dark")
-  location.reload()
-}
-
 export function SettingsDialog() {
   const settings = usePlatformSettings()
   const open = useSettingsOpen()
@@ -103,7 +79,8 @@ export function SettingsDialog() {
       >
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Saved in this browser.</DialogDescription>
+          {/* For screen readers only, as the dialog's description. */}
+          <DialogDescription className="sr-only">Crosspost&apos;s platforms and the data it keeps in this browser.</DialogDescription>
         </DialogHeader>
 
         <section aria-labelledby="settings-platforms" className="space-y-3">
@@ -204,29 +181,21 @@ export function SettingsDialog() {
           </ul>
         </section>
 
-        <section aria-labelledby="settings-reset" className="space-y-3 border-t pt-4">
-          <div className="space-y-1">
-            <h3 id="settings-reset" className="text-sm font-medium">
-              Reset
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Back to the default platforms in A to Z order and the dark theme, with the reminder and the introduction
-              showing again. Your post and images stay.
-            </p>
-          </div>
-          <ConfirmButton icon={<RotateCcwIcon />} label="Reset settings" onConfirm={() => resetSettings(setTheme)} />
-        </section>
-
+        {/* Clear Data: everything Crosspost keeps in this browser goes, settings included, so it
+            covers what a reset of the settings would. */}
         <section aria-labelledby="settings-data" className="space-y-3 border-t pt-4">
           <div className="space-y-1">
             <h3 id="settings-data" className="text-sm font-medium">
-              Data
+              Clear Data
             </h3>
-            <p className="text-sm text-muted-foreground">Removes everything saved in this browser, the post included.</p>
+            <p className="text-sm text-muted-foreground">
+              Removes and resets everything saved in this browser. There is no remote data.
+            </p>
           </div>
           <ConfirmButton
             icon={<Trash2Icon />}
-            label="Clear all local data"
+            label="Clear Data"
+            confirmLabel="Confirm?"
             onConfirm={async () => {
               await clearAllLocalData()
               setTheme("dark")

@@ -33,7 +33,8 @@ type Prefs = {
   enabled: Record<string, boolean>
 }
 
-const DEFAULT_PREFS: Prefs = { numbering: true, enabled: {} }
+// Numbering starts off: a thread reads fine without " 1/3", and it costs characters.
+const DEFAULT_PREFS: Prefs = { numbering: false, enabled: {} }
 
 /** Post index per image id: shared by the threaded platforms, and per-platform overrides. */
 type Placement = { shared: Record<string, number>; only: Record<string, Record<string, number>> }
@@ -508,7 +509,7 @@ export default function Composer() {
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
         : firstProblem(adapter, chunks.map((c) => c.text))
-    const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "Fits in one post" : "Nothing to post"
+    const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "1 post" : "Nothing to post"
     return {
       adapter,
       enabled: isEnabled(adapter.id),
@@ -620,7 +621,7 @@ export default function Composer() {
                 <Label htmlFor="numbering" className="font-normal">
                   {/* One span, so the label's flex gap doesn't open up around the parentheses. */}
                   <span>
-                    Number split posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
+                    Number posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
                   </span>
                   {switchPlatforms.length > 0 && (
                     <span className="flex items-center gap-1">

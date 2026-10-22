@@ -21,8 +21,8 @@ import {
 } from "@dnd-kit/core"
 import { arrayMove, rectSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { CheckIcon, SettingsIcon, TriangleAlertIcon } from "lucide-react"
-import { useState } from "react"
+import { CheckIcon, TriangleAlertIcon } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
 import { PlatformLogo } from "@/components/platform-logo"
@@ -146,7 +146,20 @@ function TileFace({ item: { adapter, enabled, issue, posts, posted } }: { item: 
   )
 }
 
-function RailTile({ item, off }: { item: RailItem; off: boolean }) {
+/**
+ * An item's slot in the rail: a tile's size, with the space before it (below in the column, to
+ * the right in the phone row). While the Off part is closed, its items shrink to nothing, so the
+ * whole rail stays one list for the drag (two would keep the line from making room).
+ */
+function slot(collapsed: boolean) {
+  return cn(
+    "relative shrink-0 transition-[height,width,margin,opacity] duration-300 ease-out",
+    "lg:w-10 lg:not-first:mt-2 max-lg:h-10 max-lg:not-first:ml-2",
+    collapsed ? "overflow-hidden opacity-0 lg:h-0 lg:not-first:mt-0 max-lg:w-0 max-lg:not-first:ml-0" : "lg:h-10 max-lg:w-10",
+  )
+}
+
+function RailTile({ item, off, collapsed = false }: { item: RailItem; off: boolean; collapsed?: boolean }) {
   const { adapter, enabled, issue, note } = item
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: adapter.id })
   const status = off
@@ -158,7 +171,7 @@ function RailTile({ item, off }: { item: RailItem; off: boolean }) {
   return (
     // Moved, never scaled: the strategy sizes items to their neighbors', which would stretch the
     // tiles next to the line.
-    <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), transition }} className="relative">
+    <div ref={setNodeRef} inert={collapsed} style={{ transform: CSS.Translate.toString(transform), transition }} className={slot(collapsed)}>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -176,7 +189,8 @@ function RailTile({ item, off }: { item: RailItem; off: boolean }) {
         {/* Away from the cards, flipping to the left when the window has no room on the right. */}
         {!isDragging && (
           <TooltipContent side="right" collisionPadding={8}>
-            {adapter.name}: {status}
+            {/* Short for a platform that's off; how to bring it back is in its label for screen readers. */}
+            {adapter.name}: {off ? "currently off" : status}
           </TooltipContent>
         )}
       </Tooltip>
@@ -184,31 +198,40 @@ function RailTile({ item, off }: { item: RailItem; off: boolean }) {
   )
 }
 
+/** How long More stays open after the last activity on the rail. */
+const CLOSE_MS = 5000
+
 /** The line between the platforms posted to and the ones turned off: a place in the list, never dragged. */
 const LINE = "rail-line"
 
 /** The line, with Off under it, as in the introduction. A row's short upright line on phones. */
-function OffLine() {
+function OffLine({ collapsed }: { collapsed: boolean }) {
   const { setNodeRef, transform, transition } = useSortable({ id: LINE, disabled: { draggable: true } })
   return (
+    // A tile-sized slot, so the tiles that pass it shift by the right amount.
     <div
       ref={setNodeRef}
       aria-hidden
+      inert={collapsed}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className="flex items-center gap-1.5 lg:w-10 lg:flex-col lg:gap-1 lg:pt-1"
+      className={slot(collapsed)}
     >
-      <span className="h-10 w-px bg-border lg:h-px lg:w-full" />
-      <span className="text-[10px] leading-none font-bold tracking-wide text-muted-foreground uppercase select-none">Off</span>
+      <div className="flex size-full items-center justify-center gap-1.5 lg:flex-col lg:gap-1">
+        <span className="h-8 w-px bg-border lg:h-px lg:w-full" />
+        <span className="text-[10px] leading-none font-bold tracking-wide text-muted-foreground uppercase select-none">Off</span>
+      </div>
     </div>
   )
 }
 
 /**
  * One tile per platform, in two parts as in the introduction: the platforms posted to, then a
- * line, then the ones turned off, grayed. The second part opens while a tile is dragged and
- * closes after, or stays open from the gear at the top, so a platform that's off can be dragged
- * back up. Click a tile to jump to its card; drag to reorder, or across the line to turn a
- * platform off or on (at least one stays on). The same settings as Settings' platform list, so
+ * line, then the ones turned off, grayed. The second part, with a legend of what the tiles do,
+ * opens from More at the bottom (on hover, or a tap on touch screens) and while a tile is
+ * dragged, so a platform that's off can be dragged back up; More moves below it as Less, and
+ * it closes from Less, or 5 seconds after the last activity on the rail. Click a tile to jump
+ * to its card; drag to reorder, or across the line to turn a platform off or on (at least one
+ * stays on). The same settings as Settings' platform list, so
  * either shows what the other does.
  */
 export function StatusRail({
@@ -230,9 +253,33 @@ export function StatusRail({
   const ids = [...onIds, LINE, ...offIds]
   const all = [...items, ...off]
   const [dragging, setDragging] = useState<string | null>(null)
-  // The gear's choice: the Off part stays open until it's clicked again.
-  const [showOff, setShowOff] = useState(false)
-  const open = showOff || dragging !== null
+  // More: the Off part and the legend, open until Less, or a while after the pointer leaves.
+  const [more, setMore] = useState(false)
+  const open = more || dragging !== null
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const later = (fn: () => void, ms: number) => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(fn, ms)
+  }
+  useEffect(() => () => clearTimeout(timer.current), [])
+  /** Hovering More opens it after a moment, so a pointer passing by doesn't (its own timer: moving on the rail puts off closing, not opening). */
+  const opening = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(opening.current), [])
+  const hoverMore = (e: React.PointerEvent) => {
+    if (e.pointerType !== "mouse" || more) return
+    clearTimeout(opening.current)
+    opening.current = setTimeout(() => setMore(true), 200)
+  }
+  // Whether a mouse pointer is over the rail. A touch has no hover, so only Less closes it there.
+  const over = useRef(false)
+  /**
+   * Any activity on the rail (a hover, a move, focus, a drag) puts off closing: More closes 5
+   * seconds after the last of it, once the pointer is away from the rail and no drag is going.
+   */
+  const active = () => clearTimeout(timer.current)
+  const idle = () => {
+    if (more && !over.current) later(() => setMore(false), CLOSE_MS)
+  }
   const draggingItem = all.find((i) => i.adapter.id === dragging)
   const sensors = useSensors(
     // A few pixels of movement before a drag starts, so a click still jumps to the card.
@@ -257,46 +304,49 @@ export function StatusRail({
     return on.length ? [...on, ...rest] : [...onIds, ...offIds]
   }
 
-  const onDragStart = ({ active }: DragStartEvent) => {
-    setDragging(String(active.id))
-    onPreview?.({ ids: [...onIds, ...offIds], moving: String(active.id) })
+  const onDragStart = ({ active: moving }: DragStartEvent) => {
+    active()
+    setDragging(String(moving.id))
+    onPreview?.({ ids: [...onIds, ...offIds], moving: String(moving.id) })
   }
-  const onDragOver = ({ active, over }: DragOverEvent) => {
-    if (!over) return
-    onPreview?.({ ids: preview(String(active.id), String(over.id)), moving: String(active.id) })
+  const onDragOver = ({ active: moving, over: target }: DragOverEvent) => {
+    active()
+    if (!target) return
+    onPreview?.({ ids: preview(String(moving.id), String(target.id)), moving: String(moving.id) })
   }
-  const onDragEnd = ({ active, over }: DragEndEvent) => {
+  const onDragEnd = ({ active: moving, over: target }: DragEndEvent) => {
     setDragging(null)
     onPreview?.(null)
-    if (!over || active.id === over.id) return
-    const next = split(String(active.id), String(over.id))
+    // Let go away from the rail: the countdown starts from the drop.
+    idle()
+    if (!target || moving.id === target.id) return
+    const next = split(String(moving.id), String(target.id))
     if (next.on.length === 0) return
     onArrange(next.on, next.off)
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 lg:gap-3 max-lg:flex-row max-lg:items-start">
-      {/* The gear: shows the platforms that are off, so one can be dragged back up. */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => setShowOff((v) => !v)}
-            aria-expanded={open}
-            aria-label="Arrange Platforms"
-            className={cn(
-              // As wide as a tile, shorter: it's a control, not a platform.
-              "grid h-7 w-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-              showOff && "bg-accent text-foreground",
-            )}
-          >
-            <SettingsIcon className={cn("size-4 transition-transform duration-300", showOff && "rotate-90")} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right" collisionPadding={8}>
-          Arrange Platforms
-        </TooltipContent>
-      </Tooltip>
+    <div
+      className="flex flex-col items-center max-lg:flex-row max-lg:items-start"
+      // On the rail, any movement keeps it open; leaving starts the countdown (unless a drag is
+      // going, which starts it when it ends).
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") over.current = true
+        active()
+      }}
+      onPointerMove={active}
+      onPointerLeave={(e) => {
+        if (e.pointerType !== "mouse") return
+        over.current = false
+        if (dragging) active()
+        else idle()
+      }}
+      // Keyboard focus leaving the rail closes it the same way.
+      onFocus={active}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) idle()
+      }}
+    >
       <DndContext
         id="status-rail"
         sensors={sensors}
@@ -304,9 +354,11 @@ export function StatusRail({
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
+        onDragMove={active}
         onDragCancel={() => {
           setDragging(null)
           onPreview?.(null)
+          idle()
         }}
         // The page scrolls only to bring the moving platform's card into view, never on its own.
         autoScroll={false}
@@ -315,30 +367,17 @@ export function StatusRail({
       >
         <SortableContext items={ids} strategy={rectSortingStrategy}>
           {/* A row on phones, wrapping once the platforms outgrow the width; a column beside the cards. */}
-          <nav aria-label="Platform status" className="flex flex-col items-center">
-            <div className="flex flex-wrap items-center gap-2 lg:flex-col">
-              {items.map((item) => (
-                <RailTile key={item.adapter.id} item={item} off={false} />
-              ))}
-            </div>
-            {/* The line and the platforms turned off: open while a tile is dragged, or from the
-                gear, growing into place and shrinking back after. */}
-            <div
-              inert={!open}
-              className={cn(
-                "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
-                open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
-              )}
-            >
-              <div className="min-h-0 overflow-hidden">
-                <div className="flex flex-wrap items-center gap-2 pt-2 lg:flex-col">
-                  <OffLine />
-                  {off.map((item) => (
-                    <RailTile key={item.adapter.id} item={item} off />
-                  ))}
-                </div>
-              </div>
-            </div>
+          {/* One list: the tiles, the line and the platforms turned off. The line and those after
+              it open while a tile is dragged, or from More, growing into place and shrinking back
+              after. A row on phones, wrapping once the platforms outgrow the width. */}
+          <nav aria-label="Platform status" className="flex flex-wrap items-start gap-y-2 lg:flex-col lg:gap-y-0">
+            {items.map((item) => (
+              <RailTile key={item.adapter.id} item={item} off={false} />
+            ))}
+            <OffLine collapsed={!open} />
+            {off.map((item) => (
+              <RailTile key={item.adapter.id} item={item} off collapsed={!open} />
+            ))}
           </nav>
         </SortableContext>
         {/* The tile under the pointer. The rail is sticky, so it stays put when the page scrolls
@@ -355,6 +394,52 @@ export function StatusRail({
           document.body,
         )}
       </DndContext>
+      {/* What the tiles do, with the Off part. Only in the side column; the phone row has no room. */}
+      <div
+        inert={!more}
+        className={cn(
+          "hidden transition-[grid-template-rows,opacity] duration-300 ease-out lg:grid",
+          more ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {/* Set off by a line above and below, as the Off line is. */}
+          <div className="flex cursor-default flex-col items-center gap-3 pt-3 text-center text-[11px] leading-tight whitespace-nowrap select-none">
+            <span aria-hidden className="h-px w-10 bg-border" />
+            <dl className="flex flex-col items-center gap-3">
+              <RailHint gesture="Click" result="Go to" />
+              <RailHint gesture="Drag" result="Order" />
+            </dl>
+            <span aria-hidden className="h-px w-10 bg-border" />
+          </div>
+        </div>
+      </div>
+      {/* More, under everything it opens: hover (or tap) for the platforms that are off and the
+          legend; Less closes them. */}
+      <button
+        type="button"
+        aria-expanded={open}
+        onPointerEnter={hoverMore}
+        onPointerLeave={() => clearTimeout(opening.current)}
+        onClick={() => {
+          clearTimeout(opening.current)
+          clearTimeout(timer.current)
+          setMore((v) => !v)
+        }}
+        // Lettered as the legend's gestures (CLICK, DRAG), faded back to 60% until hovered.
+        className="mt-2 grid h-7 w-10 shrink-0 place-items-center rounded-lg text-[11px] leading-tight font-bold tracking-wide text-foreground/60 uppercase hover:text-foreground transition-colors select-none hover:bg-accent max-lg:mt-0 max-lg:ml-2 max-lg:h-10 lg:mt-3"
+      >
+        {more ? "Less" : "More"}
+      </button>
+    </div>
+  )
+}
+
+function RailHint({ gesture, result }: { gesture: string; result: string }) {
+  return (
+    <div className="flex flex-col">
+      <dt className="font-bold tracking-wide text-foreground uppercase">{gesture}</dt>
+      <dd className="tracking-wide text-muted-foreground uppercase">{result}</dd>
     </div>
   )
 }

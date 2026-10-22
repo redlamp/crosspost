@@ -1,6 +1,16 @@
 "use client"
 
-import { CheckIcon, CopyIcon, ExternalLinkIcon, ImagePlusIcon, LockIcon, ScissorsIcon, ShieldCheckIcon } from "lucide-react"
+import {
+  CheckIcon,
+  CircleCheckBigIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  ImagePlusIcon,
+  LockIcon,
+  PlusIcon,
+  ScissorsIcon,
+  ShieldCheckIcon,
+} from "lucide-react"
 import { Fragment, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import { Flag } from "@/components/compose-editor"
@@ -532,7 +542,7 @@ function ImageArea({
 
 /**
  * Compose as the app lays it out, the same on all three tabs: the title with the Drag to split
- * chips, the text box (`children`), Number split posts and the character count, then the image
+ * chips, the text box (`children`), Number posts and the character count, then the image
  * area (`area`). The chips are dimmed until `lit`, so they come up when they're the subject.
  * `top` is where it sits; it glides there when that changes.
  */
@@ -582,7 +592,7 @@ function MiniCompose({
           <span className="h-2.5 w-4 rounded-full bg-input p-px">
             <span className="block size-2 rounded-full bg-foreground/70" />
           </span>
-          Number split posts
+          Number posts
         </span>
         <span className="tabular-nums">{characters.toLocaleString()} characters</span>
       </div>
@@ -1315,36 +1325,52 @@ function Photo({ index, className, style }: { index: number; className?: string;
   )
 }
 
+/** What the card's progress counts, in the order the drawing does them: each post and each image. */
+type Piece = "post-0" | "img-0" | "post-1" | "img-1"
+const PIECES: Piece[] = ["post-0", "img-0", "post-1", "img-1"]
+
 type ImagesFrame = {
   cursor: Point
   duration: number
   clicks: number
   /** The platform's composer is open. */
   open: boolean
-  copied: number[]
-  pasted: number[]
+  /** A second post added to the thread in the composer. */
+  thread: boolean
+  /** Copied from the card (or opened prefilled), and what has landed in the composer. */
+  copied: Piece[]
+  pasted: Piece[]
   keycap: boolean
 }
 
 /** Deliver's desktop canvas: wide enough for the card and the platform's window side by side. */
 const DELIVER_W = 500
-const IMAGES_REST: Point = { x: 262, y: 242 }
+const IMAGES_REST: Point = { x: 262, y: 246 }
 const IMAGES_START: ImagesFrame = {
   cursor: IMAGES_REST,
   duration: 0,
   clicks: 0,
   open: false,
+  thread: false,
   copied: [],
   pasted: [],
   keycap: false,
 }
+/** Bluesky's two posts of the sample. */
+const DELIVER_POSTS = splitChunks(LOREM, bluesky.limit, bluesky.count).map((c) => c.text)
 
+/**
+ * Deliver on a desktop: Bluesky's card, its two posts with an image each, beside bsky.app's
+ * composer. The pointer opens the first post prefilled, copies its image across, adds a post to
+ * the thread, copies the second post and its image across, and posts. Each piece is checked off
+ * on the card as it goes, and once all four are, the card marks itself posted.
+ */
 function DesktopImagesArt({ active }: { active: boolean }) {
   const reduced = useReducedMotion()
   const canvasRef = useRef<HTMLDivElement>(null)
-  // Without motion: the composer open, with the first image copied and pasted.
+  // Without motion: everything carried over, and the card marked posted.
   const [frame, setFrame] = useState<ImagesFrame>(() =>
-    reduced ? { ...IMAGES_START, open: true, copied: [0], pasted: [0] } : IMAGES_START,
+    reduced ? { ...IMAGES_START, open: true, thread: true, copied: PIECES, pasted: PIECES } : IMAGES_START,
   )
 
   useEffect(() => {
@@ -1352,40 +1378,63 @@ function DesktopImagesArt({ active }: { active: boolean }) {
     const set = (change: Partial<ImagesFrame>) => setFrame((f) => ({ ...f, ...change }))
     const moveTo = (name: string, duration: number) => set({ cursor: locate(canvasRef.current, name), duration })
     const click = () => setFrame((f) => ({ ...f, clicks: f.clicks + 1 }))
+    const copy = (piece: Piece) => setFrame((f) => ({ ...f, clicks: f.clicks + 1, copied: [...f.copied, piece] }))
+    /** Into the composer at `name`, with the paste keys showing. */
+    const paste = async (wait: Wait, name: string, piece: Piece) => {
+      moveTo(name, 850)
+      await wait(900)
+      set({ keycap: true })
+      await wait(300)
+      setFrame((f) => ({ ...f, pasted: [...f.pasted, piece] }))
+      await wait(500)
+      set({ keycap: false })
+      await wait(250)
+    }
     return loop(
       async (wait) => {
         await wait(700)
+        // Open the first post prefilled: the composer opens with its text, and it counts as copied.
         moveTo("open", 750)
         await wait(800)
-        click()
+        copy("post-0")
         await wait(200)
-        set({ open: true })
+        set({ open: true, pasted: ["post-0"] })
+        await wait(800)
+        // Its image, across.
+        moveTo("thumb-0", 800)
+        await wait(850)
+        copy("img-0")
+        await wait(400)
+        await paste(wait, "slot-0", "img-0")
+        // A second post in the thread...
+        moveTo("add", 700)
+        await wait(750)
+        click()
+        set({ thread: true })
+        await wait(600)
+        // ...with the card's second post...
+        moveTo("copy-1", 850)
+        await wait(900)
+        copy("post-1")
+        await wait(400)
+        await paste(wait, "text-1", "post-1")
+        // ...and its image. With that, everything is copied: the card marks itself posted.
+        moveTo("thumb-1", 850)
+        await wait(900)
+        copy("img-1")
+        await wait(400)
+        await paste(wait, "slot-1", "img-1")
         await wait(700)
-        for (const k of [0, 1]) {
-          moveTo(`thumb-${k}`, 800)
-          await wait(850)
-          click()
-          setFrame((f) => ({ ...f, copied: [...f.copied, k] }))
-          await wait(450)
-          moveTo(`slot-${k}`, 850)
-          await wait(900)
-          set({ keycap: true })
-          await wait(300)
-          setFrame((f) => ({ ...f, pasted: [...f.pasted, k] }))
-          await wait(500)
-          set({ keycap: false })
-          await wait(200)
-        }
-        moveTo("post", 650)
-        await wait(700)
+        moveTo("post", 700)
+        await wait(750)
         click()
         await wait(350)
         set({ open: false })
         await wait(450)
         set({ cursor: IMAGES_REST, duration: 800 })
-        await wait(900)
-        set({ copied: [], pasted: [] })
-        await wait(1400)
+        await wait(1800)
+        set({ copied: [], pasted: [], thread: false })
+        await wait(1200)
       },
       // Start over each time the step comes back.
       async (wait) => {
@@ -1395,66 +1444,83 @@ function DesktopImagesArt({ active }: { active: boolean }) {
     )
   }, [active, reduced])
 
-  const count = bluesky.count(FIRST_POST)
+  const posted = PIECES.every((p) => frame.copied.includes(p))
+  const isCopied = (p: Piece) => frame.copied.includes(p)
+  const isPasted = (p: Piece) => frame.pasted.includes(p)
 
   return (
     <Stage
-      label="A pointer opens Bluesky from its card, copies two images from the card, pastes each into Bluesky's own composer, then clicks Post there."
+      label="Bluesky's card with two posts and an image on each, beside bsky.app's composer. A pointer opens the first post prefilled, copies its image across, adds a second post in the composer, copies the card's second post and its image across, then clicks Post. Each is checked off on the card, which marks itself posted once all four are."
       canvasRef={canvasRef}
       width={DELIVER_W}
     >
       <div
         style={brandVars(bluesky)}
-        className={cn("absolute top-1/2 left-3 w-[244px] -translate-y-1/2 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
+        className={cn("absolute top-1/2 left-3 w-[236px] -translate-y-1/2 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
       >
-        <MiniCardHeader adapter={bluesky} note="2 posts" />
-        <div className="mt-2.5 rounded-md border bg-background/40 p-2">
-          <p className="line-clamp-3 text-[10px] leading-[15px]">
-            <Ghost text={FIRST_POST} />
-          </p>
-          <div className="mt-2 flex gap-2">
-            {PHOTOS.map((_, k) => {
-              const copied = frame.copied.includes(k)
-              return (
-                <span key={k} data-at={`thumb-${k}`} className="relative size-12">
-                  <Photo
-                    index={k}
-                    className={cn("size-full rounded border transition", copied && "opacity-40 grayscale")}
-                  />
-                  <span className="absolute bottom-0.5 left-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-sm bg-black/60 px-0.5 text-[8px] leading-none text-white">
-                    {k + 1}
-                  </span>
-                  {copied && (
+        <div className="flex h-4 items-center gap-1.5">
+          <PlatformLogo adapter={bluesky} className="size-3.5" />
+          <span className="text-[11px] font-semibold">{bluesky.name}</span>
+          <span className="ml-auto text-[9px] text-muted-foreground tabular-nums">2 posts</span>
+          {/* The card's Posted mark: an outline while there's copying to do, filled once it's all done. */}
+          <span
+            className={cn(
+              "grid size-4.5 place-items-center rounded-full transition-colors duration-300",
+              posted ? "bg-(--brand-blue) text-white" : "text-muted-foreground",
+            )}
+          >
+            {posted ? <CheckIcon className="size-2.5" strokeWidth={3.5} /> : <CircleCheckBigIcon className="size-3.5" />}
+          </span>
+        </div>
+        <ol className="mt-2 space-y-1.5">
+          {DELIVER_POSTS.map((text, i) => {
+            const post = `post-${i}` as Piece
+            const img = `img-${i}` as Piece
+            return (
+              <li key={i} className="rounded-md border bg-background/40 p-1.5">
+                <p className="line-clamp-2 text-[8px] leading-[11px]">
+                  <Ghost text={text} className="bg-foreground/30" />
+                </p>
+                <span data-at={`thumb-${i}`} className="relative mt-1.5 block size-8">
+                  <Photo index={i} className={cn("size-full rounded border transition", isCopied(img) && "opacity-40 grayscale")} />
+                  <ImageNumber n={i + 1} />
+                  {isCopied(img) && (
                     // The copied check, as on a card.
-                    <span className="absolute -right-1 -bottom-1 grid size-3.5 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
+                    <span className="absolute -right-1 -bottom-1 grid size-3 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background">
                       <CheckIcon className="size-2" strokeWidth={3.5} />
                     </span>
                   )}
                 </span>
-              )
-            })}
-          </div>
-          <div className="mt-2 flex items-center justify-end gap-1">
-            <span className="mr-auto text-[9px] whitespace-nowrap text-muted-foreground tabular-nums">
-              1<Dot className="mx-1 size-[2px]" />
-              {count} / {bluesky.limit}
-            </span>
-            <MiniButton data-at="open">
-              <ExternalLinkIcon />
-              {bluesky.open.label}
-            </MiniButton>
-            <MiniButton>
-              <CopyIcon />
-              Copy
-            </MiniButton>
-          </div>
-        </div>
+                <div className="mt-1.5 flex items-center justify-end gap-1">
+                  <span className="mr-auto text-[8px] whitespace-nowrap text-muted-foreground tabular-nums">
+                    {i + 1}
+                    <Dot className="mx-1 size-[2px]" />
+                    {bluesky.count(text)} / {bluesky.limit}
+                  </span>
+                  {i === 0 && (
+                    <MiniButton data-at="open" className="h-4.5 text-[8px]">
+                      <ExternalLinkIcon />
+                      {bluesky.open.label}
+                    </MiniButton>
+                  )}
+                  {/* Copy: the app's blue once copied, as the card's done state. */}
+                  <MiniButton
+                    data-at={`copy-${i}`}
+                    className={cn("h-4.5 px-1 text-[8px]", isCopied(post) && "border-(--brand-blue)/60 bg-(--brand-blue)/10 text-(--brand-blue)")}
+                  >
+                    {isCopied(post) ? <CheckIcon /> : <CopyIcon />}
+                  </MiniButton>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
       </div>
 
       {/* The platform's own site, in its own window: where the posting happens. */}
       <div
         className={cn(
-          "absolute top-1/2 right-3 h-[200px] w-[228px] origin-bottom-left overflow-hidden rounded-lg border bg-card shadow-xl transition-[opacity,scale,translate] duration-300",
+          "absolute top-1/2 right-3 h-[232px] w-[232px] origin-bottom-left overflow-hidden rounded-lg border bg-card shadow-xl transition-[opacity,scale,translate] duration-300",
           frame.open ? "-translate-y-1/2 opacity-100" : "-translate-y-[48%] scale-95 opacity-0",
         )}
       >
@@ -1469,33 +1535,52 @@ function DesktopImagesArt({ active }: { active: boolean }) {
           {/* Balances the dots, so the address centers. */}
           <span className="w-[22px]" />
         </div>
-        <div className="flex gap-2 p-3">
-          <span className="size-6 shrink-0 rounded-full bg-[color-mix(in_oklab,#1185FE_35%,transparent)]" />
-          <div className="min-w-0">
-            <p className="line-clamp-3 text-[10px] leading-[15px]">
-              <Ghost text={FIRST_POST} />
-            </p>
-            <div className="mt-2 flex gap-1.5">
-              {[0, 1].map((k) => (
-                <span key={k} data-at={`slot-${k}`} className="size-10">
-                  <Photo
-                    index={k}
-                    className={cn(
-                      "size-full rounded transition-[opacity,scale] duration-300",
-                      frame.pasted.includes(k) ? "opacity-100" : "scale-50 opacity-0",
+        <div className="space-y-2 p-2.5">
+          {DELIVER_POSTS.map((text, i) => {
+            const post = `post-${i}` as Piece
+            const img = `img-${i}` as Piece
+            // The second post shows once it's added to the thread.
+            if (i === 1 && !frame.thread) return null
+            return (
+              <div key={i} className="flex gap-2 animate-in fade-in">
+                <div className="flex flex-col items-center">
+                  <span className="size-5 shrink-0 rounded-full bg-[color-mix(in_oklab,#1185FE_35%,transparent)]" />
+                  {/* The thread line, from the first post down to the second. */}
+                  {i === 0 && frame.thread && <span className="mt-1 w-px flex-1 bg-border" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p data-at={`text-${i}`} className="line-clamp-2 min-h-[22px] text-[8px] leading-[11px]">
+                    {isPasted(post) ? (
+                      <span className="animate-in fade-in">
+                        <Ghost text={text} />
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Write your reply</span>
                     )}
-                  />
-                </span>
-              ))}
-            </div>
-          </div>
+                  </p>
+                  <span data-at={`slot-${i}`} className="mt-1.5 block size-9">
+                    <Photo
+                      index={i}
+                      className={cn(
+                        "size-full rounded transition-[opacity,scale] duration-300",
+                        isPasted(img) ? "opacity-100" : "scale-50 opacity-0",
+                      )}
+                    />
+                  </span>
+                </div>
+              </div>
+            )
+          })}
         </div>
-        <span
-          data-at="post"
-          className="absolute right-3 bottom-3 flex h-6 items-center rounded-full bg-[#1185FE] px-3.5 text-[10px] font-semibold text-white"
-        >
-          Post
-        </span>
+        <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-between">
+          {/* Adds a post to the thread, as Bluesky's composer does. */}
+          <span data-at="add" className="grid size-6 place-items-center rounded-full border text-[#1185FE]">
+            <PlusIcon className="size-3.5" />
+          </span>
+          <span data-at="post" className="flex h-6 items-center rounded-full bg-[#1185FE] px-3.5 text-[10px] font-semibold text-white">
+            {frame.thread ? "Post all" : "Post"}
+          </span>
+        </div>
       </div>
 
       <Cursor at={frame.cursor} duration={frame.duration} clicks={frame.clicks} />
@@ -1632,7 +1717,7 @@ function PhoneImagesArt({ active }: { active: boolean }) {
                       className={cn("size-full rounded border transition", k === 0 && frame.copied && "opacity-40 grayscale")}
                     />
                     {k === 0 && frame.copied && (
-                      <span className="absolute -right-1 -bottom-1 grid size-3 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background">
+                      <span className="absolute -right-1 -bottom-1 grid size-3 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background">
                         <CheckIcon className="size-2" strokeWidth={3.5} />
                       </span>
                     )}
