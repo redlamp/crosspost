@@ -190,3 +190,32 @@
     linear-gradient(var(--card), var(--card)) padding-box,
     linear-gradient(120deg, var(--brand-edge), var(--brand-edge-end) 70%) border-box;
 }
+
+/* Switching the theme: the new one blooms out from the page's blue glow, a soft-edged circle
+   growing over the old until it covers the window (the theme toggle sets where and how far). */
+@property --theme-reveal {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  mask-image: radial-gradient(
+    circle at var(--theme-x, 100%) var(--theme-y, 100%),
+    #000 var(--theme-reveal),
+    transparent calc(var(--theme-reveal) + 200px)
+  );
+  animation: theme-reveal 900ms cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+@keyframes theme-reveal {
+  from {
+    --theme-reveal: -200px;
+  }
+  to {
+    --theme-reveal: var(--theme-r, 150vmax);
+  }
+}
