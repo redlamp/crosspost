@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   codePointLength,
+  findMentions,
   shiftBreaks,
   snapToWordStart,
   splitChunks,
@@ -222,3 +223,19 @@ describe("snapToWordStart", () => {
     expect(snapToWordStart(text, 6)).toBe(6);
   });
 });
+
+describe("findMentions", () => {
+  it("finds handles, with and without a server, once each", () => {
+    expect(findMentions("Thanks @alice and @bob.bsky.social, and @alice@mastodon.social. Again @alice!")).toEqual([
+      "@alice",
+      "@bob.bsky.social",
+      "@alice@mastodon.social",
+    ])
+  })
+  it("ignores emails, URLs and a lone @", () => {
+    expect(findMentions("mail me@example.com, see https://x.com/@nope, or meet @ noon")).toEqual([])
+  })
+  it("drops trailing punctuation", () => {
+    expect(findMentions("(cc @carol_w).")).toEqual(["@carol_w"])
+  })
+})

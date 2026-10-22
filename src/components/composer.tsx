@@ -16,7 +16,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
-import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
@@ -50,9 +50,11 @@ type Progress = {
   copiedPosts: Record<string, string[]>
   copiedImages: Record<string, string[]>
   hiddenImages: Record<string, string[]>
+  /** The @tags confirmed as right on each platform; a new tag needs confirming again. */
+  checkedTags: Record<string, string[]>
 }
 
-const NO_PROGRESS: Progress = { posted: {}, copiedPosts: {}, copiedImages: {}, hiddenImages: {} }
+const NO_PROGRESS: Progress = { posted: {}, copiedPosts: {}, copiedImages: {}, hiddenImages: {}, checkedTags: {} }
 
 type ProgressList = Exclude<keyof Progress, "posted">
 
@@ -128,7 +130,8 @@ export default function Composer() {
   // Which post each image goes with on threaded platforms: the first unless
   // moved. A move mirrors to every threaded platform; one made with Ctrl held
   // stays on that platform and wins over the shared one.
-  const [placement, setPlacement] = useState<Placement>({ shared: {}, only: {} })
+  // Kept across reloads, so a crash or a closed tab doesn't lose where the images went.
+  const [placement, setPlacement] = useStoredState<Placement>("crosspost:image-placement", { shared: {}, only: {} })
   const imagePost = (platformId: string, id: string) =>
     placement.only[platformId]?.[id] ?? placement.shared[id] ?? 0
   const moveImage = (platformId: string, id: string, post: number, onlyHere: boolean) =>
@@ -145,7 +148,7 @@ export default function Composer() {
 
   // Image order: the Compose tray's by default. Reordering on a card sets an
   // order for that platform alone, until it's set back to match Compose.
-  const [cardOrder, setCardOrder] = useState<Record<string, string[]>>({})
+  const [cardOrder, setCardOrder] = useStoredState<Record<string, string[]>>("crosspost:image-order", {})
   const [progress, setProgress] = useStoredState<Progress>("crosspost:progress", NO_PROGRESS, (p) => ({
     ...NO_PROGRESS,
     ...p,
@@ -157,16 +160,18 @@ export default function Composer() {
     progressRef.current = progress
   })
   /**
-   * Note copies from a platform's card. Once every post and every image still on the card has
-   * been copied, the platform is marked posted on its own (never unmarked), with a toast.
+   * Note a step done on a platform's card: a post or image copied, or its tags confirmed. Once
+   * every post and every image still on the card has been copied and any tags confirmed, the
+   * platform is marked posted on its own (never unmarked), with a toast.
    */
   const noteCopy = (
     adapter: PlatformAdapter,
-    list: "copiedPosts" | "copiedImages",
+    list: "copiedPosts" | "copiedImages" | "checkedTags",
     items: string[],
     on: boolean,
     posts: string[],
     imageIds: string[],
+    tags: string[],
   ) => {
     const next = markIn(progressRef.current, list, adapter.id, items, on)
     progressRef.current = next
@@ -175,10 +180,11 @@ export default function Composer() {
       !next.posted[adapter.id] &&
       posts.length > 0 &&
       posts.every((t) => next.copiedPosts[adapter.id]?.includes(t)) &&
-      imageIds.every((id) => next.copiedImages[adapter.id]?.includes(id))
+      imageIds.every((id) => next.copiedImages[adapter.id]?.includes(id)) &&
+      tags.every((t) => next.checkedTags[adapter.id]?.includes(t))
     if (!done) return setProgress(next)
     setProgress({ ...next, posted: { ...next.posted, [adapter.id]: true } })
-    toast(`Everything for ${adapter.name} is copied, so it's marked posted`, {
+    toast(`Everything for ${adapter.name} is done, so it's marked posted`, {
       action: {
         label: "Undo",
         onClick: () => setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: false } })),
@@ -695,6 +701,8 @@ export default function Composer() {
           const cardImageIds = imagesFor(adapter.id)
             .map((img) => img.id)
             .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id))
+          // Tags to confirm before the platform counts as done.
+          const tags = findMentions(chunkTexts.join("\n"))
           return (
           <PlatformCard
             key={adapter.id}
@@ -719,9 +727,14 @@ export default function Composer() {
             posted={!!progress.posted[adapter.id]}
             onPostedChange={(on) => setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: on } }))}
             copiedPosts={progress.copiedPosts[adapter.id] ?? []}
-            onPostCopied={(text) => noteCopy(adapter, "copiedPosts", [text], true, chunkTexts, cardImageIds)}
+            onPostCopied={(text) => noteCopy(adapter, "copiedPosts", [text], true, chunkTexts, cardImageIds, tags)}
             copiedImages={new Set(progress.copiedImages[adapter.id])}
-            onCopiedImagesChange={(ids, on) => noteCopy(adapter, "copiedImages", ids, on, chunkTexts, cardImageIds)}
+            onCopiedImagesChange={(ids, on) =>
+              noteCopy(adapter, "copiedImages", ids, on, chunkTexts, cardImageIds, tags)
+            }
+            tags={tags}
+            checkedTags={progress.checkedTags[adapter.id] ?? []}
+            onTagsChecked={(on) => noteCopy(adapter, "checkedTags", tags, on, chunkTexts, cardImageIds, tags)}
             hiddenImages={new Set(progress.hiddenImages[adapter.id])}
             onHideImage={(id) => setProgress((p) => markIn(p, "hiddenImages", adapter.id, [id], true))}
             onShowHidden={() => setProgress((p) => ({ ...p, hiddenImages: { ...p.hiddenImages, [adapter.id]: [] } }))}
