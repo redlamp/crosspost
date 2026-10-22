@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
+import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
   arrangePlatforms,
@@ -91,6 +91,33 @@ export default function Composer() {
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
   const { images, setImages, add: stageImages } = useStagedImages()
+  /**
+   * Crop a staged image from the image as it was added (kept, so the crop can change or go), or
+   * with null, show all of it again. A cropped image is a new picture, so its copied checks clear.
+   */
+  const cropStaged = async (id: string, crop: CropRect | null) => {
+    const img = images.find((i) => i.id === id)
+    if (!img) return
+    const original = img.original ?? img.blob
+    let blob: Blob
+    try {
+      blob = crop ? await cropImage(original, crop) : original
+    } catch {
+      toast.error("Couldn't crop that image.")
+      return
+    }
+    setImages((list) =>
+      list.map((i) =>
+        i.id === id
+          ? { ...i, blob, url: URL.createObjectURL(blob), original: crop ? original : undefined, crop: crop ?? undefined }
+          : i,
+      ),
+    )
+    setProgress((p) => ({
+      ...p,
+      copiedImages: Object.fromEntries(Object.entries(p.copiedImages).map(([k, ids]) => [k, ids.filter((x) => x !== id)])),
+    }))
+  }
   const addImages = (files: File[]) => {
     const { added, skipped } = stageImages(files)
     if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
@@ -624,6 +651,10 @@ export default function Composer() {
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
               onReorder={reorderTray}
+              onAltChange={(id, alt) =>
+                setImages((list) => list.map((img) => (img.id === id ? { ...img, alt: alt || undefined } : img)))
+              }
+              onCrop={cropStaged}
               clearPost={
                 <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
               }
