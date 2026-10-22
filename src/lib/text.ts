@@ -344,3 +344,16 @@ export function snapToWordStart(text: string, offset: number): number {
   }
   return offset;
 }
+
+// ---------------------------------------------------------------------------
+// Mentions
+
+// An @handle, optionally with a server (@name@host.tld), not inside a word, an email or a URL.
+const MENTION_RE = /(?<![\w@/.])@[A-Za-z0-9_](?:[\w.-]*[A-Za-z0-9_])?(?:@[a-z0-9-]+(?:\.[a-z0-9-]+)+)?/gi
+
+/** The @mentions in a post, each once, in the order they first appear. */
+export function findMentions(text: string): string[] {
+  const seen = new Set<string>()
+  for (const m of text.matchAll(MENTION_RE)) seen.add(m[0])
+  return [...seen]
+}

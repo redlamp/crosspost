@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  AtSignIcon,
   CheckIcon,
   CircleCheckBigIcon,
   CircleHelpIcon,
@@ -115,6 +116,11 @@ type Props = {
   hiddenImages: ReadonlySet<string>
   onHideImage: (id: string) => void
   onShowHidden: () => void
+  /** The @tags in this platform's posts, and those confirmed as right here. */
+  tags: string[]
+  checkedTags: readonly string[]
+  /** Confirm the tags (or take it back). */
+  onTagsChecked: (checked: boolean) => void
   /** The user has moved this platform's splits by hand. */
   customSplits?: boolean
   onResetSplits?: () => void
@@ -153,6 +159,9 @@ export function PlatformCard({
   hiddenImages,
   onHideImage,
   onShowHidden,
+  tags,
+  checkedTags,
+  onTagsChecked,
   customSplits,
   onResetSplits,
   onMatchComposeSplits,
@@ -227,8 +236,13 @@ export function PlatformCard({
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
   // The steps to being done: every post and every image still on the card, each copied (or
   // shared); as many as are copied so far.
-  const steps = chunks.length + shown.length
-  const stepsDone = chunks.filter((c) => copiedPosts.includes(c)).length + shown.filter(({ img }) => copiedImages.has(img.id)).length
+  // Tags, if any, are one more step: confirmed right for this platform.
+  const tagsChecked = tags.length > 0 && tags.every((t) => checkedTags.includes(t))
+  const steps = chunks.length + shown.length + (tags.length > 0 ? 1 : 0)
+  const stepsDone =
+    chunks.filter((c) => copiedPosts.includes(c)).length +
+    shown.filter(({ img }) => copiedImages.has(img.id)).length +
+    (tagsChecked ? 1 : 0)
 
   return (
     <Card
@@ -306,6 +320,37 @@ export function PlatformCard({
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
             {problem}
           </p>
+        </CardContent>
+      )}
+
+      {enabled && tags.length > 0 && (
+        <CardContent className="px-4">
+          {tagsChecked ? (
+            // Confirmed: a quiet line, with a way to take it back.
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckIcon className="size-4 shrink-0 text-sky-600 dark:text-sky-400" />
+              <span className="mr-auto">Tags checked: {tags.join(", ")}</span>
+              <button
+                type="button"
+                onClick={() => onTagsChecked(false)}
+                className="text-xs underline underline-offset-4 hover:text-foreground"
+              >
+                Undo
+              </button>
+            </p>
+          ) : (
+            // A handle can mean a different account, or nobody, on each platform: a step to confirm.
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+              <AtSignIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span className="mr-auto">
+                Check these tags are right on {adapter.name}: <span className="font-medium">{tags.join(", ")}</span>
+              </span>
+              <Button variant="outline" size="sm" onClick={() => onTagsChecked(true)}>
+                <CheckIcon />
+                Tags look right
+              </Button>
+            </div>
+          )}
         </CardContent>
       )}
 
