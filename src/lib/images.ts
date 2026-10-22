@@ -6,18 +6,31 @@ import { useEffect, useRef, useState } from "react"
 // files). Nothing is uploaded: the user copies or drags each image into the
 // platform's own composer.
 
+/** Part of an image, as fractions of its full width and height (0 to 1). */
+export type CropRect = { x: number; y: number; w: number; h: number }
+
 export type StagedImage = {
   id: string
   name: string
+  /** The image as it goes out: cropped, if it was. */
   blob: Blob
   /** Object URL for showing and dragging the image. */
   url: string
+  /** Alt text the person wrote, to paste into each platform's alt field (the clipboard carries pixels only). */
+  alt?: string
+  /** The image as it was added, kept once it's cropped so the crop can be changed or undone. */
+  original?: Blob
+  /** The part of `original` that `blob` shows. */
+  crop?: CropRect
 }
+
+/** Bluesky's limit for alt text, the tightest of the platforms that take it. */
+export const ALT_LIMIT = 2000
 
 /** Most images a post can carry: Bluesky and X take 4, so every platform gets the same set. */
 export const MAX_IMAGES = 4
 
-type StoredImage = { id: string; name: string; blob: Blob }
+type StoredImage = { id: string; name: string; blob: Blob; alt?: string; original?: Blob; crop?: CropRect }
 
 const DB = "crosspost"
 const STORE = "images"
@@ -124,7 +137,7 @@ export function useStagedImages() {
   useEffect(() => {
     // Don't overwrite what's stored before it has been read.
     if (!loaded) return
-    save(images.map(({ id, name, blob }) => ({ id, name, blob }))).catch(() => {
+    save(images.map(({ id, name, blob, alt, original, crop }) => ({ id, name, blob, alt, original, crop }))).catch(() => {
       // Storage blocked or full: the images still work until the page closes.
     })
   }, [images, loaded])
@@ -268,6 +281,27 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
 /** Image files in a paste or drop, if any. */
 export function imageFiles(data: DataTransfer | null): File[] {
   return [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"))
+}
+
+/**
+ * The part of `source` inside `crop`, at full resolution. JPEGs stay JPEG; everything else
+ * becomes a PNG, so transparency survives (a GIF loses its animation).
+ */
+export async function cropImage(source: Blob, crop: CropRect): Promise<Blob> {
+  const bitmap = await createImageBitmap(source)
+  const sx = Math.round(crop.x * bitmap.width)
+  const sy = Math.round(crop.y * bitmap.height)
+  const sw = Math.max(1, Math.round(crop.w * bitmap.width))
+  const sh = Math.max(1, Math.round(crop.h * bitmap.height))
+  const canvas = document.createElement("canvas")
+  canvas.width = sw
+  canvas.height = sh
+  canvas.getContext("2d")!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
+  bitmap.close()
+  const type = source.type === "image/jpeg" ? "image/jpeg" : "image/png"
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((out) => (out ? resolve(out) : reject(new Error("crop failed"))), type, 0.92),
+  )
 }
 
 /** The image as a PNG, drawn through a canvas (an animated GIF loses its animation). */
