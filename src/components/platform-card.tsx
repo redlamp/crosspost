@@ -225,6 +225,10 @@ export function PlatformCard({
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
   // Shared images are in the app, as good as copied.
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
+  // The steps to being done: every post and every image still on the card, each copied (or
+  // shared); as many as are copied so far.
+  const steps = chunks.length + shown.length
+  const stepsDone = chunks.filter((c) => copiedPosts.includes(c)).length + shown.filter(({ img }) => copiedImages.has(img.id)).length
 
   return (
     <Card
@@ -284,7 +288,7 @@ export function PlatformCard({
                   {posted ? <CheckIcon strokeWidth={3} /> : <CircleCheckBigIcon />}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">{posted ? "Post Complete!" : "Posted?"}</TooltipContent>
+              <TooltipContent side="bottom">{posted ? "Post Complete!" : `Step ${stepsDone} of ${steps}`}</TooltipContent>
             </Tooltip>
           )}
         </CardAction>
@@ -324,20 +328,23 @@ export function PlatformCard({
       {enabled && chunks.length > 0 && (
         <CardContent className="space-y-2 px-4">
           {(customSplits || onMatchComposeSplits) && (
-            // Splits moved by hand, called out: the post count, and the ways back.
+            // Splits moved by hand, called out: the post count, and the ways back. Auto Split (the
+            // hand-placed splits go, and the platform's limit decides) shows whenever there are
+            // hand-placed splits, so it holds the right end; Revert (to Compose's splits) shows only
+            // when this card's differ from Compose's, so it comes and goes on its left.
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-(--brand-blue)/50 bg-(--brand-blue)/5 px-3 py-2 text-sm">
               <ScissorsIcon className="size-4 shrink-0 text-(--brand-blue)" />
               <span className="mr-auto">{chunks.length} posts</span>
               {onMatchComposeSplits && (
                 <Button variant="outline" size="sm" onClick={onMatchComposeSplits}>
                   <UndoDotIcon />
-                  Compose Splits
+                  Revert
                 </Button>
               )}
               {customSplits && (
                 <Button variant="outline" size="sm" onClick={onResetSplits}>
                   <RotateCcwIcon />
-                  Remove Splits
+                  Auto Split
                 </Button>
               )}
             </div>
@@ -467,7 +474,13 @@ export function PlatformCard({
                     />
                     {i === 0 && (
                       <Button variant="outline" size="sm" asChild>
-                        <a href={adapter.open.url(chunk, server)} target="_blank" rel="noopener noreferrer">
+                        {/* Opening it prefilled delivers the text, so it counts as copied. */}
+                        <a
+                          href={adapter.open.url(chunk, server)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => onPostCopied(chunk)}
+                        >
                           <ExternalLinkIcon />
                           {adapter.open.label}
                         </a>
