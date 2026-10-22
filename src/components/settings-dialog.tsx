@@ -5,11 +5,15 @@ import {
   ArrowUpNarrowWideIcon,
   CalendarIcon,
   ArrowDownAZIcon,
+  RotateCcwIcon,
   Settings2Icon,
+  Trash2Icon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react"
+import { useTheme } from "next-themes"
 
+import { ConfirmButton } from "@/components/confirm-button"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
+import { clearAllLocalData } from "@/lib/images"
 import {
   isShown,
   serverHost,
@@ -43,9 +48,33 @@ const SORTS: { by: PlatformSort["by"]; icon: LucideIcon; label: string; asc: str
   { by: "launched", icon: CalendarIcon, label: "Launch date", asc: "Oldest first", desc: "Newest first" },
 ]
 
+/**
+ * Every preference back to its default, platforms in A to Z order, with the reminder and the
+ * introduction showing again; the post, its splits and the images stay. The page reloads, so
+ * everything that read the old values starts over from the defaults.
+ */
+function resetSettings(setTheme: (theme: string) => void) {
+  for (const key of ["crosspost:prefs", "crosspost:split-view-tip-closed", "crosspost:intro-seen"]) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // Storage blocked: nothing was kept to reset.
+    }
+  }
+  updatePlatformSettings(() => ({
+    shown: {},
+    servers: {},
+    sort: { by: "name", dir: "asc" },
+    order: sortPlatforms(adapters, { by: "name", dir: "asc" }).map((a) => a.id),
+  }))
+  setTheme("dark")
+  location.reload()
+}
+
 export function SettingsDialog() {
   const settings = usePlatformSettings()
   const open = useSettingsOpen()
+  const { setTheme } = useTheme()
   const shownCount = adapters.filter((a) => isShown(settings, a)).length
 
   const setShown = (id: string, shown: boolean) =>
@@ -155,7 +184,7 @@ export function SettingsDialog() {
                             checked={shown}
                             disabled={last}
                             onCheckedChange={(on) => setShown(adapter.id, on)}
-                            className="data-[state=checked]:bg-(--brand)"
+                            className="data-[state=checked]:bg-(--brand-blue)"
                           />
                         </span>
                       </TooltipTrigger>
@@ -173,6 +202,37 @@ export function SettingsDialog() {
               )
             })}
           </ul>
+        </section>
+
+        <section aria-labelledby="settings-reset" className="space-y-3 border-t pt-4">
+          <div className="space-y-1">
+            <h3 id="settings-reset" className="text-sm font-medium">
+              Reset
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Back to the default platforms in A to Z order and the dark theme, with the reminder and the introduction
+              showing again. Your post and images stay.
+            </p>
+          </div>
+          <ConfirmButton icon={<RotateCcwIcon />} label="Reset settings" onConfirm={() => resetSettings(setTheme)} />
+        </section>
+
+        <section aria-labelledby="settings-data" className="space-y-3 border-t pt-4">
+          <div className="space-y-1">
+            <h3 id="settings-data" className="text-sm font-medium">
+              Data
+            </h3>
+            <p className="text-sm text-muted-foreground">Removes everything saved in this browser, the post included.</p>
+          </div>
+          <ConfirmButton
+            icon={<Trash2Icon />}
+            label="Clear all local data"
+            onConfirm={async () => {
+              await clearAllLocalData()
+              setTheme("dark")
+              location.reload()
+            }}
+          />
         </section>
       </DialogContent>
     </Dialog>

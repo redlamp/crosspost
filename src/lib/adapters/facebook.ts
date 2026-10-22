@@ -8,7 +8,7 @@ export const facebook: PlatformAdapter = {
   limit: 63206,
   count: (text) => text.length,
   chain: false,
-  countNote: "Counts characters",
+  countNote: "Counts characters; an emoji counts as 2 (assumed: Facebook doesn't say)",
   launched: "2004-02",
   // Meta, January 2025: more than 3 billion monthly.
   users: { millions: 3050, label: "3B+" },
@@ -38,4 +38,7 @@ export const facebook: PlatformAdapter = {
     },
   ],
   open: { label: "Open Facebook", url: () => "https://www.facebook.com/" },
+  // Meta's policy: nothing may prefill a Facebook post, so its app drops shared text and keeps
+  // only the images. Share copies the text for pasting instead.
+  share: { dropsText: true, note: "Share sends the images to the Facebook app, which drops shared text; the text is copied to paste in." },
 };

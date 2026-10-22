@@ -1,20 +1,34 @@
 "use client"
 
-import { CheckIcon, CircleHelpIcon, ExternalLinkIcon, MinusIcon, TriangleAlertIcon } from "lucide-react"
+import {
+  CheckIcon,
+  CircleCheckBigIcon,
+  CircleHelpIcon,
+  ExternalLinkIcon,
+  MinusIcon,
+  PencilIcon,
+  RotateCcwIcon,
+  ScissorsIcon,
+  TriangleAlertIcon,
+  Undo2Icon,
+  UndoDotIcon,
+} from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Dot } from "@/components/dot"
+import { ShareButton } from "@/components/share-button"
 import { cardId } from "@/components/status-rail"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
 import { dropTarget, moveType, type StagedImage } from "@/lib/images"
 import { serverHost, usePlatformSettings } from "@/lib/platform-settings"
+import { canShare } from "@/lib/share"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
@@ -53,7 +67,7 @@ function BreakpointList({ breakpoints, text, count }: { breakpoints: Breakpoint[
         return (
           <li key={bp.label} className="flex items-center gap-2">
             {ok ? (
-              <CheckIcon className="size-4 shrink-0 text-(--brand)" aria-label="Yes" />
+              <CheckIcon className="size-4 shrink-0 text-(--brand-blue)" aria-label="Yes" />
             ) : (
               <MinusIcon className="size-4 shrink-0 text-muted-foreground" aria-label="No" />
             )}
@@ -70,21 +84,42 @@ function BreakpointList({ breakpoints, text, count }: { breakpoints: Breakpoint[
   )
 }
 
+/** A post rewritten on one platform's card, and the text Compose gave it then. */
+export type PostEdit = { text: string; base: string }
+
 type Props = {
   adapter: PlatformAdapter
+  /** Compose's text. */
   text: string
+  /** The posts as they'll go out, edits in. */
   chunks: string[]
+  /** What Compose gives each post, before any edit. */
+  generated: string[]
+  /** Which posts start at a split placed by hand. */
+  manualStarts: boolean[]
+  /** Posts rewritten here, by post number. */
+  edits: Record<number, PostEdit>
+  /** Rewrite a post on this platform; null goes back to Compose's text. */
+  onEditPost: (post: number, text: string | null) => void
+  /** Off in the rail's Off part (cards have no switch of their own). */
   enabled: boolean
-  onEnabledChange: (enabled: boolean) => void
+  /** The person marked this platform done, or every post and image on it was copied. */
+  posted: boolean
+  onPostedChange: (posted: boolean) => void
+  /** Texts of the posts already copied from this card; a post whose text changed counts as not copied. */
+  copiedPosts: readonly string[]
+  onPostCopied: (text: string) => void
+  /** Images copied (or shared) from this card, and images left off it. */
+  copiedImages: ReadonlySet<string>
+  onCopiedImagesChange: (ids: string[], copied: boolean) => void
+  hiddenImages: ReadonlySet<string>
+  onHideImage: (id: string) => void
+  onShowHidden: () => void
   /** The user has moved this platform's splits by hand. */
   customSplits?: boolean
   onResetSplits?: () => void
   /** Set when Compose's shared splits differ from this platform's: take them. */
   onMatchComposeSplits?: () => void
-  /** Whether this platform follows Compose's numbering switch. */
-  followsCompose?: boolean
-  /** Set for platforms that number threads themselves, to let them follow Compose's switch. */
-  onNumberingChange?: (on: boolean) => void
   images?: StagedImage[]
   /** Which post an image goes with on this platform (0 for the first). */
   imagePost?: (id: string) => number
@@ -104,13 +139,23 @@ export function PlatformCard({
   adapter,
   text,
   chunks,
+  generated,
+  manualStarts,
+  edits,
+  onEditPost,
   enabled,
-  onEnabledChange,
+  posted,
+  onPostedChange,
+  copiedPosts,
+  onPostCopied,
+  copiedImages,
+  onCopiedImagesChange,
+  hiddenImages,
+  onHideImage,
+  onShowHidden,
   customSplits,
   onResetSplits,
   onMatchComposeSplits,
-  followsCompose,
-  onNumberingChange,
   images = [],
   imagePost = () => 0,
   onMoveImage,
@@ -123,17 +168,14 @@ export function PlatformCard({
   const over = total > adapter.limit
   // When the post becomes a chain anyway, the header total isn't a problem.
   const splits = adapter.chain && chunks.length > 1
-  const switchId = `platform-${adapter.id}`
   const problem = firstProblem(adapter, chunks)
   // The server to open, for platforms that need one (Mastodon): the one set in Settings, else the default.
   const platformSettings = usePlatformSettings()
   const server = adapter.server
     ? serverHost(platformSettings.servers[adapter.id] ?? "") || adapter.server.default
     : undefined
-  // Images copied from this card, so it's clear which are already in the post.
-  const [copiedImages, setCopiedImages] = useState<ReadonlySet<string>>(new Set())
-  // Images the user left off this platform.
-  const [hiddenImages, setHiddenImages] = useState<ReadonlySet<string>>(new Set())
+  // The post being edited in place, if one is open.
+  const [editing, setEditing] = useState<number | null>(null)
   // The rest, in this platform's order, numbered as in the Compose tray.
   const shown = images
     .map((img, i) => ({ img, n: imageNumber?.(img.id) ?? i + 1 }))
@@ -181,6 +223,8 @@ export function PlatformCard({
   }
   // Images on a post that no longer exists fall back to the last one.
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
+  // Shared images are in the app, as good as copied.
+  const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
 
   return (
     <Card
@@ -188,17 +232,18 @@ export function PlatformCard({
       tabIndex={-1}
       style={{ "--brand": adapter.brand.color ?? "var(--foreground)" } as React.CSSProperties}
       className={cn(
+        // The app's own border and surface, as every card has; the logo carries the brand
+        // (tints made gray marks look switched off and pink ones look like errors).
         "scroll-mt-32 gap-4 py-4 outline-none lg:scroll-mt-20",
-        // A hint of the brand: tinted surface and border, stronger in dark mode.
-        "border-[color-mix(in_oklab,var(--brand)_30%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_4%,var(--card))]",
-        "dark:border-[color-mix(in_oklab,var(--brand)_35%,var(--border))] dark:bg-[color-mix(in_oklab,var(--brand)_7%,var(--card))]",
         !enabled && "opacity-60",
+        // Done: dimmed a little, still readable, so what is left stands out.
+        enabled && posted && "opacity-75",
       )}
     >
       <CardHeader className="grid-rows-1 items-center px-4">
         <CardTitle className="flex flex-wrap items-center gap-2">
           <PlatformLogo adapter={adapter} />
-          <label htmlFor={switchId}>{adapter.name}</label>
+          <span>{adapter.name}</span>
         </CardTitle>
         <CardAction className="row-span-1 flex items-center gap-3 self-center">
           <Tooltip>
@@ -221,13 +266,27 @@ export function PlatformCard({
           >
             {total.toLocaleString()} / {adapter.limit.toLocaleString()}
           </span>
-          <Switch
-            id={switchId}
-            checked={enabled}
-            onCheckedChange={onEnabledChange}
-            aria-label={`Post to ${adapter.name}`}
-            className="data-[state=checked]:bg-(--brand)"
-          />
+          {enabled && chunks.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-pressed={posted}
+                  aria-label={`Posted on ${adapter.name}`}
+                  onClick={() => onPostedChange(!posted)}
+                  className={cn(
+                    "-my-1 rounded-full",
+                    // Posted: a filled circle in the app's blue (platform colors are for logos only).
+                    posted ? "bg-(--brand-blue) text-white hover:bg-(--brand-blue)/85 hover:text-white" : "text-muted-foreground",
+                  )}
+                >
+                  {posted ? <CheckIcon strokeWidth={3} /> : <CircleCheckBigIcon />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{posted ? "Post Complete!" : "Posted?"}</TooltipContent>
+            </Tooltip>
+          )}
         </CardAction>
       </CardHeader>
 
@@ -264,66 +323,39 @@ export function PlatformCard({
 
       {enabled && chunks.length > 0 && (
         <CardContent className="space-y-2 px-4">
-          {(splits || onMatchComposeSplits) && (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs whitespace-nowrap text-muted-foreground">
-              {splits && <span>{chunks.length} posts to copy</span>}
-              {customSplits && (
-                <>
-                  <Dot className="mx-0" />
-                  <span>split by hand</span>
-                  <Dot className="mx-0" />
-                  <button
-                    type="button"
-                    onClick={onResetSplits}
-                    className="underline underline-offset-4 hover:text-foreground"
-                  >
-                    Reset splits
-                  </button>
-                </>
-              )}
+          {(customSplits || onMatchComposeSplits) && (
+            // Splits moved by hand, called out: the post count, and the ways back.
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-(--brand-blue)/50 bg-(--brand-blue)/5 px-3 py-2 text-sm">
+              <ScissorsIcon className="size-4 shrink-0 text-(--brand-blue)" />
+              <span className="mr-auto">{chunks.length} posts</span>
               {onMatchComposeSplits && (
-                <>
-                  {splits && <Dot className="mx-0" />}
-                  <button
-                    type="button"
-                    onClick={onMatchComposeSplits}
-                    className="underline underline-offset-4 hover:text-foreground"
-                  >
-                    Match Compose splits
-                  </button>
-                </>
+                <Button variant="outline" size="sm" onClick={onMatchComposeSplits}>
+                  <UndoDotIcon />
+                  Compose Splits
+                </Button>
               )}
-              {splits && onNumberingChange && (
-                <span className="ml-auto flex items-center gap-1.5">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <label htmlFor={`${adapter.id}-numbering`} className="cursor-help">
-                        Add 1/{chunks.length} anyway
-                      </label>
-                    </TooltipTrigger>
-                    <TooltipContent>Follow Compose setting</TooltipContent>
-                  </Tooltip>
-                  <Switch
-                    id={`${adapter.id}-numbering`}
-                    size="sm"
-                    checked={!!followsCompose}
-                    onCheckedChange={onNumberingChange}
-                    className="data-[state=checked]:bg-(--brand)"
-                  />
-                </span>
+              {customSplits && (
+                <Button variant="outline" size="sm" onClick={onResetSplits}>
+                  <RotateCcwIcon />
+                  Remove Splits
+                </Button>
               )}
-            </p>
+            </div>
           )}
           <ol className="space-y-2">
             {chunks.map((chunk, i) => {
               const n = adapter.count(chunk)
               const what = chunks.length > 1 ? `${adapter.name} post ${i + 1}` : `${adapter.name} post`
+              const edit = edits[i]
+              const open = editing === i || !!edit
               return (
                 <li
                   key={i}
                   className={cn(
                     "rounded-md border bg-background/40 p-3 transition-colors",
-                    dropOn?.post === i && !dropOn.target && "border-(--brand)/60 bg-(--brand)/10",
+                    // Edited on this platform: the whole post goes orange.
+                    edit && "border-orange-500/70 bg-orange-500/10 dark:border-orange-400/60 dark:bg-orange-400/10",
+                    dropOn?.post === i && !dropOn.target && "border-(--brand-blue)/60 bg-(--brand-blue)/10",
                   )}
                   // The whole post takes an image dragged from another of this card's
                   // posts; dropped beside an image, it also takes that place in the order.
@@ -351,7 +383,29 @@ export function PlatformCard({
                     setMovingFrom(null)
                   }}
                 >
-                  <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
+                  {open ? (
+                    <>
+                      <Textarea
+                        value={chunk}
+                        onChange={(e) => onEditPost(i, e.target.value)}
+                        onBlur={() => editing === i && setEditing(null)}
+                        onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
+                        aria-label={`Edit ${what}`}
+                        autoFocus={editing === i}
+                        className={cn(
+                          "min-h-0 bg-background/60 px-2 py-1.5 text-sm md:text-sm",
+                          // Edited: the orange post around it says so; the box drops its own outline.
+                          edit &&
+                            "border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-orange-500/30",
+                        )}
+                      />
+                      {edit && edit.base !== generated[i] && (
+                        <p className="mt-1 text-xs text-muted-foreground">Compose has changed since this edit.</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
+                  )}
                   {(() => {
                     const items = shown.filter(({ img }) => postOf(img.id) === i)
                     const showHidden = i === 0 && hiddenCount > 0
@@ -363,17 +417,10 @@ export function PlatformCard({
                           items={items}
                           platform={adapter}
                           copied={copiedImages}
-                          onCopiedChange={(id, copied) =>
-                            setCopiedImages((s) => {
-                              const next = new Set(s)
-                              if (copied) next.add(id)
-                              else next.delete(id)
-                              return next
-                            })
-                          }
-                          onHide={(id) => setHiddenImages((s) => new Set(s).add(id))}
+                          onCopiedChange={(id, copied) => onCopiedImagesChange([id], copied)}
+                          onHide={onHideImage}
                           hiddenCount={showHidden ? hiddenCount : 0}
-                          onShowHidden={() => setHiddenImages(new Set())}
+                          onShowHidden={onShowHidden}
                           movable={splits}
                           moving={movingFrom !== null && movingFrom !== i}
                           onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
@@ -389,6 +436,17 @@ export function PlatformCard({
                     <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
                       {chunks.length > 1 && (
                         <>
+                          {manualStarts[i] && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <ScissorsIcon
+                                  aria-label="Starts at a split moved by hand"
+                                  className="mr-1 inline size-3.5 align-[-2px] text-(--brand-blue)"
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">Starts at a split moved by hand</TooltipContent>
+                            </Tooltip>
+                          )}
                           {/* Its own width: a tabular "1" is padded out to a "0"'s and would crowd the dot. */}
                           <span className="proportional-nums">{i + 1}</span>
                           <Dot />
@@ -396,6 +454,17 @@ export function PlatformCard({
                       )}
                       {n.toLocaleString()} / {adapter.limit.toLocaleString()}
                     </span>
+                    {/* The post and its images to the platform's app, where there's a share sheet (phones). */}
+                    <ShareButton
+                      adapter={adapter}
+                      text={chunk}
+                      images={shown.filter(({ img }) => postOf(img.id) === i).map(({ img }) => img)}
+                      what={what}
+                      onShared={(ids, textWent) => {
+                        if (ids.length) markCopied(ids)
+                        if (textWent) onPostCopied(chunk)
+                      }}
+                    />
                     {i === 0 && (
                       <Button variant="outline" size="sm" asChild>
                         <a href={adapter.open.url(chunk, server)} target="_blank" rel="noopener noreferrer">
@@ -404,12 +473,58 @@ export function PlatformCard({
                         </a>
                       </Button>
                     )}
-                    <CopyButton text={chunk} what={what} />
+                    {edit ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            onClick={() => {
+                              setEditing(null)
+                              onEditPost(i, null)
+                            }}
+                            aria-label={`Reset ${what} to Compose`}
+                            className="border-orange-500/60 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+                          >
+                            <Undo2Icon />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">Reset to Compose</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            aria-pressed={editing === i}
+                            // Keep the box's blur from closing it before this click toggles it.
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setEditing(editing === i ? null : i)}
+                            aria-label={`Edit ${what}`}
+                          >
+                            <PencilIcon />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{editing === i ? "Done" : "Edit"}</TooltipContent>
+                      </Tooltip>
+                    )}
+                    <CopyButton
+                      text={chunk}
+                      what={what}
+                      iconOnly
+                      done={copiedPosts.includes(chunk)}
+                      onCopied={() => onPostCopied(chunk)}
+                    />
                   </div>
                 </li>
               )
             })}
           </ol>
+          {/* What Share hands the app, on touch screens, where the share sheet is the way in. */}
+          {canShare() && adapter.share && (
+            <p className="hidden text-xs text-muted-foreground pointer-coarse:block">{adapter.share.note}</p>
+          )}
         </CardContent>
       )}
     </Card>

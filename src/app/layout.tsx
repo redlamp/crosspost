@@ -1,9 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Overpass, Overpass_Mono } from "next/font/google";
 
+import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DARK_THEME_COLOR } from "@/lib/theme";
 import "./globals.css";
 
 // Overpass is the free cut of Highway Gothic, the lettering on US road signs: it suits a signpost logo.
@@ -21,14 +23,19 @@ const overpassMono = Overpass_Mono({
 // to file-based images (opengraph-image.jpg) itself, so metadataBase is the origin alone.
 const SITE = "https://redlamp.github.io";
 const DESCRIPTION =
-  "Write a post once, then copy or open it on Bluesky, Threads, Mastodon, LinkedIn, Twitter, Facebook and Instagram. Runs entirely in your browser.";
+  "Write a post once, then copy or open it on Bluesky, Threads, Mastodon, LinkedIn, X, Facebook and Instagram. Runs entirely in your browser.";
 
 // The share image is opengraph-image.jpg (with its .alt.txt), exported from the Dark Open Graph
 // card in the Crosspost Figma file. X, Bluesky, Threads and Mastodon all fall back to og:image.
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
   title: "Crosspost",
+  applicationName: "Crosspost",
   description: DESCRIPTION,
+  // Installed on an iPhone from Safari's Add to Home Screen: opens without browser chrome, with
+  // an opaque black status bar above the page (the translucent kind would need safe-area
+  // padding under it). The manifest (src/app/manifest.ts) covers Android and desktops.
+  appleWebApp: { capable: true, title: "Crosspost", statusBarStyle: "black" },
   openGraph: {
     type: "website",
     siteName: "Crosspost",
@@ -44,6 +51,10 @@ export const metadata: Metadata = {
   },
 };
 
+// The color a phone paints around the page (Android's status bar in the installed app). The
+// default theme's; the app shell switches it with the theme.
+export const viewport: Viewport = { themeColor: DARK_THEME_COLOR };
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -52,9 +63,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${overpass.variable} ${overpassMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange storageKey="crosspost:theme">
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster />
+          <AppShell />
         </ThemeProvider>
       </body>
     </html>

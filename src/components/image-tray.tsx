@@ -10,6 +10,7 @@ import {
   downloadImage,
   dragOut,
   dropTarget,
+  followDragOut,
   MAX_IMAGES,
   TRAY_TYPE,
   type ImageDrag,
@@ -346,7 +347,8 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
             <span className="absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
               <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
             </span>
-            <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            {/* Shown on hover or focus; always on touch screens, which have neither. */}
+            <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
               <span className="flex gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -363,9 +365,11 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    {/* Not on touch screens: a phone's tiles are too narrow for three buttons, and
+                        the image is in its photo library already. */}
                     <button
                       type="button"
-                      className={tileButton}
+                      className={cn(tileButton, "pointer-coarse:hidden")}
                       onClick={() => downloadImage(img)}
                       aria-label={`Download image ${i + 1}`}
                     >
@@ -524,6 +528,8 @@ export function ImageStrip({
   insert = null,
   onMatchCompose,
 }: StripProps) {
+  // Ends following the thumbnail drag in progress, if any (see followDragOut).
+  const endDrag = useRef<(() => boolean) | null>(null)
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
@@ -546,7 +552,7 @@ export function ImageStrip({
                       copy()
                     }}
                     aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
-                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand-blue) focus-visible:ring-2 focus-visible:ring-(--brand-blue)"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
                     <img
@@ -555,11 +561,20 @@ export function ImageStrip({
                       draggable
                       onDragStart={(e) => {
                         dragOut(e, img, { platformId: platform.id })
+                        endDrag.current = followDragOut()
                         // Chrome cancels a drag whose page changes during dragstart, so
                         // show the drop slots just after it.
                         setTimeout(() => onMovingChange?.(true), 0)
                       }}
-                      onDragEnd={() => onMovingChange?.(false)}
+                      onDragEnd={(e) => {
+                        // Dropped outside the page, somewhere that took it (the platform's
+                        // composer in another window or the other side of a split view):
+                        // as good as copied.
+                        const left = endDrag.current?.()
+                        endDrag.current = null
+                        if (left && e.dataTransfer.dropEffect !== "none") onCopiedChange(img.id, true)
+                        onMovingChange?.(false)
+                      }}
                       className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
                     />
                   </div>
@@ -579,7 +594,7 @@ export function ImageStrip({
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand)",
+                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand-blue)",
                     insert.after ? "-right-1.5" : "-left-1.5",
                   )}
                 />
@@ -590,9 +605,10 @@ export function ImageStrip({
               <ConfirmX
                 label={`Leave image ${n} off ${platform.name}`}
                 onConfirm={() => onHide(img.id)}
-                // Sits over the corner, poking out above the thumbnail.
+                // Sits over the corner, poking out above the thumbnail. On touch screens, with
+                // no hover to bring it out, it's always there.
                 className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
-                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
+                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600 pointer-coarse:opacity-100"
               />
               {copied.has(img.id) && (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
@@ -604,7 +620,7 @@ export function ImageStrip({
                       type="button"
                       onClick={() => onCopiedChange(img.id, false)}
                       aria-label={`Image ${n} copied. Clear the check`}
-                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
                     >
                       <CheckIcon className="size-2.5" strokeWidth={3.5} />
                     </button>
@@ -624,7 +640,7 @@ export function ImageStrip({
           aria-hidden
           className={cn(
             "flex h-14 min-w-40 flex-1 flex-col items-center justify-center rounded border border-dashed px-3 text-center leading-tight text-muted-foreground transition-colors",
-            hovered && "border-(--brand) text-foreground",
+            hovered && "border-(--brand-blue) text-foreground",
           )}
         >
           <span className="text-sm">Move here</span>

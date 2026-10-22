@@ -4,6 +4,7 @@ import logoDark from "@/assets/logo-dark.svg";
 import logoLight from "@/assets/logo-light.svg";
 import { ComposerLoader } from "@/components/composer-loader";
 import { DevTools } from "@/components/dev-tools";
+import { IntroDialog } from "@/components/intro-dialog";
 import { MadeBy } from "@/components/made-by";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -24,6 +25,7 @@ export default function Home() {
             <span className="[text-box:trim-both_cap_alphabetic]">Crosspost</span>
           </h1>
           <div className="flex items-center gap-1">
+            <IntroDialog />
             <ThemeToggle />
             <SettingsDialog />
           </div>
