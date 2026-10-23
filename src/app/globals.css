@@ -206,6 +206,11 @@
   inherits: false;
   initial-value: 0px;
 }
+/* The theme switch reveals the whole page as one: the welcome card's and the tour's own
+   transition names (for their morphs) are set aside, so nothing crossfades apart from the page. */
+.theme-switching * {
+  view-transition-name: none !important;
+}
 .theme-switching::view-transition-old(root),
 .theme-switching::view-transition-new(root) {
   animation: none;
@@ -249,6 +254,40 @@
 }
 .tour-morphing::view-transition-old(*.tour-own) {
   animation-duration: 150ms;
+}
+/* The welcome card folding to its button: quick, and as one piece (its trail, names and title
+   don't move apart), drawn over Compose and the reminder as it goes so it can be followed (it
+   crosses Compose when it starts above it). Nothing stretches: the card, at its own size, is
+   clipped by a box shrinking down to the button, and stays in view for most of the move, handing
+   over to the button, at its own size, as it lands. */
+.card-folding [data-glide="how"] * {
+  view-transition-name: none !important;
+}
+.card-folding::view-transition-group(*) {
+  animation-duration: 400ms;
+}
+.card-folding::view-transition-old(tour),
+.card-folding::view-transition-new(tour) {
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+.card-folding::view-transition-old(tour) {
+  animation: card-fold-out 160ms ease-in 220ms both;
+}
+.card-folding::view-transition-new(tour) {
+  animation: card-fold-in 160ms ease-out 220ms both;
+}
+@keyframes card-fold-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes card-fold-in {
+  from {
+    opacity: 0;
+  }
 }
 /* The page holds still under the move: no crossfade of the whole page (the live page shows at
    once), so only the scrim changes, fading in (or out) on its own, a little slower than its usual. */
