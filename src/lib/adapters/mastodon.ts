@@ -9,6 +9,8 @@ export const mastodon: PlatformAdapter = {
   limit: 500,
   count: mastodonLength,
   chain: true,
+  // The default on Mastodon servers; a server can raise it, but few do.
+  maxImages: 4,
   countNote: "Links count as 23; a mention counts as @name only; 500 on most servers",
   // Public launch; the software's first release was earlier that year.
   launched: "2016-10",

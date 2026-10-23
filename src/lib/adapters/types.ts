@@ -58,6 +58,11 @@ export type PlatformAdapter = {
   /** A post can't go out without a photo or video (Instagram). */
   needsImage?: boolean;
   /**
+   * Most images one post takes, where that's fewer than Compose holds (Bluesky, X and
+   * Mastodon: 4). Omit for platforms that take at least as many as Compose.
+   */
+  maxImages?: number;
+  /**
    * The platform has no single site: posts go through the user's own server,
    * entered in Settings, or `default` when none is. `open.url` gets it as a
    * host name.
