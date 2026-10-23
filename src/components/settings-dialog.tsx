@@ -63,11 +63,16 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setSettingsOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Settings">
-          <Settings2Icon />
-        </Button>
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="Settings">
+              <Settings2Icon />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Settings</TooltipContent>
+      </Tooltip>
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm"
         // Focus the dialog itself on open, not its first button: a focused sort button

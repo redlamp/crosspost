@@ -8,7 +8,6 @@ import { PlatformLogo } from "@/components/platform-logo"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PlatformAdapter } from "@/lib/adapters"
-import { useIntroSeen } from "@/lib/intro"
 import { graphemes, snapToWordStart } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
@@ -161,9 +160,6 @@ export function ComposeEditor({
   const taRef = useRef<HTMLTextAreaElement>(null)
   const mirrorRef = useRef<HTMLDivElement>(null)
   const hitRef = useRef<HTMLDivElement>(null)
-  // On a first visit the introduction is open over Compose: focusing the text box would take
-  // focus out of the dialog, which focuses Compose itself when it closes.
-  const introSeen = useIntroSeen()
   const [style, setStyle] = useState<React.CSSProperties | null>(null)
   const [positions, setPositions] = useState<Map<number, Position>>(new Map())
   const [visibleHeight, setVisibleHeight] = useState(0)
@@ -396,9 +392,10 @@ export function ComposeEditor({
   return (
     <div className="space-y-3 lg:flex lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
-        <Label htmlFor="compose" className="text-base font-semibold">
+        {/* A size up from the cards' titles, as "Start here" is: where to begin. */}
+        <Label htmlFor="compose" className="text-lg font-semibold">
           {/* The pencil the platform row's Compose button uses too. */}
-          <PenLineIcon className="size-4 text-muted-foreground" aria-hidden />
+          <PenLineIcon className="size-5 text-muted-foreground" aria-hidden />
           Compose
         </Label>
         {chips.length > 0 && (
@@ -443,7 +440,7 @@ export function ComposeEditor({
           // Wide screens: grows with its text, never scrolling inside; its minimum height is set
           // below (fitToWindow) from the room the Compose column has left.
           className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none"
-          autoFocus={introSeen}
+          autoFocus
         />
         {style && (
           <div ref={mirrorRef} aria-hidden className="pointer-events-none invisible absolute top-0 left-0" style={style}>

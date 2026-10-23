@@ -11,12 +11,23 @@ import { firstProblem, imageProblem, imagesPerPost, PlatformCard, type PostEdit 
 import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
+import { WelcomeCard } from "@/components/welcome-card"
 import { cardId, StatusRail, type RailItem } from "@/components/status-rail"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
 import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
@@ -25,6 +36,7 @@ import {
   updatePlatformSettings,
   usePlatformSettings,
 } from "@/lib/platform-settings"
+import { useGlide } from "@/lib/use-glide"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -610,6 +622,55 @@ export default function Composer() {
       },
     })
   }
+  /**
+   * The example post: its text, a hand-placed split on every platform that threads (a marker to
+   * drag), and the site's share image with its alt text. Over a post of your own (anything Clear
+   * Post would clear), Try It asks first; loading it then clears that post, and Undo brings it
+   * back, images and all.
+   */
+  const canTryExample = !draft.trim() && images.length === 0
+  // The tips below Compose (How it works and the reminder) glide when one's change moves another.
+  const tipsRef = useRef<HTMLDivElement>(null)
+  useGlide(tipsRef)
+  const [confirmExample, setConfirmExample] = useState(false)
+  const tryExample = () => (nothingToClear ? loadExample() : setConfirmExample(true))
+  const loadExample = async () => {
+    setConfirmExample(false)
+    const saved = { draft, breaks, progress, postEdits }
+    const restoreImages = takeImages()
+    setDraft(EXAMPLE_POST)
+    setBreaks(Object.fromEntries(ordered.filter((a) => a.chain).map((a) => [a.id, [EXAMPLE_SPLIT]])))
+    setProgress(NO_PROGRESS)
+    setPostEdits({})
+    let imageId: string | null = null
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}${EXAMPLE_IMAGE.path}`)
+      if (!response.ok) throw new Error(String(response.status))
+      const blob = await response.blob()
+      const id = crypto.randomUUID()
+      imageId = id
+      setImages((list) =>
+        [...list, { id, name: EXAMPLE_IMAGE.name, blob, alt: EXAMPLE_IMAGE.alt, url: URL.createObjectURL(blob) }].slice(0, MAX_IMAGES),
+      )
+    } catch {
+      // Offline, or the image moved: the text alone still shows the way.
+    }
+    toast("Example loaded", {
+      description: "Drag the split marker in Compose to move where each thread's posts break.",
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setDraft(saved.draft)
+          setBreaks(saved.breaks)
+          setProgress(saved.progress)
+          setPostEdits(saved.postEdits)
+          // The example's image goes first, so restoring keeps only images added since.
+          if (imageId) setImages((list) => list.filter((img) => img.id !== imageId))
+          restoreImages()
+        },
+      },
+    })
+  }
   const nothingToClear =
     !draft &&
     Object.keys(breaks).length === 0 &&
@@ -640,8 +701,10 @@ export default function Composer() {
         data-compose-column
         className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col"
       >
-        <Card className="brand-edge gap-4 border-2">
-          <CardContent className="space-y-4 lg:flex lg:flex-col">
+        <WelcomeCard place="top" onTryExample={tryExample} />
+        {/* The platform cards' padding (16px), not the card's default 24px. */}
+        <Card className="brand-edge gap-4 border-2 py-4">
+          <CardContent className="space-y-4 px-4 lg:flex lg:flex-col">
             <ComposeEditor
               value={draft}
               onChange={editDraft}
@@ -687,7 +750,18 @@ export default function Composer() {
                   )}
                 </Label>
               </div>
-              <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
+              {canTryExample ? (
+                // Nothing written yet: the count would only say 0, so the example takes its place.
+                <button
+                  type="button"
+                  onClick={tryExample}
+                  className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                >
+                  Try an example
+                </button>
+              ) : (
+                <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
+              )}
             </div>
             <ImageArea
               images={images}
@@ -721,8 +795,36 @@ export default function Composer() {
             />
           </CardContent>
         </Card>
-        <SplitViewTip />
+        {/* Below Compose, the tips: How it works (after a first visit) and the split view reminder,
+            each open across the column or folded to a small button. Open ones come first; folded
+            buttons gather at the bottom (their own order), How it works before the reminder. */}
+        <div ref={tipsRef} className="flex flex-wrap items-start gap-x-2 gap-y-4 empty:hidden">
+          <WelcomeCard place="bottom" onTryExample={tryExample} />
+          <SplitViewTip />
+        </div>
         <MadeBy className="hidden lg:mt-auto lg:flex" />
+        {/* Try It over a post of your own: clear it for the example, or keep it. */}
+        <Dialog open={confirmExample} onOpenChange={setConfirmExample}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Clear your current post?</DialogTitle>
+              {/* The base text size (the dialog's default description is a size down). */}
+              <DialogDescription className="text-base text-balance">
+                This demo replaces what&apos;s in Compose with a sample message.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" className="text-base" onClick={() => setConfirmExample(false)}>
+                Return to My Post
+              </Button>
+              {/* Destructive, as it clears the post (Undo can bring it back), with Clear Post's broom. */}
+              <Button variant="destructive" className="text-base" onClick={loadExample}>
+                <BroomIcon />
+                Clear and Try Demo
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">

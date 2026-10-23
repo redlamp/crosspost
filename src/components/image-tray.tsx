@@ -417,15 +417,21 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
               <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
             </span>
             {/* Shown on hover or focus, or after a tap on touch screens (which can't hover): ALT upper
-                left, crop and remove upper right, download and copy lower right. At rest, only the
-                number. On narrower tiles (five across, under 7rem) Download goes and crop moves
+                left (its own, below, kept in view once there's alt text), crop and remove upper
+                right, download and copy lower right. At rest, only the number (and ALT, with alt
+                text). On narrower tiles (five across, under 7rem) Download goes and crop moves
                 under ALT, since the top row has no room for it; on the narrowest (phones, under
                 5.5rem) crop goes too, as it would cover the number. On touch screens they're out
                 of the way entirely until the tap, so an invisible button can't take a finger. */}
+            {/* ALT, upper left: with the others while the image has none, and always there once it
+                has some (the app's blue, as on the cards), so it's plain which images have it. */}
             <div
               className={cn(
-                "pointer-events-none absolute inset-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [&>*]:pointer-events-auto",
-                tapped === img.id ? "opacity-100" : "pointer-coarse:hidden",
+                "absolute top-1 left-1 z-10",
+                !img.alt && [
+                  "pointer-events-none opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [&>*]:pointer-events-auto",
+                  tapped === img.id ? "opacity-100" : "pointer-coarse:hidden",
+                ],
               )}
             >
               <Tooltip>
@@ -435,7 +441,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                     onClick={() => setAltFor(img.id)}
                     aria-label={img.alt ? `Edit alt text for image ${i + 1}` : `Add alt text for image ${i + 1}`}
                     className={cn(
-                      "absolute top-0 left-0 grid h-6 place-items-center rounded-md px-1.5 text-[11px] leading-none font-bold tracking-wide text-white backdrop-blur-sm transition-colors",
+                      "grid h-6 place-items-center rounded-md px-1.5 text-[11px] leading-none font-bold tracking-wide text-white backdrop-blur-sm transition-colors",
                       // With alt text: the app's blue, as on the copied checks, so it's plain it has some.
                       img.alt ? "bg-(--brand-blue) hover:bg-(--brand-blue)/85" : "bg-black/60 hover:bg-black/80",
                     )}
@@ -445,6 +451,13 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                 </TooltipTrigger>
                 <TooltipContent className="max-w-64">{img.alt || "Add alt text"}</TooltipContent>
               </Tooltip>
+            </div>
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [&>*]:pointer-events-auto",
+                tapped === img.id ? "opacity-100" : "pointer-coarse:hidden",
+              )}
+            >
               {/* Narrower tiles: crop under ALT, as the top row has no room for it. */}
               <CropButton
                 n={i + 1}

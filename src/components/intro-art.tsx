@@ -5,11 +5,15 @@ import {
   CircleCheckBigIcon,
   CopyIcon,
   ExternalLinkIcon,
+  ImageIcon,
   ImagePlusIcon,
-  LockIcon,
+  MinusIcon,
   PlusIcon,
   ScissorsIcon,
   ShieldCheckIcon,
+  SmileIcon,
+  SquareIcon,
+  XIcon,
 } from "lucide-react"
 import { Fragment, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 
@@ -19,7 +23,11 @@ import { PlatformLogo } from "@/components/platform-logo"
 import type { PlatformAdapter } from "@/lib/adapters"
 import { bluesky } from "@/lib/adapters/bluesky"
 import { facebook } from "@/lib/adapters/facebook"
+import { instagram } from "@/lib/adapters/instagram"
+import { linkedin } from "@/lib/adapters/linkedin"
+import { mastodon } from "@/lib/adapters/mastodon"
 import { threads } from "@/lib/adapters/threads"
+import { twitter } from "@/lib/adapters/twitter"
 import { x } from "@/lib/adapters/x"
 import { graphemeLength, splitChunks } from "@/lib/text"
 import { cn } from "@/lib/utils"
@@ -31,8 +39,6 @@ import { cn } from "@/lib/utils"
 const STAGE_W = 520
 /** Every drawing is this tall, so the panels match from step to step and tab to tab (Decide's live list too). */
 export const STAGE_H = 260
-/** The framed box each step's visual sits in, taller than the drawing so it has room around it. */
-export const FRAME_H = 320
 
 /** The sample post: 445 characters, so it splits on Bluesky and X. */
 const LOREM =
@@ -47,12 +53,41 @@ const brandVars = (adapter: PlatformAdapter) =>
 /** A platform card's look in a drawing: the app's own border and surface, as the real cards have. */
 const MINI_CARD = "border-border bg-card"
 
-/** The key that pastes: ⌘ on a Mac, Ctrl elsewhere. */
-const PASTE_KEY =
-  typeof navigator !== "undefined" &&
-  /mac/i.test((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform)
-    ? "⌘"
-    : "Ctrl"
+/**
+ * A note on what the person does (Copy, Paste), not something the app shows: bold italic caps
+ * in a blue gradient on a soft glow (deep blue on pale in the light theme, pale on navy in the
+ * dark), rising out of the pointer's tip where it acted and fading once it's been read
+ * (meta-float in globals.css). Keyed by `n`, so each plays through on its own, and several can
+ * be up at once.
+ */
+type MetaNote = { n: number; text: string; at: Point }
+
+/** Within this of a canvas's side, a note lines up with the tip rather than centering on it, so it stays in view. */
+const NOTE_ROOM = 45
+
+function MetaNoteTag({ note, width, onDone }: { note: MetaNote; width: number; onDone: () => void }) {
+  return (
+    // Pinned at the pointer's tip; the note sits just above it, centered (or lined up with it near
+    // the canvas's sides), and pops from its bottom edge, so it comes out of the pointer.
+    <span aria-hidden className="pointer-events-none absolute z-40" style={{ left: note.at.x, top: note.at.y }}>
+      <span
+        onAnimationEnd={onDone}
+        // A glow (the theme's, --note-glow), solid to about 40% out and clear at the edge, so it
+        // sits on the drawing without an outline or a shadow's hard edge.
+        className={cn(
+          "meta-float absolute bottom-1 origin-bottom rounded-full bg-[radial-gradient(50%_50%_at_50%_50%,var(--note-glow)_42%,transparent_100%)] px-3 py-2 whitespace-nowrap",
+          note.at.x > width - NOTE_ROOM ? "right-0" : note.at.x < NOTE_ROOM ? "left-0" : "left-0 -translate-x-1/2",
+        )}
+      >
+        {/* Caps trimmed to their height (no room kept for descenders), lit top to bottom in the
+            theme's blues (--note-text). */}
+        <span className="block bg-(image:--note-text) bg-clip-text text-[12px] leading-none font-bold text-transparent uppercase italic [text-box:trim-both_cap_alphabetic]">
+          {note.text}
+        </span>
+      </span>
+    </span>
+  )
+}
 
 function useMediaQuery(query: string) {
   return useSyncExternalStore(
@@ -69,6 +104,11 @@ function useMediaQuery(query: string) {
 export const useReducedMotion = () => useMediaQuery("(prefers-reduced-motion: reduce)")
 /** A touch screen: the drawings use a finger, and Deliver shows a phone. */
 export const useTouch = () => useMediaQuery("(pointer: coarse)")
+/** Phone widths (under Tailwind's sm), where the drawings' frames go square and the camera crops in. */
+const usePhone = () => useMediaQuery("(max-width: 639px)")
+/** How long the camera takes to move to a new focus, and its ease. */
+const CAMERA_MS = 900
+const CAMERA_EASE = "cubic-bezier(0.4, 0, 0.2, 1)"
 
 /**
  * Plays `script` over and over, after `setup` once; returns a function that stops it
@@ -123,6 +163,11 @@ const easeOut = (t: number) => 1 - (1 - t) ** 3
  * `height` changes, the drawing zooms to fit the new canvas, as a camera pulling back; with
  * `anchor="top"` it stays pinned at the top while it does. A `note` sits in a strip along the
  * bottom of the frame, at full size, under the drawing's own area.
+ *
+ * On phones the frame is square. A drawing given a `focus` (a place across its canvas) then fills
+ * the frame's height, larger than fitting it whole would allow, and the camera shows the part of
+ * it around the focus, moving as the focus does (the pointer, say); the rest is cropped off.
+ * Without a focus, the drawing fits the square whole.
  */
 function Stage({
   label,
@@ -130,6 +175,7 @@ function Stage({
   width = STAGE_W,
   height = STAGE_H,
   anchor = "center",
+  focus,
   note,
   children,
 }: {
@@ -138,20 +184,30 @@ function Stage({
   width?: number
   height?: number
   anchor?: "center" | "top"
+  /** Where across the canvas the camera centers on phones (canvas pixels); see above. */
+  focus?: number
   note?: React.ReactNode
   children: React.ReactNode
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
+  const [frameW, setFrameW] = useState(0)
   const zoomRef = useRef<number | null>(null)
+  const phone = usePhone()
+  const camera = phone && focus !== undefined
 
   useLayoutEffect(() => {
     const frame = frameRef.current
     if (!frame) return
-    const fit = () => Math.min((frame.clientWidth - 20) / width, (frame.clientHeight - 20) / height)
+    // With the camera, the drawing fills the frame's height; otherwise it fits whole.
+    const fit = () =>
+      camera
+        ? (frame.clientHeight - 20) / height
+        : Math.min((frame.clientWidth - 20) / width, (frame.clientHeight - 20) / height)
     const show = (z: number) => {
       zoomRef.current = z
       setZoom(z)
+      setFrameW(frame.clientWidth)
     }
     // A new canvas size zooms there; the first fit, and any resize, simply fit.
     let frameId = 0
@@ -178,7 +234,12 @@ function Stage({
       cancelAnimationFrame(frameId)
       ro.disconnect()
     }
-  }, [width, height])
+  }, [width, height, camera])
+
+  // The camera: how much of the canvas the frame shows, and how far over it is, centered on the
+  // focus but never past either edge.
+  const seen = (frameW - 20) / zoom
+  const offset = camera ? Math.max(0, Math.min(width - seen, focus - seen / 2)) : 0
 
   return (
     <div
@@ -189,13 +250,27 @@ function Stage({
       <div
         ref={frameRef}
         className={cn("flex shrink-0 overflow-hidden", anchor === "top" ? "items-start pt-2.5" : "items-center")}
-        style={{ height: FRAME_H }}
+        // The tallest canvas's proportions (with the margin), so every step's frame is the same
+        // height and grows with the dialog's width: the drawings come out larger on big screens.
+        // On phones, square (see above).
+        style={{ aspectRatio: phone ? "1 / 1" : `${STAGE_W + 20} / ${DRAFT_H + 20}` }}
       >
         <div
           ref={canvasRef}
           aria-hidden
-          className="relative mx-auto select-none"
-          style={{ width, height, zoom }}
+          // Never squeezed to the frame (it's a flex item): cropped, with the camera, instead.
+          className={cn("relative shrink-0 select-none", !camera && "mx-auto")}
+          style={{
+            width,
+            height,
+            zoom,
+            ...(camera && {
+              // The 10px margin, in canvas pixels (the zoom scales it).
+              marginLeft: 10 / zoom,
+              transform: `translateX(${-offset}px)`,
+              transition: `transform ${CAMERA_MS}ms ${CAMERA_EASE}`,
+            }),
+          }}
         >
           {children}
         </div>
@@ -219,14 +294,16 @@ const HANDS: Record<Exclude<Pose, "arrow">, { outline: string; creases: string; 
     outline:
       "M6.5 12V6A1.5 1.5 0 0 1 9.5 6V4.5A1.5 1.5 0 0 1 12.5 4.5V5.5A1.5 1.5 0 0 1 15.5 5.5V7.5A1.25 1.25 0 0 1 18 7.5V15C18 19 15.1 22 11.5 22H10.5C8.2 22 6.7 21.1 5.5 19.6L3.3 15.8A1.5 1.5 0 0 1 5.5 13.8L6.5 15Z",
     creases: "M9.5 6v5M12.5 5.5v5.5M15.5 7.5v4",
-    at: { x: 11.5, y: 10 },
+    // Held at the fingertips, so the hand sits below what it's over (drawn large, it would hide it).
+    at: { x: 11.5, y: 4 },
   },
   // Closed, while dragging.
   grab: {
     outline:
       "M6.5 12.5V10.5A1.5 1.5 0 0 1 9.5 10.5V9.5A1.5 1.5 0 0 1 12.5 9.5V10A1.5 1.5 0 0 1 15.5 10V11A1.25 1.25 0 0 1 18 11V15.5C18 19.3 15.1 22 11.5 22H10.5C8.2 22 6.7 21.1 5.5 19.6L3.8 16.6A1.5 1.5 0 0 1 6 14.6L6.5 15.2Z",
     creases: "M9.5 10.5v2.5M12.5 10v2.5M15.5 11v2",
-    at: { x: 11.5, y: 11 },
+    // At the curled fingertips, as the open hand: what it carries sits above it, in view.
+    at: { x: 11.5, y: 8.5 },
   },
   // A fingertip, for touch screens.
   finger: {
@@ -255,10 +332,37 @@ function Hand({ pose }: { pose: Exclude<Pose, "arrow"> }) {
   )
 }
 
+/** How much larger than life the drawings' pointer is, so it reads as the one to follow. */
+const POINTER_SCALE = 2
+
+/**
+ * The person's pointer across the tour's drawings: where it was last, as a share of that
+ * drawing's canvas, so the next drawing picks it up there and it reads as one pointer moving
+ * through the steps. Each drawing records it while it plays (useCarriedPointer) and starts from
+ * it (carriedPointer).
+ */
+let carried: Point | null = null
+
+/** Records the pointer at `at` on a `width` by `height` canvas while the drawing plays. */
+function useCarriedPointer(at: Point, width: number, height: number, active: boolean) {
+  useEffect(() => {
+    if (active) carried = { x: at.x / width, y: at.y / height }
+  }, [at, width, height, active])
+}
+
+/** Where the pointer left off, on a `width` by `height` canvas (kept on it), or `fallback`. */
+function carriedPointer(fallback: Point, width: number, height: number): Point {
+  if (!carried) return fallback
+  const clamp = (v: number, max: number) => Math.min(max - 8, Math.max(8, v))
+  return { x: clamp(carried.x * width, width), y: clamp(carried.y * height, height) }
+}
+
 /**
  * A drawn pointer whose point sits at `at`, gliding there over `duration`. Open hand over
  * something it can drag, closed while dragging, as the real pointer shows; a fingertip on
- * touch screens, where `pressing` holds it down. Each new `clicks` count plays a ripple.
+ * touch screens, where `pressing` holds it down. Each new `clicks` count plays a ripple. Drawn
+ * twice life size, so it's easy to follow; the arrow takes the person's system's colors (black
+ * with a white rim on a Mac, white with a black rim elsewhere).
  */
 export function Cursor({
   at,
@@ -280,6 +384,7 @@ export function Cursor({
   /** Carried along with the pointer, such as files being dragged in. */
   children?: React.ReactNode
 }) {
+  const apple = useApple()
   return (
     <div
       aria-hidden
@@ -293,21 +398,24 @@ export function Cursor({
       }}
     >
       {children}
-      {clicks > 0 && <Ripple key={clicks} />}
-      {pressing && <span className="absolute -top-3.5 -left-3.5 size-7 rounded-full bg-foreground/30" />}
-      {pose === "arrow" ? (
-        <svg width="14" height="21" viewBox="0 0 14 21" className="block -translate-px">
-          <path
-            d="M1 1v16.2l3.9-3.7 2.6 6.3 2.4-1-2.6-6.2H13z"
-            fill="white"
-            stroke="black"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ) : (
-        <Hand pose={pose} />
-      )}
+      {/* Scaled about the point, so the point stays where it is. */}
+      <div className="relative origin-top-left" style={{ scale: POINTER_SCALE }}>
+        {clicks > 0 && <Ripple key={clicks} />}
+        {pressing && <span className="absolute -top-3.5 -left-3.5 size-7 rounded-full bg-foreground/30" />}
+        {pose === "arrow" ? (
+          <svg width="14" height="21" viewBox="0 0 14 21" className="block -translate-px">
+            <path
+              d="M1 1v16.2l3.9-3.7 2.6 6.3 2.4-1-2.6-6.2H13z"
+              fill={apple ? "black" : "white"}
+              stroke={apple ? "white" : "black"}
+              strokeWidth="1.2"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <Hand pose={pose} />
+        )}
+      </div>
     </div>
   )
 }
@@ -325,6 +433,41 @@ function Ripple() {
     )
   }, [])
   return <span ref={ref} className="absolute -top-3 -left-3 size-6 rounded-full bg-foreground/40 opacity-0" />
+}
+
+/** Whether this is an Apple computer, whose windows keep their controls on the left. */
+const isApple = () =>
+  /mac|iphone|ipad/i.test(
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform,
+  )
+const useApple = () => useSyncExternalStore(() => () => {}, isApple, () => true)
+
+/**
+ * A browser window's tab bar, with the window's controls where the person's system keeps them:
+ * the three dots on the left on a Mac, minimize, maximize and close on the right elsewhere
+ * (Windows, Linux).
+ */
+function BrowserTabBar({ children }: { children: React.ReactNode }) {
+  const apple = useApple()
+  return (
+    <div className="flex h-7 items-end border-b bg-muted/60 px-2 pt-1">
+      {apple && (
+        <span className="mr-2 flex gap-1 self-center">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-1.5 rounded-full bg-muted-foreground/40" />
+          ))}
+        </span>
+      )}
+      {children}
+      {!apple && (
+        <span className="ml-auto flex gap-2 self-center pl-2 text-muted-foreground/70 [&_svg]:size-2.5">
+          <MinusIcon />
+          <SquareIcon />
+          <XIcon />
+        </span>
+      )}
+    </div>
+  )
 }
 
 /** A tiny button face, for drawings of a card's buttons. */
@@ -402,21 +545,24 @@ const DRAFT_TEXT = LOREM.slice(0, LOREM.indexOf("Duis")) + "Duis aute irure dolo
 const DRAFT_WORDS = Array.from(DRAFT_TEXT.matchAll(/\S+/g), (m) => m[0])
 /** How much slower than their scripts' timings Draft's drawings play, so each beat lingers. */
 const DRAFT_PACE = 1.4
+/** Split's own pace: its beats are many and short, so it lingers less than the others (20%). */
+const SPLIT_PACE = 1.2
 
 /**
- * Draft's canvas: just tall enough for Compose, so the drawing fills the frame. Images grows it
- * to fit the tile row once images arrive, and the drawing zooms out to match.
+ * Draft's canvas, the same on all three tabs (tall enough for Compose with Images' tile row),
+ * so they draw at one scale: Write's and Split's leave room below.
  */
-const DRAFT_H = 264
-const GROWN_H = 340
-/** Compose's width, its text box's height, and how tall it is before images land. */
-const COMPOSE_W = 300
+const DRAFT_H = 320
+/**
+ * Compose's width and the platforms' column beside it: as wide as each other, as the app's two
+ * columns are, within the canvas's 12px margins and an 8px gap.
+ */
+const COMPOSE_W = 244
+const SIDE_W = 244
+/** Compose's text box height. */
 const TEXT_H = 144
-const COMPOSE_H = 248
-/** Where Compose sits, the same on every tab: the canvas grows below it. */
-const COMPOSE_TOP = (DRAFT_H - COMPOSE_H) / 2
-/** The column beside Compose. */
-const SIDE_W = 184
+/** Where Compose sits, the same on every tab, with the platforms' column level with it. */
+const COMPOSE_TOP = 8
 /** The threading platforms, in the order their chips and flags show. */
 const THREADERS = [bluesky, threads, x]
 /** A split flag at the drawings' size (the real one is 16px tall). */
@@ -566,8 +712,9 @@ function MiniCompose({
     >
       <div className="flex h-5 items-center justify-between gap-2">
         <span className="text-[12px] font-semibold">Compose</span>
-        <span className={cn("flex items-center gap-1 transition-opacity duration-500", lit ? "opacity-100" : "opacity-30")}>
-          <span className="mr-0.5 text-[9px] text-muted-foreground">Drag to split</span>
+        {/* One line, at Compose's width (half the canvas, as the app's column is half the page). */}
+        <span className={cn("flex items-center gap-0.5 whitespace-nowrap transition-opacity duration-500", lit ? "opacity-100" : "opacity-30")}>
+          <span className="mr-0.5 text-[8px] text-muted-foreground">Drag to split</span>
           <span data-at="chip-all" className="flex h-5 items-center gap-0.5 rounded border bg-secondary px-1 text-[9px] font-medium">
             <ScissorsIcon className="size-2.5" />
             All
@@ -704,22 +851,76 @@ const ownSplits = (text: string) => splitsOf((a) => splitChunks(text, a.limit, a
 
 const WRITE_ROWS = [bluesky, threads, x, facebook]
 
+/** A platform's card, collapsed to its header as in Write: its logo, name, and count (or posts) for `text`. */
+function PlatformRow({ adapter: a, text, className, style }: { adapter: PlatformAdapter; text: string; className?: string; style?: React.CSSProperties }) {
+  const n = a.count(text)
+  const posts = a.chain ? splitChunks(text, a.limit, a.count).length : 1
+  return (
+    <div
+      style={{ ...brandVars(a), ...style }}
+      className={cn("flex h-9 items-center gap-1.5 rounded-lg border px-2.5 shadow-xs", MINI_CARD, className)}
+    >
+      <PlatformLogo adapter={a} className="size-3.5" />
+      <span className="text-[11px] font-medium">{a.name}</span>
+      {posts > 1 ? (
+        // The app's blue, as on the cards: platform colors are for logos only.
+        <span className="ml-auto rounded-full bg-(--brand-blue) px-1.5 py-0.5 text-[9px] font-semibold text-white">
+          {posts} posts
+        </span>
+      ) : (
+        <span className={cn("ml-auto text-[9.5px] tabular-nums", tone(n, a.limit))}>
+          {n.toLocaleString()} / {a.limit.toLocaleString()}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Where Write's pointer waits when there's none to pick up: below Compose. */
+const WRITE_REST: Point = { x: 150, y: DRAFT_H - 24 }
+
 /**
- * Write: Draft's sample typed in as ghost words, with each platform counting it its own way;
- * once it passes X's limit, X's split shows in the text, as in Compose. It ends where Split begins.
+ * Write: the pointer clicks into Compose's text box and steps aside, then Draft's sample is typed
+ * in as ghost words, with each platform counting it its own way; once it passes X's limit, X's
+ * split shows in the text, as in Compose. It ends where Split begins.
  */
 export function WriteArt({ active, onDone }: ArtProps) {
   const reduced = useReducedMotion()
   const canvasRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLDivElement>(null)
   const [typed, setTyped] = useState(() => (reduced ? DRAFT_WORDS.length : 0))
+  // The pointer, and whether the text box has been clicked into (its caret shows).
+  const [pointer, setPointer] = useState(() => ({
+    cursor: carriedPointer(WRITE_REST, STAGE_W, DRAFT_H),
+    duration: 0,
+    clicks: 0,
+  }))
+  const [focused, setFocused] = useState(reduced)
   const done = useEffectEvent(() => onDone?.())
   const [layout] = useTextLayout(canvasRef, textRef, typed)
+  useCarriedPointer(pointer.cursor, STAGE_W, DRAFT_H, active)
 
   useEffect(() => {
     if (!active || reduced) return
+    const moveTo = (cursor: Point, duration: number) => setPointer((p) => ({ ...p, cursor, duration }))
     return loop(
       async (wait) => {
+        await wait(300)
+        // Into the text box, where the post starts...
+        const canvas = canvasRef.current
+        const text = textRef.current
+        const box = canvas && text ? canvasBox(canvas, text) : null
+        if (box) {
+          moveTo({ x: box.x + 14, y: box.y + 10 }, 700)
+          await wait(560)
+          setPointer((p) => ({ ...p, clicks: p.clicks + 1 }))
+          setFocused(true)
+          await wait(300)
+          // ...then aside, below the box, out of the way of the words but still in view.
+          moveTo({ x: box.x + box.w - 30, y: box.y + box.h + 22 }, 600)
+          await wait(450)
+        }
+        setFocused(true)
         for (let n = 1; n <= DRAFT_WORDS.length; n++) {
           setTyped(n)
           await wait(55)
@@ -728,11 +929,13 @@ export function WriteArt({ active, onDone }: ArtProps) {
         done()
         await wait(600)
         setTyped(0)
+        setFocused(false)
         await wait(700)
       },
       async (wait) => {
         await wait(0)
         setTyped(0)
+        setFocused(false)
       },
       DRAFT_PACE,
     )
@@ -745,46 +948,24 @@ export function WriteArt({ active, onDone }: ArtProps) {
       height={DRAFT_H}
       anchor="top"
       canvasRef={canvasRef}
+      // Phones: held on Compose, with the edge of the cards beside it.
+      focus={0}
       label="A post typed into Compose, with Bluesky, Threads, X and Facebook each counting it; X splits it into 2 posts once it passes its limit, and its split shows in the text."
     >
       <MiniCompose characters={graphemeLength(text)}>
         <div ref={textRef} className={TEXT_BOX} style={{ height: TEXT_H }}>
           <Ghost text={text} mark />
-          {/* The text cursor. */}
-          <span className="ml-0.5 inline-block h-3 w-px animate-pulse bg-foreground align-middle" />
+          {/* The text cursor, once the box is clicked into. */}
+          {focused && <span className="ml-0.5 inline-block h-3 w-px animate-pulse bg-foreground align-middle" />}
         </div>
       </MiniCompose>
       <SplitMarkers splits={ownSplits(text)} words={layout?.words} />
-      <div className="absolute top-1/2 right-3 -translate-y-1/2 space-y-2" style={{ width: SIDE_W }}>
-        {WRITE_ROWS.map((a) => {
-          const n = a.count(text)
-          const posts = a.chain ? splitChunks(text, a.limit, a.count).length : 1
-          return (
-            <div
-              key={a.id}
-              style={brandVars(a)}
-              className={cn("flex h-9 items-center gap-1.5 rounded-lg border px-2.5 shadow-xs", MINI_CARD)}
-            >
-              <PlatformLogo adapter={a} className="size-3.5" />
-              <span className="text-[11px] font-medium">{a.name}</span>
-              {posts > 1 ? (
-                <span
-                  className={cn(
-                    // The app's blue, as on the cards: platform colors are for logos only.
-                    "ml-auto rounded-full bg-(--brand-blue) px-1.5 py-0.5 text-[9px] font-semibold text-white",
-                  )}
-                >
-                  {posts} posts
-                </span>
-              ) : (
-                <span className={cn("ml-auto text-[9.5px] tabular-nums", tone(n, a.limit))}>
-                  {n.toLocaleString()} / {a.limit.toLocaleString()}
-                </span>
-              )}
-            </div>
-          )
-        })}
+      <div className="absolute right-3 space-y-2" style={{ width: SIDE_W, top: COMPOSE_TOP }}>
+        {WRITE_ROWS.map((a) => (
+          <PlatformRow key={a.id} adapter={a} text={text} />
+        ))}
       </div>
+      {!reduced && <Cursor at={pointer.cursor} duration={pointer.duration} clicks={pointer.clicks} />}
     </Stage>
   )
 }
@@ -800,8 +981,11 @@ export function WriteArt({ active, onDone }: ArtProps) {
 const ALL_AT = DRAFT_TEXT.indexOf("Ut enim")
 /** Where the pointer clicks in the text, and so where the Bluesky chip splits Bluesky. */
 const BSKY_AT = DRAFT_TEXT.indexOf("Duis")
-/** Where the pointer holds a flag, from the top of the caret: on the flag, as in Compose. */
-const HOLD: Point = { x: 14, y: -3 }
+/**
+ * Where the pointer holds a flag, from the top of the caret: on the flag, as in Compose, at its
+ * bottom edge, so the hand (held at its fingertips) sits under the flag rather than over it.
+ */
+const HOLD: Point = { x: 6, y: 3 }
 const SPLIT_REST: Point = { x: 262, y: DRAFT_H - 28 }
 /** One pointer move while dragging: the marker is placed again at each. */
 const GLIDE_STEP = 40
@@ -869,12 +1053,15 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
   const [layout, layoutRef] = useTextLayout(canvasRef, textRef, null)
   // Without motion: the All split placed early, and Bluesky's own later on.
   const [frame, setFrame] = useState<SplitFrame>(() =>
-    reduced ? { ...SPLIT_START, lit: true, all: ALL_AT, bsky: BSKY_AT } : SPLIT_START,
+    reduced
+      ? { ...SPLIT_START, lit: true, all: ALL_AT, bsky: BSKY_AT }
+      : { ...SPLIT_START, cursor: carriedPointer(SPLIT_REST, STAGE_W, DRAFT_H) },
   )
   const done = useEffectEvent(() => onDone?.())
   const beat = useEffectEvent((n: number) => onBeat?.(n))
 
   const measured = layout !== null
+  useCarriedPointer(frame.cursor, STAGE_W, DRAFT_H, active)
   useEffect(() => {
     if (!active || reduced || !measured) return
     const set = (change: Partial<SplitFrame>) => setFrame((f) => ({ ...f, ...change }))
@@ -884,7 +1071,7 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
       const w = L().words.find((v) => v.start === offset)!
       return { x: w.x + by.x, y: w.y + by.y }
     }
-    const moveTo = (p: Point, duration = 800) => set({ cursor: p, duration, easing: undefined })
+    const moveTo = (p: Point, duration = 700) => set({ cursor: p, duration, easing: undefined })
     /**
      * Straight down from `p`, just far enough below the last line that letting go removes the
      * split (as in Compose, over a line and a half of empty box), still inside the box.
@@ -914,31 +1101,31 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
         const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
         const p = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e }
         const offset = splitOffsetAt(L(), p)
-        set({ cursor: p, duration: GLIDE_STEP * DRAFT_PACE, easing: "linear", [kind]: offset, drag: { kind, moving, inside: offset !== null } })
+        set({ cursor: p, duration: GLIDE_STEP * SPLIT_PACE, easing: "linear", [kind]: offset, drag: { kind, moving, inside: offset !== null } })
         await wait(GLIDE_STEP)
       }
     }
     return loop(
       async (wait) => {
         beat(0)
-        await wait(300)
+        await wait(200)
         set({ lit: true })
-        await wait(700)
+        await wait(500)
         // Drag in: the All chip, down into the text at an early word, which starts post 2 everywhere.
         const chip = locate(canvasRef.current, "chip-all")
         moveTo(chip)
-        await wait(820)
+        await wait(720)
         await press(wait)
-        await drag(wait, "all", false, chip, at(ALL_AT), 1500)
+        await drag(wait, "all", false, chip, at(ALL_AT), 1200)
         await wait(200)
         // Let go, the pointer still rests on the tag, so its flags stay out until it moves off.
         set({ hoverAll: true })
         await letGo(wait)
-        await wait(600)
+        await wait(400)
         // Click: in the text later on, which puts the caret there...
         set({ hoverAll: false })
         moveTo(at(BSKY_AT, { x: 3, y: CARET_H / 2 }))
-        await wait(820)
+        await wait(720)
         click()
         set({ caret: BSKY_AT })
         await wait(600)
@@ -947,40 +1134,40 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
         await wait(720)
         click()
         set({ bsky: BSKY_AT, caret: null })
-        await wait(1200)
+        await wait(900)
         // Drag out: Bluesky's flag, straight down past where Compose removes it...
         beat(1)
         const flag = at(BSKY_AT)
         moveTo(flag)
-        await wait(820)
+        await wait(720)
         await press(wait)
         await drag(wait, "bsky", true, flag, below(flag), 700)
         await wait(300)
         await letGo(wait)
-        await wait(500)
+        await wait(400)
         // ...and the All tag the same way.
         const tag = at(ALL_AT)
         moveTo(tag)
         await wait(700)
         // Over the tag: its flags come out, as on hover.
         set({ hoverAll: true })
-        await wait(500)
+        await wait(350)
         await press(wait)
-        await drag(wait, "all", true, tag, below(tag), 1100)
+        await drag(wait, "all", true, tag, below(tag), 900)
         await wait(300)
         set({ hoverAll: false })
+        // The pointer stays where it let go, rather than wandering off to a corner.
         await letGo(wait)
-        moveTo(SPLIT_REST)
-        await wait(1800)
+        await wait(1200)
         done()
         await wait(600)
       },
-      // Start over each time the step comes back.
+      // Start over each time the step comes back, the pointer where it left off.
       async (wait) => {
         await wait(0)
-        set(SPLIT_START)
+        set({ ...SPLIT_START, cursor: carriedPointer(SPLIT_REST, STAGE_W, DRAFT_H) })
       },
-      DRAFT_PACE,
+      SPLIT_PACE,
     )
   }, [active, reduced, measured, layoutRef])
 
@@ -998,6 +1185,8 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
     <Stage
       height={DRAFT_H}
       anchor="top"
+      // Phones: held on Compose, with the edge of the cards beside it.
+      focus={0}
       label="Compose's split chips come up, and a pointer drags the All chip down into the text, where its marker follows word to word until it's let go at an early word: every platform starts a second post there. It clicks later in the text, then the Bluesky chip, which splits Bluesky at the caret, and Bluesky's card gains a third post. Then it drags Bluesky's flag and the All tag straight down below the text; each turns red on the pointer, and letting go removes it."
       canvasRef={canvasRef}
     >
@@ -1025,8 +1214,8 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
       />
 
       <div
-        style={{ ...brandVars(bluesky), width: SIDE_W }}
-        className={cn("absolute top-1/2 right-3 -translate-y-1/2 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
+        style={{ ...brandVars(bluesky), width: SIDE_W, top: COMPOSE_TOP }}
+        className={cn("absolute right-3 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
       >
         <MiniCardHeader adapter={bluesky} note={chunks.length === 1 ? "1 post" : `${chunks.length} posts`} />
         <ol className="mt-2.5 space-y-1.5">
@@ -1075,11 +1264,12 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
 
 // Images: on Split's text as Split left it, files dragged in from outside the page, which
 // Compose's drop bar opens up to take, then the third one moved on X's card to its second post,
-// as the app does it. The drawing zooms out to fit the tile row as it opens.
+// as the app does it. Drawn on Draft's one canvas (with room for the tile row), so nothing zooms.
 
 type StagingFrame = {
   cursor: Point
   duration: number
+  easing?: string
   pose: Pose
   /** Files on the pointer, coming in from outside the page. */
   carrying: boolean
@@ -1093,10 +1283,11 @@ type StagingFrame = {
   moved: boolean
 }
 
-const STAGING_IN: Point = { x: 580, y: 90 }
+/** Where the pointer waits before coming in: well past the frame's edge, out of sight at any zoom. */
+const STAGING_IN: Point = { x: 820, y: 90 }
 /** Where the files come over the page's edge. */
 const STAGING_EDGE: Point = { x: 520, y: 112 }
-const STAGING_REST: Point = { x: 264, y: GROWN_H - 24 }
+const STAGING_REST: Point = { x: 264, y: DRAFT_H - 24 }
 const STAGING_START: StagingFrame = {
   cursor: STAGING_IN,
   duration: 0,
@@ -1124,39 +1315,52 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
   const [layout] = useTextLayout(canvasRef, textRef, null)
   // Without motion: the images staged, the third moved to post 2.
   const [frame, setFrame] = useState<StagingFrame>(() =>
-    reduced ? { ...STAGING_START, cursor: STAGING_REST, carrying: false, staged: true, moved: true } : STAGING_START,
+    reduced
+      ? { ...STAGING_START, cursor: STAGING_REST, carrying: false, staged: true, moved: true }
+      : { ...STAGING_START, cursor: carriedPointer(STAGING_IN, STAGE_W, DRAFT_H), carrying: false },
   )
   const done = useEffectEvent(() => onDone?.())
 
+  useCarriedPointer(frame.cursor, STAGE_W, DRAFT_H, active)
   useEffect(() => {
     if (!active || reduced) return
     const set = (change: Partial<StagingFrame>) => setFrame((f) => ({ ...f, ...change }))
     const moveTo = (name: string, duration: number) => set({ cursor: locate(canvasRef.current, name), duration })
     return loop(
       async (wait) => {
+        // Out past the frame's right edge, from wherever the pointer is, to pick up the files.
+        set({ cursor: STAGING_IN, duration: 700, easing: "cubic-bezier(0.4, 0, 1, 1)", carrying: false })
         await wait(600)
-        // In from outside the window, as a drag of files from the desktop.
-        set({ cursor: STAGING_EDGE, duration: 450 })
-        await wait(450)
-        // Over the page: the drop bar opens up where the image row will be, lit by a glow
-        // that spreads from where the files came in, and the drawing zooms out to fit it.
+        set({ carrying: true, easing: undefined, pose: "grab" })
+        // In from outside the window, as a drag of files from the desktop, in one steady move to
+        // the middle of the bar it opens; the glow starts as the pointer crosses the page's edge.
         const canvas = canvasRef.current
         const area = areaRef.current
         if (canvas && area) {
           const box = canvasBox(canvas, area)
           // The open bar fills the top of the area.
           const top = box.y
+          const to = { x: box.x + AREA_W / 2, y: top + TILE / 2 }
+          const MOVE = 1400
+          set({ cursor: to, duration: MOVE, easing: "cubic-bezier(0.25, 0.1, 0.25, 1)" })
+          // When (roughly) the pointer reaches the page's edge, and where.
+          const across = (STAGING_IN.x - STAGING_EDGE.x) / (STAGING_IN.x - to.x)
+          await wait(MOVE * across * 0.75)
+          // Over the page: the drop bar opens up where the image row will be, lit by a glow
+          // that spreads from where the files came in.
           const x = STAGING_EDGE.x - box.x
           const y = STAGING_EDGE.y - top
           // Big enough to cover the open bar's farthest corner, with the rim beyond it.
           const r = 1.25 * Math.max(...[0, AREA_W].flatMap((cx) => [0, TILE].map((cy) => Math.hypot(cx - x, cy - y))))
           set({ glow: { x, y, r } })
-          // On to the middle of the bar where it's opening to.
-          set({ cursor: { x: box.x + AREA_W / 2, y: top + TILE / 2 }, duration: 1000 })
+          await wait(MOVE * (1 - across * 0.75))
+          set({ easing: undefined })
         }
-        await wait(1300)
-        set({ glow: null, carrying: false, staged: true })
-        await wait(1000)
+        await wait(300)
+        set({ glow: null, carrying: false, staged: true, pose: "hand" })
+        await wait(300)
+        set({ pose: "arrow" })
+        await wait(700)
         // Moved: the third image, from post 1 to post 2 on X's card.
         moveTo("img-2", 800)
         await wait(850)
@@ -1165,21 +1369,25 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
         set({ pose: "grab", moving: true })
         await wait(250)
         moveTo("post-2-slot", 900)
-        await wait(600)
+        // Lit as the pointer comes over it: its move isn't slowed by Draft's pace, the waits are,
+        // so this is about half a second in (the move eases, and is mostly there by then).
+        await wait(340)
         set({ over: true })
         await wait(450)
         set({ pose: "hand", moving: false, over: false, moved: true })
         await wait(400)
-        set({ pose: "arrow", cursor: STAGING_REST, duration: 700 })
+        // It stays where it let go, rather than drifting down before the next tab.
+        set({ pose: "arrow" })
         await wait(2200)
         done()
         await wait(300)
-        set(STAGING_START)
+        // Around again, the pointer staying where it is (it heads out for the files from there).
+        setFrame((f) => ({ ...STAGING_START, cursor: f.cursor, carrying: false }))
         await wait(400)
       },
       async (wait) => {
         await wait(0)
-        set(STAGING_START)
+        set({ ...STAGING_START, cursor: carriedPointer(STAGING_IN, STAGE_W, DRAFT_H), carrying: false })
       },
       DRAFT_PACE,
     )
@@ -1188,14 +1396,14 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
   const posts = splitChunks(DRAFT_TEXT, x.limit, x.count)
   /** Whether image `k` sits on `post`: all on the first, until the third moves to the second. */
   const sitsOn = (post: number, k: number) => (k === 2 && frame.moved ? post === 1 : post === 0)
-  const grown = frame.staged || frame.glow !== null
-
   return (
     <Stage
-      height={grown ? GROWN_H : DRAFT_H}
+      height={DRAFT_H}
       anchor="top"
+      // Phones: the camera follows the pointer, in with the files to Compose, then over to X's card.
+      focus={frame.cursor.x}
       note={
-        <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-sm text-muted-foreground">
+        <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-base text-muted-foreground">
           <ShieldCheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
           Images stay in your browser, never uploaded directly.
         </p>
@@ -1271,10 +1479,11 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
         </ol>
       </div>
 
-      <Cursor at={frame.cursor} duration={frame.duration} pose={frame.pose}>
-        {/* Files from outside: the desktop's drag picture, a little stack beside the pointer. */}
+      <Cursor at={frame.cursor} duration={frame.duration} pose={frame.pose} easing={frame.easing}>
+        {/* Files from outside: the desktop's drag picture, a little stack held in the closed hand,
+            centered on its grip, as an image dragged on the page is. */}
         {frame.carrying && (
-          <span className="absolute top-3 left-3 block">
+          <span className="absolute -top-6 -left-6 block">
             {PHOTOS.map((_, k) => (
               <Photo
                 key={k}
@@ -1290,6 +1499,265 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
             pointer took it (its middle), while the image itself stays in place. */}
         {frame.moving && <Photo index={2} className="absolute -top-4 -left-4 size-8 rounded border opacity-60" />}
       </Cursor>
+    </Stage>
+  )
+}
+
+// Decide: Draft's canvas and scale, starting as the app does (Mastodon and Twitter off). The
+// pointer heads right to the column of platform icons beside the cards, the view moving over
+// with it (as a camera panning), Compose slipping half out of view on the left. It rests on More,
+// which opens the Off part (a line, then Mastodon and Twitter, grayed), drags Twitter's icon up
+// to just above X's, Twitter's card joining the others there as it passes, then drags X's down
+// past the line into Off, and X's card closes up and goes; then Less closes the Off part. A
+// demonstration with its own list: nothing here changes the app's settings.
+
+/** How far the view moves over from Draft's: just enough to take in the icon column. */
+const DECIDE_PAN = 56
+/** The icon column, as the app's side column: tiles a size down, and their spacing. */
+const RAIL_X = COMPOSE_W + SIDE_W + 32
+const RAIL_TILE = 30
+const RAIL_PITCH = 36
+/** The cards' spacing (a header-height card and its gap, as in Write). */
+const CARD_PITCH = 44
+const DECIDE_START = [bluesky.id, threads.id, linkedin.id, x.id, facebook.id, instagram.id]
+const DECIDE_OFF = [mastodon.id, twitter.id]
+const DECIDE_ALL = [bluesky, threads, linkedin, x, facebook, instagram, mastodon, twitter]
+
+type DecideFrame = {
+  /** The platforms posted to, in order, and the ones turned off. */
+  on: string[]
+  off: string[]
+  /** The icon being dragged, and its top on the canvas (before the pan). */
+  drag: { id: string; y: number } | null
+  /** The column's Off part shows (while a drag can reach it). */
+  open: boolean
+  panned: boolean
+  cursor: Point
+  duration: number
+  clicks: number
+  pose: Pose
+}
+
+/** Where an icon tile's top sits: the posted-to ones from the top, the Off ones under the line. */
+const railTop = (i: number) => COMPOSE_TOP + i * RAIL_PITCH
+const lineTop = (onCount: number) => railTop(onCount) - 2
+/** The Off ones, under the line and its "Off". */
+const offTop = (onCount: number, i: number) => lineTop(onCount) + 14 + i * RAIL_PITCH
+/** More (closed) under the posted-to tiles, or Less under the Off ones. */
+const moreTop = (onCount: number, offCount: number, open: boolean) =>
+  open ? offTop(onCount, offCount) - 2 : railTop(onCount) + 4
+
+/**
+ * The order while an icon is dragged: where it would land, from either part (posted to, or below
+ * the line in Off).
+ */
+function decideOrder(f: DecideFrame) {
+  if (!f.drag) return { on: f.on, off: f.off }
+  const id = f.drag.id
+  const others = f.on.filter((o) => o !== id)
+  const offOthers = f.off.filter((o) => o !== id)
+  // Past the line (half a tile below the last posted-to one): Off, at the top of it.
+  if (f.open && f.drag.y > lineTop(others.length) + RAIL_TILE / 2) return { on: others, off: [id, ...offOthers] }
+  const at = Math.max(0, Math.min(others.length, Math.round((f.drag.y - COMPOSE_TOP) / RAIL_PITCH)))
+  return { on: [...others.slice(0, at), id, ...others.slice(at)], off: offOthers }
+}
+
+const DECIDE_REST: Point = { x: 300, y: DRAFT_H - 24 }
+const DECIDE_FRAME: DecideFrame = {
+  on: DECIDE_START,
+  off: DECIDE_OFF,
+  drag: null,
+  open: false,
+  panned: false,
+  cursor: DECIDE_REST,
+  duration: 0,
+  clicks: 0,
+  pose: "arrow",
+}
+
+export function DecideArt({ active, onDone }: ArtProps) {
+  const reduced = useReducedMotion()
+  const touch = useTouch()
+  const [frame, setFrame] = useState<DecideFrame>(() =>
+    reduced
+      ? {
+          ...DECIDE_FRAME,
+          panned: true,
+          open: true,
+          on: [bluesky.id, threads.id, linkedin.id, twitter.id, facebook.id, instagram.id],
+          off: [x.id, mastodon.id],
+        }
+      : { ...DECIDE_FRAME, cursor: carriedPointer(DECIDE_REST, STAGE_W, DRAFT_H) },
+  )
+  const done = useEffectEvent(() => onDone?.())
+
+  useCarriedPointer(frame.cursor, STAGE_W, DRAFT_H, active)
+  useEffect(() => {
+    if (!active || reduced) return
+    const set = (change: Partial<DecideFrame>) => setFrame((f) => ({ ...f, ...change }))
+    const point: Pose = touch ? "finger" : "arrow"
+    const open: Pose = touch ? "finger" : "hand"
+    const grab: Pose = touch ? "finger" : "grab"
+    // The pointer's spot on a tile at top `y`, on the canvas (the view panned), and on More or Less.
+    const onTile = (y: number): Point => ({ x: RAIL_X - DECIDE_PAN + RAIL_TILE / 2 + 2, y: y + RAIL_TILE / 2 + 2 })
+    const onMore = (y: number): Point => ({ x: RAIL_X - DECIDE_PAN + RAIL_TILE / 2 + 2, y: y + 5 })
+    const ON = DECIDE_START.length
+    /** Drags icon `id` from its tile at `from` to `to` (tops), in small moves, the order following. */
+    const drag = async (wait: Wait, id: string, from: number, to: number, ms: number) => {
+      set({ cursor: onTile(from), duration: 700, pose: point })
+      await wait(750)
+      set({ pose: open })
+      await wait(300)
+      set({ pose: grab, drag: { id, y: from } })
+      await wait(200)
+      const n = Math.max(1, Math.round(ms / 40))
+      for (let i = 1; i <= n; i++) {
+        const t = i / n
+        const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+        const y = from + (to - from) * e
+        set({ drag: { id, y }, cursor: onTile(y), duration: 40, pose: grab })
+        await wait(40)
+      }
+    }
+    /** Lets go: the order as it stands, and the tile settles in its place. */
+    const letGo = async (wait: Wait) => {
+      setFrame((f) => ({ ...f, ...decideOrder(f), drag: null, pose: open }))
+      await wait(350)
+      set({ pose: point })
+    }
+
+    return loop(
+      async (wait) => {
+        await wait(400)
+        // The pointer heads right, to More under the icons, and the camera moves over with it.
+        set({ panned: true, cursor: onMore(moreTop(ON, DECIDE_OFF.length, false)), duration: 900, pose: point })
+        await wait(1300)
+        // Resting on More opens the Off part: the line, then Mastodon and Twitter, grayed.
+        set({ open: true })
+        await wait(900)
+        // Up: Twitter, out of Off to just above X; its card joins the others there.
+        await drag(wait, twitter.id, offTop(ON, 1), railTop(DECIDE_START.indexOf(x.id)) - 2, 1100)
+        await letGo(wait)
+        await wait(700)
+        // Down: X, now under Twitter, past the line into Off; its card closes up and goes.
+        await drag(wait, x.id, railTop(DECIDE_START.indexOf(x.id) + 1), offTop(ON, 0) + 4, 900)
+        await letGo(wait)
+        await wait(700)
+        // Less closes the Off part again.
+        set({ cursor: onMore(moreTop(ON, DECIDE_OFF.length, true)), duration: 600, pose: point })
+        await wait(750)
+        setFrame((f) => ({ ...f, clicks: f.clicks + 1, open: false }))
+        await wait(1600)
+        done()
+        await wait(400)
+        // Around again, the pointer staying where it is.
+        setFrame((f) => ({ ...DECIDE_FRAME, cursor: f.cursor }))
+        await wait(600)
+      },
+      async (wait) => {
+        await wait(0)
+        set({ ...DECIDE_FRAME, cursor: carriedPointer(DECIDE_REST, STAGE_W, DRAFT_H) })
+      },
+    )
+  }, [active, reduced, touch])
+
+  const { on, off } = decideOrder(frame)
+  const dragged = frame.drag?.id
+
+  return (
+    <Stage
+      height={DRAFT_H}
+      anchor="top"
+      // Phones: on Compose, then over to the cards and icons with the pan.
+      focus={frame.panned ? STAGE_W : 0}
+      label="A pointer moves right to the column of platform icons beside the cards, the view moving over with it, and rests on More, which opens the platforms that are off: Mastodon and Twitter. It drags Twitter's icon up to just above X's, and Twitter's card joins the others; then it drags X's icon down past the line into Off, and X's card goes. Less closes the Off part."
+      note={
+        <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-base text-muted-foreground">
+          <ShieldCheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
+          Designed to be light: no account, password, or key. Nothing to connect, nothing to leak.
+        </p>
+      }
+    >
+      {/* Everything moves over together, as a camera panning; what moves out of view is clipped. */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute inset-0"
+          style={{ transform: `translateX(${frame.panned ? -DECIDE_PAN : 0}px)`, transition: `transform 900ms ${OPEN_EASE}` }}
+        >
+          <MiniCompose characters={graphemeLength(DRAFT_TEXT)}>
+            <div className={TEXT_BOX} style={{ height: TEXT_H }}>
+              <Ghost text={DRAFT_TEXT} mark />
+            </div>
+          </MiniCompose>
+
+          {/* The cards, in the order the icons are in; each glides to its place as that changes. */}
+          {DECIDE_ALL.map((a) => {
+            const i = on.indexOf(a.id)
+            return (
+              <PlatformRow
+                key={a.id}
+                adapter={a}
+                text={DRAFT_TEXT}
+                className={cn("absolute transition-[top,opacity,scale] duration-300", i < 0 && "scale-95 opacity-0")}
+                style={{
+                  left: COMPOSE_W + 20,
+                  width: SIDE_W,
+                  top: COMPOSE_TOP + Math.max(0, i < 0 ? on.length - 1 : i) * CARD_PITCH,
+                }}
+              />
+            )
+          })}
+
+          {/* The icon column: the posted-to tiles, then (while open) a line and the Off ones, grayed. */}
+          {DECIDE_ALL.map((a) => {
+            const i = on.indexOf(a.id)
+            const j = off.indexOf(a.id)
+            const lifted = dragged === a.id
+            const shown = lifted || i >= 0 || frame.open
+            const top = lifted ? frame.drag!.y : i >= 0 ? railTop(i) : offTop(on.length, Math.max(0, j))
+            return (
+              <span
+                key={a.id}
+                style={{ ...brandVars(a), left: RAIL_X, top, width: RAIL_TILE, height: RAIL_TILE }}
+                className={cn(
+                  "absolute grid place-items-center rounded-lg border bg-card",
+                  lifted ? "z-10 shadow-lg" : "transition-[top,opacity] duration-300",
+                  !lifted && j >= 0 && "grayscale",
+                  shown ? (j >= 0 && !lifted ? "opacity-50" : "opacity-100") : "opacity-0",
+                )}
+              >
+                <PlatformLogo adapter={a} className="size-4" />
+              </span>
+            )
+          })}
+          {/* The line between the two parts, with Off under it, as in the app. */}
+          <span
+            className={cn(
+              "absolute flex flex-col items-center gap-0.5 transition-[top,opacity] duration-300",
+              frame.open ? "opacity-100" : "opacity-0",
+            )}
+            style={{ left: RAIL_X - 2, width: RAIL_TILE + 4, top: lineTop(on.length) + 1 }}
+          >
+            <span className="h-px w-full bg-border" />
+            <span className="text-[7px] leading-none font-bold tracking-wide text-muted-foreground uppercase">Off</span>
+          </span>
+          {/* More under the tiles, opening the Off part; Less under that, closing it. */}
+          <span
+            className="absolute text-center text-[7px] font-bold tracking-wide text-foreground/60 uppercase transition-[top] duration-300"
+            style={{ left: RAIL_X - 4, width: RAIL_TILE + 8, top: moreTop(on.length, off.length, frame.open) }}
+          >
+            {frame.open ? "Less" : "More"}
+          </span>
+        </div>
+      </div>
+
+      <Cursor
+        at={frame.cursor}
+        duration={frame.duration}
+        pose={frame.pose}
+        clicks={frame.clicks}
+        easing={frame.drag ? "linear" : undefined}
+      />
     </Stage>
   )
 }
@@ -1340,7 +1808,8 @@ type ImagesFrame = {
   /** Copied from the card (or opened prefilled), and what has landed in the composer. */
   copied: Piece[]
   pasted: Piece[]
-  keycap: boolean
+  /** Notes on what the person did (Copy, Paste), each until it has evaporated. */
+  notes: MetaNote[]
 }
 
 /** Deliver's desktop canvas: wide enough for the card and the platform's window side by side. */
@@ -1354,7 +1823,7 @@ const IMAGES_START: ImagesFrame = {
   thread: false,
   copied: [],
   pasted: [],
-  keycap: false,
+  notes: [],
 }
 /** Bluesky's two posts of the sample. */
 const DELIVER_POSTS = splitChunks(LOREM, bluesky.limit, bluesky.count).map((c) => c.text)
@@ -1365,30 +1834,38 @@ const DELIVER_POSTS = splitChunks(LOREM, bluesky.limit, bluesky.count).map((c) =
  * the thread, copies the second post and its image across, and posts. Each piece is checked off
  * on the card as it goes, and once all four are, the card marks itself posted.
  */
-function DesktopImagesArt({ active }: { active: boolean }) {
+function DesktopImagesArt({ active, onDone }: { active: boolean; onDone?: () => void }) {
   const reduced = useReducedMotion()
   const canvasRef = useRef<HTMLDivElement>(null)
+  const done = useEffectEvent(() => onDone?.())
   // Without motion: everything carried over, and the card marked posted.
   const [frame, setFrame] = useState<ImagesFrame>(() =>
-    reduced ? { ...IMAGES_START, open: true, thread: true, copied: PIECES, pasted: PIECES } : IMAGES_START,
+    reduced
+      ? { ...IMAGES_START, open: true, thread: true, copied: PIECES, pasted: PIECES }
+      : { ...IMAGES_START, cursor: carriedPointer(IMAGES_REST, DELIVER_W, STAGE_H) },
   )
 
+  useCarriedPointer(frame.cursor, DELIVER_W, STAGE_H, active)
   useEffect(() => {
     if (!active || reduced) return
     const set = (change: Partial<ImagesFrame>) => setFrame((f) => ({ ...f, ...change }))
     const moveTo = (name: string, duration: number) => set({ cursor: locate(canvasRef.current, name), duration })
     const click = () => setFrame((f) => ({ ...f, clicks: f.clicks + 1 }))
-    const copy = (piece: Piece) => setFrame((f) => ({ ...f, clicks: f.clicks + 1, copied: [...f.copied, piece] }))
-    /** Into the composer at `name`, with the paste keys showing. */
+    /** A note on what the person did, beside the pointer where it is. */
+    let said = 0
+    const say = (text: string) => setFrame((f) => ({ ...f, notes: [...f.notes, { n: ++said, text, at: f.cursor }] }))
+    /** A click that copies `piece` (noted as Copy, unless it's the Open button's prefill). */
+    const copy = (piece: Piece, noted = true) => {
+      setFrame((f) => ({ ...f, clicks: f.clicks + 1, copied: [...f.copied, piece] }))
+      if (noted) say("Copy")
+    }
+    /** Into the composer at `name`: the note and what's pasted appear together. */
     const paste = async (wait: Wait, name: string, piece: Piece) => {
       moveTo(name, 850)
       await wait(900)
-      set({ keycap: true })
-      await wait(300)
+      say("Paste")
       setFrame((f) => ({ ...f, pasted: [...f.pasted, piece] }))
-      await wait(500)
-      set({ keycap: false })
-      await wait(250)
+      await wait(1350)
     }
     return loop(
       async (wait) => {
@@ -1396,7 +1873,7 @@ function DesktopImagesArt({ active }: { active: boolean }) {
         // Open the first post prefilled: the composer opens with its text, and it counts as copied.
         moveTo("open", 750)
         await wait(800)
-        copy("post-0")
+        copy("post-0", false)
         await wait(200)
         set({ open: true, pasted: ["post-0"] })
         await wait(800)
@@ -1433,13 +1910,14 @@ function DesktopImagesArt({ active }: { active: boolean }) {
         await wait(450)
         set({ cursor: IMAGES_REST, duration: 800 })
         await wait(1800)
+        done()
         set({ copied: [], pasted: [], thread: false })
         await wait(1200)
       },
-      // Start over each time the step comes back.
+      // Start over each time the step comes back, the pointer where it left off.
       async (wait) => {
         await wait(0)
-        set(IMAGES_START)
+        set({ ...IMAGES_START, cursor: carriedPointer(IMAGES_REST, DELIVER_W, STAGE_H) })
       },
     )
   }, [active, reduced])
@@ -1524,18 +2002,30 @@ function DesktopImagesArt({ active }: { active: boolean }) {
           frame.open ? "-translate-y-1/2 opacity-100" : "-translate-y-[48%] scale-95 opacity-0",
         )}
       >
-        <div className="flex h-6 items-center gap-1 border-b bg-muted/60 px-2">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="size-1.5 rounded-full bg-muted-foreground/40" />
-          ))}
-          <span className="mx-auto flex h-4 items-center gap-1 rounded-full bg-background/80 px-2 text-[9px] text-muted-foreground">
-            <LockIcon className="size-2" />
-            bsky.app
+        {/* The browser's tab bar: two tabs, Crosspost's behind (a tab in its own right, dimmer
+            and set back) and Bluesky's in front, overlapping it and joined to the page below. */}
+        <BrowserTabBar>
+          <span className="flex h-[18px] w-[68px] items-center gap-1 rounded-t-md border border-b-0 bg-muted px-1.5 text-[8px] text-muted-foreground">
+            <span className="size-2 shrink-0 rounded-sm bg-(--brand-blue)/70" />
+            <span className="truncate">Crosspost</span>
           </span>
-          {/* Balances the dots, so the address centers. */}
-          <span className="w-[22px]" />
+          <span
+            style={brandVars(bluesky)}
+            className="relative z-10 -mb-px -ml-1.5 flex h-5 w-[72px] items-center gap-1 rounded-t-md border border-b-0 bg-card px-1.5 text-[8px] font-medium shadow-[0_-1px_3px_rgb(0_0_0/0.15)]"
+          >
+            <PlatformLogo adapter={bluesky} className="size-2.5 shrink-0" />
+            <span className="truncate">Bluesky</span>
+          </span>
+        </BrowserTabBar>
+        {/* Bluesky's composer: Cancel and Post along the top, the posts with their avatars, and
+            its toolbar along the bottom, where a post is added to the thread. */}
+        <div className="flex h-6 items-center justify-between px-2.5">
+          <span className="text-[9px] font-medium text-[#1185FE]">Cancel</span>
+          <span data-at="post" className="flex h-5 items-center rounded-full bg-[#1185FE] px-3 text-[9px] font-semibold text-white">
+            {frame.thread ? "Post all" : "Post"}
+          </span>
         </div>
-        <div className="space-y-2 p-2.5">
+        <div className="space-y-2 px-2.5 pt-1">
           {DELIVER_POSTS.map((text, i) => {
             const post = `post-${i}` as Piece
             const img = `img-${i}` as Piece
@@ -1555,7 +2045,7 @@ function DesktopImagesArt({ active }: { active: boolean }) {
                         <Ghost text={text} />
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">Write your reply</span>
+                      <span className="text-muted-foreground">{i === 0 ? "What's up?" : "Write your reply"}</span>
                     )}
                   </p>
                   <span data-at={`slot-${i}`} className="mt-1.5 block size-9">
@@ -1572,33 +2062,37 @@ function DesktopImagesArt({ active }: { active: boolean }) {
             )
           })}
         </div>
-        <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-between">
-          {/* Adds a post to the thread, as Bluesky's composer does. */}
-          <span data-at="add" className="grid size-6 place-items-center rounded-full border text-[#1185FE]">
-            <PlusIcon className="size-3.5" />
+        <div className="absolute inset-x-0 bottom-0 flex h-7 items-center gap-2 border-t px-2.5 text-[#1185FE]">
+          <ImageIcon className="size-3" />
+          {/* A GIF badge the height of the icons beside it (12px). */}
+          <span className="grid h-3 place-items-center rounded-[3px] border-[1.5px] border-current px-[2px] text-[5.5px] leading-none font-extrabold">
+            GIF
           </span>
-          <span data-at="post" className="flex h-6 items-center rounded-full bg-[#1185FE] px-3.5 text-[10px] font-semibold text-white">
-            {frame.thread ? "Post all" : "Post"}
+          <SmileIcon className="size-3" />
+          {/* Adds a post to the thread, as Bluesky's composer does. */}
+          <span data-at="add" className="ml-auto grid size-5 place-items-center rounded-full border border-current">
+            <PlusIcon className="size-3" />
           </span>
         </div>
       </div>
 
       <Cursor at={frame.cursor} duration={frame.duration} clicks={frame.clicks} />
-      {frame.keycap && (
-        <kbd
-          className="absolute z-40 rounded border bg-popover px-1.5 py-0.5 font-sans text-[10px] font-medium text-popover-foreground shadow-md animate-in fade-in zoom-in-90"
-          style={{ left: frame.cursor.x + 12, top: frame.cursor.y + 16 }}
-        >
-          {PASTE_KEY} V
-        </kbd>
-      )}
+      {frame.notes.map((note) => (
+        <MetaNoteTag
+          key={note.n}
+          note={note}
+          width={DELIVER_W}
+          // Gone once it has evaporated.
+          onDone={() => setFrame((f) => ({ ...f, notes: f.notes.filter((o) => o.n !== note.n) }))}
+        />
+      ))}
     </Stage>
   )
 }
 
 /** Deliver's drawing: a desktop with two windows, or on a touch screen, a phone switching apps. */
-export function ImagesArt({ active }: { active: boolean }) {
-  return useTouch() ? <PhoneImagesArt active={active} /> : <DesktopImagesArt active={active} />
+export function ImagesArt({ active, onDone }: { active: boolean; onDone?: () => void }) {
+  return useTouch() ? <PhoneImagesArt active={active} onDone={onDone} /> : <DesktopImagesArt active={active} onDone={onDone} />
 }
 
 // On a phone: copy an image, open the app, paste it in, post. One app on screen at a time.
@@ -1632,9 +2126,10 @@ const PHONE_START: PhoneFrame = {
   pasted: false,
 }
 
-function PhoneImagesArt({ active }: { active: boolean }) {
+function PhoneImagesArt({ active, onDone }: { active: boolean; onDone?: () => void }) {
   const reduced = useReducedMotion()
   const canvasRef = useRef<HTMLDivElement>(null)
+  const done = useEffectEvent(() => onDone?.())
   // Without motion: the app open, with the image pasted in.
   const [frame, setFrame] = useState<PhoneFrame>(() =>
     reduced ? { ...PHONE_START, inApp: true, copied: true, pasted: true } : PHONE_START,
@@ -1680,6 +2175,7 @@ function PhoneImagesArt({ active }: { active: boolean }) {
         await wait(400)
         set({ cursor: PHONE_REST, duration: 700 })
         await wait(800)
+        done()
         set({ copied: false, pasted: false })
         await wait(1400)
       },

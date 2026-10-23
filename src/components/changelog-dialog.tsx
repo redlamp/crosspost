@@ -17,7 +17,11 @@ export function ChangelogDialog({ className }: { className?: string }) {
         <button
           type="button"
           aria-label={`Version ${version}: what's new`}
-          className={cn("text-left tabular-nums underline-offset-4 transition-colors hover:text-foreground hover:underline", className)}
+          // Underlined at rest so it reads as a link (a soft line), lighting up with the text on hover.
+          className={cn(
+            "text-left tabular-nums underline decoration-current/40 underline-offset-4 transition-colors hover:text-foreground hover:decoration-current",
+            className,
+          )}
         >
           v{version}
         </button>
@@ -34,13 +38,23 @@ export function ChangelogDialog({ className }: { className?: string }) {
               <span className="font-normal text-muted-foreground">{day(date)}</span>
             </h3>
             <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground marker:text-foreground/40">
-              {changes.map((change) => (
-                // Balanced lines, so no bullet ends on a short tail; the entries are kept to a
-                // line or two, where balancing reads best.
-                <li key={change} className="text-balance">
-                  {change}
-                </li>
-              ))}
+              {changes.map((change) => {
+                const { text, items } = typeof change === "string" ? { text: change, items: [] } : change
+                return (
+                  // Balanced lines, so no bullet ends on a short tail; the entries are kept to a
+                  // line or two, where balancing reads best. A new feature's points sit under it.
+                  <li key={text} className="text-balance">
+                    {text}
+                    {items.length > 0 && (
+                      <ul className="mt-1 list-[circle] space-y-1 pl-5">
+                        {items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </section>
         ))}
