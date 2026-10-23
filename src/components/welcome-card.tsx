@@ -144,16 +144,7 @@ function FoldedWelcome() {
  * "How it works" from then on, open or folded to its button. In place of the introduction opening
  * over the app, so nothing stands between a newcomer and the tool.
  */
-export function WelcomeCard({
-  place,
-  onTryExample,
-  canTry,
-}: {
-  place: "top" | "bottom"
-  onTryExample: () => void
-  /** Compose is empty, so the example has room; otherwise Try It is there but disabled. */
-  canTry: boolean
-}) {
+export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; onTryExample: () => void }) {
   const welcome = useWelcome()
   // While the tour is open it carries the card's transition names (it grew out of the card).
   const touring = useTourOpen()
@@ -196,24 +187,16 @@ export function WelcomeCard({
         </Tooltip>
       </div>
       <CardTrail touring={touring} />
-      {/* The two ways in, filling the card's width between them. Try It waits for an empty
-          Compose (it fills it), disabled until then, with its hover card saying so. */}
+      {/* The two ways in, filling the card's width between them. Try It is always there: over a
+          post of your own, it asks first (the composer's confirmation). */}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button size="lg" onClick={() => openIntro(0)}>
           Take the Tour
         </Button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {/* A span, as a disabled button gets no pointer events for its hover card. */}
-            <span tabIndex={canTry ? -1 : 0} className="grid">
-              <Button size="lg" variant="outline" onClick={onTryExample} disabled={!canTry}>
-                <PlayIcon />
-                Try It
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{canTry ? "Load an example post" : "Clear Compose to try the example"}</TooltipContent>
-        </Tooltip>
+        <Button size="lg" variant="outline" onClick={onTryExample}>
+          <PlayIcon />
+          Try It
+        </Button>
       </div>
     </section>
   )
