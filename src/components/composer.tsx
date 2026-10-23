@@ -11,12 +11,14 @@ import { firstProblem, imageProblem, imagesPerPost, PlatformCard, type PostEdit 
 import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
+import { WelcomeCard } from "@/components/welcome-card"
 import { cardId, StatusRail, type RailItem } from "@/components/status-rail"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
 import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
@@ -610,6 +612,42 @@ export default function Composer() {
       },
     })
   }
+  /**
+   * The example post, offered while Compose is empty: its text, a hand-placed split on every
+   * platform that threads (a marker to drag), and the site's share image with its alt text.
+   * Undo empties Compose again.
+   */
+  const canTryExample = !draft.trim() && images.length === 0
+  const tryExample = async () => {
+    setDraft(EXAMPLE_POST)
+    setBreaks(Object.fromEntries(ordered.filter((a) => a.chain).map((a) => [a.id, [EXAMPLE_SPLIT]])))
+    setProgress(NO_PROGRESS)
+    setPostEdits({})
+    let imageId: string | null = null
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}${EXAMPLE_IMAGE.path}`)
+      if (!response.ok) throw new Error(String(response.status))
+      const blob = await response.blob()
+      const id = crypto.randomUUID()
+      imageId = id
+      setImages((list) =>
+        [...list, { id, name: EXAMPLE_IMAGE.name, blob, alt: EXAMPLE_IMAGE.alt, url: URL.createObjectURL(blob) }].slice(0, MAX_IMAGES),
+      )
+    } catch {
+      // Offline, or the image moved: the text alone still shows the way.
+    }
+    toast("Example loaded", {
+      description: "Drag the split marker in Compose to move where each thread's posts break.",
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setDraft("")
+          setBreaks({})
+          if (imageId) setImages((list) => list.filter((img) => img.id !== imageId))
+        },
+      },
+    })
+  }
   const nothingToClear =
     !draft &&
     Object.keys(breaks).length === 0 &&
@@ -640,6 +678,7 @@ export default function Composer() {
         data-compose-column
         className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col"
       >
+        <WelcomeCard place="top" onTryExample={canTryExample ? tryExample : undefined} />
         <Card className="brand-edge gap-4 border-2">
           <CardContent className="space-y-4 lg:flex lg:flex-col">
             <ComposeEditor
@@ -687,7 +726,18 @@ export default function Composer() {
                   )}
                 </Label>
               </div>
-              <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
+              {canTryExample ? (
+                // Nothing written yet: the count would only say 0, so the example takes its place.
+                <button
+                  type="button"
+                  onClick={tryExample}
+                  className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                >
+                  Try an example
+                </button>
+              ) : (
+                <span className="tabular-nums">{graphemeLength(draft).toLocaleString()} characters</span>
+              )}
             </div>
             <ImageArea
               images={images}
@@ -721,7 +771,12 @@ export default function Composer() {
             />
           </CardContent>
         </Card>
-        <SplitViewTip />
+        {/* Below Compose, the tips: How it works (after a first visit) and the split view reminder,
+            each open across the column or folded to a small button, the buttons side by side. */}
+        <div className="flex flex-wrap items-start gap-x-2 gap-y-4 empty:hidden">
+          <WelcomeCard place="bottom" onTryExample={canTryExample ? tryExample : undefined} />
+          <SplitViewTip />
+        </div>
         <MadeBy className="hidden lg:mt-auto lg:flex" />
       </div>
 

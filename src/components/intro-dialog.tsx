@@ -1,6 +1,6 @@
 "use client"
 
-import { CircleHelpIcon, PenLineIcon, SendIcon, ShieldCheckIcon, SignpostIcon, type LucideIcon } from "lucide-react"
+import { BotIcon, PenLineIcon, SendIcon, ShieldCheckIcon, SignpostIcon, type LucideIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
 import { DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, useTouch, WriteArt, type ArtProps } from "@/components/intro-art"
@@ -11,9 +11,8 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
-import { markIntroSeen, useIntroSeen } from "@/lib/intro"
+import { registerIntroOpener, setWelcomeFolded } from "@/lib/intro"
 import { cn } from "@/lib/utils"
 
 /** Draft's tabs, kept by the dialog so the timeline can move between them. */
@@ -72,6 +71,63 @@ function Step({
         <div className={cn("space-y-3 text-sm text-muted-foreground", start ? "w-full" : "w-full max-w-lg")}>{children}</div>
       )}
       {controls && <div className="mt-2 w-full">{visual}</div>}
+    </div>
+  )
+}
+
+/**
+ * A step's tabs, as Draft's and Deliver's: a segmented row where, as tabs do, the arrow keys
+ * move between them and only the one shown is in the Tab order. `id` names the tabs and their
+ * panel; `tabClassName` sizes each tab.
+ */
+function StepTabs({
+  id,
+  label,
+  tabs,
+  current,
+  onPick,
+  tabClassName,
+}: {
+  id: string
+  label: string
+  tabs: string[]
+  current: number
+  onPick: (i: number) => void
+  tabClassName: string
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      className="inline-flex gap-1 rounded-[10px] bg-muted p-1"
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0
+        if (!step) return
+        e.preventDefault()
+        const to = (current + step + tabs.length) % tabs.length
+        onPick(to)
+        document.getElementById(`${id}-${to}`)?.focus()
+      }}
+    >
+      {tabs.map((tab, i) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          id={`${id}-${i}`}
+          aria-selected={i === current}
+          aria-controls={`${id}-panel`}
+          tabIndex={i === current ? 0 : -1}
+          onClick={() => onPick(i)}
+          className={cn(
+            "rounded-lg py-1.5 text-sm font-medium transition-colors",
+            tabClassName,
+            i === current ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {tab}
+        </button>
+      ))}
     </div>
   )
 }
@@ -187,66 +243,78 @@ function Draft({ active, draft }: StepProps) {
         </div>
       }
       controls={
-        <div
-          role="tablist"
-          aria-label="Drafting"
-          className="inline-flex gap-1 rounded-[10px] bg-muted p-1"
-          // As tabs do: the arrow keys move between them, and only the one shown is in the Tab order.
-          onKeyDown={(e) => {
-            const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0
-            if (!step) return
-            e.preventDefault()
-            const to = (part + step + DRAFT_PARTS.length) % DRAFT_PARTS.length
-            pick(to)
-            document.getElementById(`intro-draft-${to}`)?.focus()
-          }}
-        >
-          {DRAFT_PARTS.map((p, i) => (
-            <button
-              key={p.label}
-              type="button"
-              role="tab"
-              id={`intro-draft-${i}`}
-              aria-selected={i === part}
-              aria-controls="intro-draft-panel"
-              tabIndex={i === part ? 0 : -1}
-              onClick={() => pick(i)}
-              className={cn(
-                "w-20 rounded-lg py-1.5 text-sm font-medium transition-colors",
-                i === part ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <StepTabs
+          id="intro-draft"
+          label="Drafting"
+          tabs={DRAFT_PARTS.map((p) => p.label)}
+          current={part}
+          onPick={pick}
+          tabClassName="w-20"
+        />
       }
       title={title}
     />
   )
 }
 
+/** Deliver's two ways to post: by hand, or handed to an agent. */
+const DELIVER_WAYS = ["Post it yourself", "Have your agent do it"]
+
+/**
+ * Deliver: tabs for the two ways to post, as Draft's, with the title (the way's name) and a
+ * line under them, then the drawing. Posting by hand is drawn; handing it to an agent is still
+ * to come, so its panel says so.
+ */
 function Deliver({ active }: StepProps) {
   const touch = useTouch()
+  const [way, setWay] = useState(0)
   return (
-    // The title and a line at the top, along the left edge as on Decide; the drawing tells the rest.
-    <div className="space-y-4">
-      <div className="space-y-3 text-muted-foreground">
-        <StepTitle>Post it yourself</StepTitle>
-        <p className="text-base leading-5">
-          {touch
+    <Step
+      controls={
+        <StepTabs
+          id="intro-deliver"
+          label="Ways to post"
+          tabs={DELIVER_WAYS}
+          current={way}
+          onPick={setWay}
+          tabClassName="px-3"
+        />
+      }
+      title={DELIVER_WAYS[way]}
+      visual={
+        <div role="tabpanel" id="intro-deliver-panel" aria-labelledby={`intro-deliver-${way}`}>
+          {way === 0 ? (
+            <ImagesArt active={active} />
+          ) : (
+            <div className="grid h-80 place-items-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              <div className="max-w-sm space-y-2">
+                <BotIcon className="mx-auto size-8 text-(--brand-blue)" aria-hidden />
+                <p className="font-medium text-foreground">Coming soon</p>
+                <p className="text-balance">
+                  An agent in your own browser fills in each platform&apos;s post from Crosspost and stops before Post, so
+                  the last click stays yours.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      }
+    >
+      <p className="text-center text-base leading-5 text-balance">
+        {way === 1
+          ? "Hand the posts to an agent you already use."
+          : touch
             ? "Open each post in the platform's app, or copy it, then bring the images over and post."
             : "Open each post prefilled, or copy it, then bring the images over and post."}
-        </p>
-      </div>
-      <ImagesArt active={active} />
-    </div>
+      </p>
+    </Step>
   )
 }
 
 // What the app does, then what's in your hands, then the last steps, which are yours.
-const STEPS: { label: string; icon: LucideIcon; title: string; Body: (props: StepProps) => React.ReactNode }[] = [
-  { label: "Draft", icon: PenLineIcon, title: "Write once, shape it for each", Body: Draft },
+export const STEPS: { label: string; icon: LucideIcon; title: string; Body: (props: StepProps) => React.ReactNode }[] = [
+  // The welcome card keeps the line break; the dialog's description reads it as a space.
+  { label: "Draft", icon: PenLineIcon, title: "Write once,\npreview everywhere", Body: Draft },
   { label: "Decide", icon: SignpostIcon, title: "Pick your destinations", Body: Decide },
   { label: "Deliver", icon: SendIcon, title: "Post it yourself", Body: Deliver },
 ]
@@ -271,6 +339,9 @@ const DELIVER_FROM = TIMELINE_END - 0.1
 
 /** A stretch of the timeline for the marker to play: from one place to another over `ms`. */
 type Stretch = { from: number; to: number; ms: number }
+
+/** Held at a place: the marker stays put, once the person has taken over from auto-play. */
+const still = (at: number): Stretch => ({ from: at, to: at, ms: 0 })
 
 /**
  * Where Draft's tab `part` starts on the timeline: each tab's share of Draft's stretch is its
@@ -467,67 +538,84 @@ function Trail({
 
 /**
  * The introduction, in three steps: Draft (what the app does), Decide (picking and ordering
- * the platforms, shown in a demonstration) and Deliver (the last steps, yours). Opens by itself on a first visit; the help button in the header opens it again.
+ * the platforms, shown in a demonstration) and Deliver (the last steps, yours). It plays through
+ * on its own until the person takes over (the trail, a stop, Next, Back or a tab), and from then
+ * on goes only where they take it. The welcome card opens it (at any step, or from the start
+ * with Take the Tour); it has no button of its own.
  */
 export function IntroDialog() {
-  const seen = useIntroSeen()
-  const [reopened, setReopened] = useState(false)
+  const [open, setOpen] = useState(false)
   const [step, setStep] = useState(0)
   const [part, setPart] = useState(0)
   const [previous, setPrevious] = useState<number | null>(null)
   const [picked, setPicked] = useState(false)
+  // The person took over: no more moving on by itself, and the marker stays where it's put.
+  const [manual, setManual] = useState(false)
   const [stretch, setStretch] = useState<Stretch>(() => stretchFor(0, 0))
-  // After the first visit's introduction, or Start, focus goes to Compose.
+  // After Start, focus goes to Compose.
   const toCompose = useRef(false)
-  const open = reopened || !seen
   const last = step === STEPS.length - 1
   const { title, Body } = STEPS[step]
 
-  /** Back to the start: Draft's first tab, playing by itself. */
-  const restart = () => {
-    setStep(0)
+  /** Where the marker goes for a step: playing it, or held at its start once taken over. */
+  const stretchAt = (to: number, toPart: number, held: boolean) => {
+    const s = stretchFor(to, toPart)
+    return held ? still(s.from) : s
+  }
+  /** Fresh at step `at` (Draft from its first tab), playing by itself. */
+  const restart = (at = 0) => {
+    setStep(at)
     setPart(0)
     setPrevious(null)
     setPicked(false)
-    setStretch(stretchFor(0, 0))
+    setManual(false)
+    setStretch(stretchFor(at, 0))
   }
+  // The welcome card opens it at a step.
+  useEffect(
+    () =>
+      registerIntroOpener((at) => {
+        restart(at)
+        setOpen(true)
+      }),
+    [],
+  )
   const onOpenChange = (next: boolean) => {
-    if (next) {
-      // Reset on opening rather than closing, so the step doesn't change while it fades out.
-      restart()
-      setReopened(true)
-      return
-    }
-    if (!seen) toCompose.current = true
-    markIntroSeen()
-    setReopened(false)
+    // Reset on opening rather than closing, so the step doesn't change while it fades out.
+    if (next) restart()
+    setOpen(next)
   }
   const contentRef = useRef<HTMLDivElement>(null)
-  const go = (to: number) => {
-    const next = Math.min(STEPS.length - 1, Math.max(0, to))
-    if (next === 0) {
-      // Back hides on the first step: focus moves to the dialog, where the arrow keys work.
-      if (contentRef.current?.contains(document.activeElement) && document.activeElement?.textContent === "Back")
-        contentRef.current.focus()
-      return restart()
+  /** To step `to`: by the person's hand (taking over from auto-play), or as the drawings move on by themselves (`auto`). */
+  const go = (to: number, auto = false) => {
+    if (auto && manual) return
+    const held = manual || !auto
+    if (!auto) {
+      setManual(true)
+      setPicked(true)
     }
+    const next = Math.min(STEPS.length - 1, Math.max(0, to))
+    // Back hides on the first step: focus moves to the dialog, where the arrow keys work.
+    if (next === 0 && contentRef.current?.contains(document.activeElement) && document.activeElement?.textContent === "Back")
+      contentRef.current.focus()
     setStep(next)
-    setStretch(stretchFor(next, part))
+    setStretch(stretchAt(next, part, held))
   }
-  const showPart = (next: number) => {
+  const showPart = (next: number, held = manual) => {
     setPrevious(part)
     setPart(next)
-    setStretch(stretchFor(0, next))
+    setStretch(stretchAt(0, next, held))
   }
   const draft: DraftTabs = {
     part,
     previous,
     picked,
-    show: showPart,
-    finish: () => go(1),
+    show: (next) => showPart(next),
+    finish: () => go(1, true),
     pick: (i) => {
-      if (i !== part) showPart(i)
+      setManual(true)
       setPicked(true)
+      if (i !== part) showPart(i, true)
     },
   }
   /** The marker dragged along the timeline: the step and Draft's tab follow it, and it plays on from where it's let go. */
@@ -540,16 +628,16 @@ export function IntroDialog() {
       setPrevious(part)
       setPart(nextPart)
     }
-    if (done) setStretch(stretchFor(nextStep, nextPart, place))
+    // Let go: it stays there, and nothing moves on by itself any more.
+    if (done) {
+      setManual(true)
+      setPicked(true)
+      setStretch(still(stretchFor(nextStep, nextPart, place).from))
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="How Crosspost works">
-          <CircleHelpIcon />
-        </Button>
-      </DialogTrigger>
       <DialogContent
         ref={contentRef}
         showCloseButton={false}
@@ -599,6 +687,8 @@ export function IntroDialog() {
               className={cn(last && "w-full")}
               onClick={() => {
                 toCompose.current = true
+                // Start, at the end: the welcome card folds to its button below Compose.
+                if (last) setWelcomeFolded(true)
                 onOpenChange(false)
               }}
             >
@@ -614,7 +704,7 @@ export function IntroDialog() {
           <DialogDescription className="sr-only">
             How Crosspost works, step {step + 1} of {STEPS.length}: {title}.
           </DialogDescription>
-          <Body active={open} draft={draft} next={() => go(step + 1)} />
+          <Body active={open} draft={draft} next={() => go(step + 1, true)} />
         </div>
       </DialogContent>
     </Dialog>
