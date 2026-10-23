@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { ComposeEditor, type SplitMarker } from "@/components/compose-editor"
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
-import { firstProblem, PlatformCard, type PostEdit } from "@/components/platform-card"
+import { firstProblem, imageProblem, imagesPerPost, PlatformCard, type PostEdit } from "@/components/platform-card"
 import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
@@ -540,7 +540,19 @@ export default function Composer() {
     const issue =
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
-        : firstProblem(adapter, chunks.map((c) => c.text))
+        : (firstProblem(adapter, chunks.map((c) => c.text)) ??
+          imageProblem(
+            adapter,
+            imagesPerPost(
+              imagesFor(adapter.id)
+                .map((img) => img.id)
+                .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id)),
+              Math.max(1, chunks.length),
+              // As on the card: images on a post that no longer exists fall back to the last one.
+              (id) => (adapter.chain && chunks.length > 1 ? Math.min(imagePost(adapter.id, id), chunks.length - 1) : 0),
+            ),
+            true,
+          ))
     const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "1 post" : "Nothing to post"
     return {
       adapter,

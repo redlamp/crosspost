@@ -53,6 +53,32 @@ export function firstProblem(adapter: PlatformAdapter, chunks: string[]): string
   return null
 }
 
+/**
+ * The first post holding more images than the platform takes, described, given how many
+ * images each post holds: in full for the card, or `short` for the rail's tooltip.
+ */
+export function imageProblem(adapter: PlatformAdapter, perPost: number[], short = false): string | null {
+  const max = adapter.maxImages
+  if (!max) return null
+  const i = perPost.findIndex((n) => n > max)
+  if (i < 0) return null
+  if (short) return `${perPost.length > 1 ? `Post ${i + 1}: ` : ""}${perPost[i]} images, ${max} at most`
+  const extra = perPost[i] - max
+  const fix =
+    perPost.length > 1
+      ? `Move ${extra} to another post, or leave ${extra === 1 ? "it" : "them"} off here.`
+      : `Leave ${extra} off here, or split the post and move ${extra === 1 ? "it" : "them"} to the next.`
+  const problem = `${adapter.name} takes up to ${max} images a post; this one has ${perPost[i]}. ${fix}`
+  return perPost.length > 1 ? `Post ${i + 1}: ${problem}` : problem
+}
+
+/** How many images each post holds: `postOf` gives an image's post. */
+export function imagesPerPost(ids: string[], posts: number, postOf: (id: string) => number): number[] {
+  const counts = Array.from({ length: posts }, () => 0)
+  for (const id of ids) counts[postOf(id)]++
+  return counts
+}
+
 function counterTone(count: number, limit: number) {
   if (count > limit) return "text-destructive"
   if (count >= limit * NEAR_LIMIT) return "text-amber-600 dark:text-amber-400"
@@ -277,6 +303,14 @@ export function PlatformCard({
   }
   // Images on a post that no longer exists fall back to the last one.
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
+  const tooManyImages = imageProblem(
+    adapter,
+    imagesPerPost(
+      shown.map(({ img }) => img.id),
+      Math.max(1, chunks.length),
+      postOf,
+    ),
+  )
   // Shared images are in the app, as good as copied.
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
   // The steps to being done: every post and every image still on the card, each copied (or
@@ -364,6 +398,15 @@ export function PlatformCard({
           <p className="flex items-start gap-2 text-sm text-destructive">
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
             {problem}
+          </p>
+        </CardContent>
+      )}
+
+      {enabled && tooManyImages && (
+        <CardContent className="px-4">
+          <p className="flex items-start gap-2 text-sm text-destructive">
+            <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
+            {tooManyImages}
           </p>
         </CardContent>
       )}

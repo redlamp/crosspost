@@ -38,6 +38,20 @@ export async function copyWithToast(img: StagedImage, what = "image") {
 const tileButton =
   "grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
 
+/** A tile's crop button; a tile has two, upper right and under ALT, and its width shows one. */
+function CropButton({ n, cropped, onClick, className }: { n: number; cropped: boolean; onClick: () => void; className: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className={cn(tileButton, className)} onClick={onClick} aria-label={`Crop image ${n}`}>
+          <PencilIcon className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{cropped ? "Change the crop" : "Crop"}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /**
  * Highlights a drop target while images are dragged over the page: a soft
  * radial glow that spreads across the target from where the drag entered the
@@ -346,11 +360,10 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
         />
       )}
       <ol
-        // Four across, the largest tiles; past four images (and the add slot), a column more for
-        // each, up to eight. Where eight would make the tiles too small, four across, with the
-        // rest on a second line.
+        // Four across, the largest tiles; with a fifth (images and the add slot), five across, and
+        // past that a second line. Where five would make the tiles too small, four across.
         className="grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-2 @max-[32rem]:grid-cols-4"
-        style={{ "--cols": Math.min(8, Math.max(4, images.length + (images.length < MAX_IMAGES ? 1 : 0))) } as React.CSSProperties}
+        style={{ "--cols": images.length + (images.length < MAX_IMAGES ? 1 : 0) > 4 ? 5 : 4 } as React.CSSProperties}
         aria-label="Staged images"
         // Drag a tile onto another to reorder; the edge it lands by lights up.
         onDragOver={(e) => {
@@ -376,7 +389,8 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
           <li
             key={img.id}
             data-image-id={img.id}
-            className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
+            // A container, so its buttons can drop out as the tile narrows.
+            className="group @container/tile relative aspect-square overflow-hidden rounded-md border bg-muted"
           >
             {/* No hover card: the file name says little (a pasted image's is made up), and the ALT
                 badge shows the alt text when hovered. The name is kept for downloads and sharing. */}
@@ -404,8 +418,10 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
             </span>
             {/* Shown on hover or focus, or after a tap on touch screens (which can't hover): ALT upper
                 left, crop and remove upper right, download and copy lower right. At rest, only the
-                number. On touch screens they're out of the way entirely until the tap, so an
-                invisible button can't take a finger. */}
+                number. On narrower tiles (five across, under 7rem) Download goes and crop moves
+                under ALT, since the top row has no room for it; on the narrowest (phones, under
+                5.5rem) crop goes too, as it would cover the number. On touch screens they're out
+                of the way entirely until the tap, so an invisible button can't take a finger. */}
             <div
               className={cn(
                 "pointer-events-none absolute inset-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [&>*]:pointer-events-auto",
@@ -429,20 +445,20 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                 </TooltipTrigger>
                 <TooltipContent className="max-w-64">{img.alt || "Add alt text"}</TooltipContent>
               </Tooltip>
+              {/* Narrower tiles: crop under ALT, as the top row has no room for it. */}
+              <CropButton
+                n={i + 1}
+                cropped={!!img.crop}
+                onClick={() => setCropFor(img.id)}
+                className="absolute top-7 left-0 hidden @max-[7rem]/tile:grid @max-[5.5rem]/tile:hidden"
+              />
               <span className="absolute top-0 right-0 flex gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className={tileButton}
-                      onClick={() => setCropFor(img.id)}
-                      aria-label={`Crop image ${i + 1}`}
-                    >
-                      <PencilIcon className="size-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>{img.crop ? "Change the crop" : "Crop"}</TooltipContent>
-                </Tooltip>
+                <CropButton
+                  n={i + 1}
+                  cropped={!!img.crop}
+                  onClick={() => setCropFor(img.id)}
+                  className="@max-[7rem]/tile:hidden"
+                />
                 <ConfirmX
                   label={`Remove image ${i + 1}`}
                   onConfirm={() => onRemove(img.id)}
@@ -458,7 +474,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                         photo library already. */}
                     <button
                       type="button"
-                      className={cn(tileButton, "pointer-coarse:hidden")}
+                      className={cn(tileButton, "pointer-coarse:hidden @max-[7rem]/tile:hidden")}
                       onClick={() => downloadImage(img)}
                       aria-label={`Download image ${i + 1}`}
                     >

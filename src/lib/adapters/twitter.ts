@@ -8,6 +8,7 @@ export const twitter: PlatformAdapter = {
   limit: 280,
   count: xWeightedLength,
   chain: true,
+  maxImages: 4,
   countNote: "Links count as 23; CJK and emoji as 2",
   launched: "2006-07",
   // Aggregator estimates (611M to 660M, 2026); X no longer publishes figures.

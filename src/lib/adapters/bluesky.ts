@@ -9,6 +9,7 @@ export const bluesky: PlatformAdapter = {
   count: graphemeLength,
   chain: true,
   numbersThreads: true,
+  maxImages: 4,
   countNote: "Counts graphemes; an emoji is 1",
   // The app's first public beta; open to everyone from February 2024.
   launched: "2023-02",
