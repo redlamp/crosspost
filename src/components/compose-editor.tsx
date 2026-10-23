@@ -1,6 +1,6 @@
 "use client"
 
-import { ScissorsIcon } from "lucide-react"
+import { PenLineIcon, ScissorsIcon } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
@@ -8,6 +8,7 @@ import { PlatformLogo } from "@/components/platform-logo"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { PlatformAdapter } from "@/lib/adapters"
+import { useIntroSeen } from "@/lib/intro"
 import { graphemes, snapToWordStart } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
@@ -75,6 +76,8 @@ type Drag = {
   x: number
   y: number
   inside: boolean
+  /** Where the split is while the pointer is over the text. */
+  offset: number | null
 }
 
 const brandOf = (adapter: PlatformAdapter) => adapter.brand.color ?? "var(--foreground)"
@@ -158,6 +161,9 @@ export function ComposeEditor({
   const taRef = useRef<HTMLTextAreaElement>(null)
   const mirrorRef = useRef<HTMLDivElement>(null)
   const hitRef = useRef<HTMLDivElement>(null)
+  // On a first visit the introduction is open over Compose: focusing the text box would take
+  // focus out of the dialog, which focuses Compose itself when it closes.
+  const introSeen = useIntroSeen()
   const [style, setStyle] = useState<React.CSSProperties | null>(null)
   const [positions, setPositions] = useState<Map<number, Position>>(new Map())
   const [visibleHeight, setVisibleHeight] = useState(0)
@@ -283,7 +289,7 @@ export function ComposeEditor({
 
     const update = () => {
       const offset = offsetAt(pointer.x, pointer.y)
-      setDrag((d) => (d ? { ...d, x: pointer.x, y: pointer.y, inside: offset !== null } : d))
+      setDrag((d) => (d ? { ...d, x: pointer.x, y: pointer.y, inside: offset !== null, offset } : d))
       if (offset !== lastOffset) {
         lastOffset = offset
         latest.current.onPlace(offset)
@@ -332,7 +338,7 @@ export function ComposeEditor({
       adapters.map((a) => a.id),
       moving,
     )
-    setDrag({ adapters, moving, x, y, inside: !!moving })
+    setDrag({ adapters, moving, x, y, inside: !!moving, offset: moving?.offset ?? null })
     unlockSelection = lockSelection()
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", end)
@@ -391,6 +397,8 @@ export function ComposeEditor({
     <div className="space-y-3 lg:flex lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Label htmlFor="compose" className="text-base font-semibold">
+          {/* The pencil the platform row's Compose button uses too. */}
+          <PenLineIcon className="size-4 text-muted-foreground" aria-hidden />
           Compose
         </Label>
         {chips.length > 0 && (
@@ -404,11 +412,10 @@ export function ComposeEditor({
                 onClick={() => splitAtCursor(chip.adapters)}
                 aria-label={`Split ${chip.name} at the cursor, or drag into the text`}
                 style={{ "--brand": brandOf(chip.adapters[0]) } as React.CSSProperties}
+                // One neutral look for every chip, as for the rail's tiles; the logo carries the brand.
                 className={cn(
-                  "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border px-1.5 transition-colors active:cursor-grabbing",
-                  chip.key === "all"
-                    ? "border-border bg-secondary text-xs font-medium hover:bg-accent"
-                    : "border-[color-mix(in_oklab,var(--brand)_45%,var(--border))] bg-[color-mix(in_oklab,var(--brand)_14%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand)_24%,var(--card))]",
+                  "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border border-border bg-secondary px-1.5 transition-colors hover:bg-accent active:cursor-grabbing",
+                  chip.key === "all" && "text-xs font-medium",
                 )}
               >
                 {chip.key === "all" ? (
@@ -436,7 +443,7 @@ export function ComposeEditor({
           // Wide screens: grows with its text, never scrolling inside; its minimum height is set
           // below (fitToWindow) from the room the Compose column has left.
           className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none"
-          autoFocus
+          autoFocus={introSeen}
         />
         {style && (
           <div ref={mirrorRef} aria-hidden className="pointer-events-none invisible absolute top-0 left-0" style={style}>
@@ -465,6 +472,8 @@ export function ComposeEditor({
             // the scissors and post number, and the platform flags stay tucked away until the tag is hovered
             // or focused, so one can be dragged off. Flags show a number only where it differs.
             const all = here.length > 1
+            // A group being dragged shows its flags beside the tag, so what moves is plain.
+            const held = all && drag?.inside === true && drag.offset === offset && drag.adapters.length > 1
             const allIndex = all ? mostCommon(here.map((m) => m.index)) : 0
             const names = here.map((m) => m.adapter.name).join(", ")
             return (
@@ -519,6 +528,7 @@ export function ComposeEditor({
                         "pointer-events-auto cursor-grab touch-none active:cursor-grabbing",
                         // In an All group the padding stands in for a gap, so it's part of the hover area.
                         all && "hidden pl-0.5 group-focus-within/split:block group-hover/split:block",
+                        held && "block",
                       )}
                     >
                       <Flag adapter={m.adapter} label={all && m.index === allIndex ? undefined : m.index} />
@@ -544,6 +554,17 @@ export function ComposeEditor({
             className={cn("pointer-events-none fixed z-50 flex gap-0.5", drag.moving && "opacity-60")}
             style={{ left: drag.x - 6, top: drag.y - 8 }}
           >
+            {dragAdapters.length > 1 && (
+              // A group: the All tag's scissors go with its flags.
+              <span
+                className={cn(
+                  "flex h-4 items-center rounded-sm rounded-bl-none bg-foreground px-1 text-background shadow-sm",
+                  drag.moving && "bg-destructive text-white",
+                )}
+              >
+                <ScissorsIcon className="size-2.5" />
+              </span>
+            )}
             {dragAdapters.map((a) => (
               <Flag
                 key={a.id}

@@ -58,6 +58,11 @@ export type PlatformAdapter = {
   /** A post can't go out without a photo or video (Instagram). */
   needsImage?: boolean;
   /**
+   * Most images one post takes, where that's fewer than Compose holds (Bluesky, X and
+   * Mastodon: 4). Omit for platforms that take at least as many as Compose.
+   */
+  maxImages?: number;
+  /**
    * The platform has no single site: posts go through the user's own server,
    * entered in Settings, or `default` when none is. `open.url` gets it as a
    * host name.
@@ -67,4 +72,16 @@ export type PlatformAdapter = {
   hiddenByDefault?: boolean;
   /** A button that opens the platform to post, given the first post's text (and the server, if it needs one). */
   open: { label: string; url: (firstChunk: string, server?: string) => string };
+  /**
+   * What the platform's phone app takes from the share sheet, for the card's Share button
+   * (text and images together; see "Phone apps and the share sheet" in docs/spec.md).
+   */
+  share?: {
+    /** The app ignores shared text (Meta's apps), so Share copies it to the clipboard instead. */
+    dropsText?: boolean;
+    /** The app takes at most this many images from the share sheet (Instagram: 1); the rest are added in the app. */
+    maxImages?: number;
+    /** Shown under the posts on touch screens: what Share hands the app, and what it drops. */
+    note: string;
+  };
 };

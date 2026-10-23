@@ -1,17 +1,22 @@
 "use client"
 
-import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, XIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, PencilIcon, XIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { PlatformAdapter } from "@/lib/adapters"
+import { AltTextDialog } from "@/components/alt-text-dialog"
+import { writeClipboard } from "@/components/copy-button"
+import { CropDialog } from "@/components/crop-dialog"
 import {
   copyImage,
   downloadImage,
   dragOut,
   dropTarget,
+  followDragOut,
   MAX_IMAGES,
   TRAY_TYPE,
+  type CropRect,
   type ImageDrag,
   type StagedImage,
 } from "@/lib/images"
@@ -32,6 +37,20 @@ export async function copyWithToast(img: StagedImage, what = "image") {
 
 const tileButton =
   "grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+
+/** A tile's crop button; a tile has two, upper right and under ALT, and its width shows one. */
+function CropButton({ n, cropped, onClick, className }: { n: number; cropped: boolean; onClick: () => void; className: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className={cn(tileButton, className)} onClick={onClick} aria-label={`Crop image ${n}`}>
+          <PencilIcon className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{cropped ? "Change the crop" : "Crop"}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 /**
  * Highlights a drop target while images are dragged over the page: a soft
@@ -124,6 +143,10 @@ type AreaProps = {
   onRemove: (id: string) => void
   /** Move an image beside another in the tray (after it, or before). */
   onReorder: (id: string, target: string, after: boolean) => void
+  /** Save an image's alt text. */
+  onAltChange: (id: string, alt: string) => void
+  /** Crop an image (from the image as added), or with null, show all of it again. */
+  onCrop: (id: string, crop: CropRect | null) => void
   /** The Clear Post button, first in the bottom row. */
   clearPost: React.ReactNode
   /** The image buttons (Clear and, after a card changes them, Reset), beside it once images are staged. */
@@ -136,7 +159,17 @@ type AreaProps = {
  * moves up and left into the full-width spot the image row will take, and it
  * slides back when the images are cleared.
  */
-export function ImageArea({ images, drag, onAdd, onRemove, onReorder, clearPost, clearImages }: AreaProps) {
+export function ImageArea({
+  images,
+  drag,
+  onAdd,
+  onRemove,
+  onReorder,
+  onAltChange,
+  onCrop,
+  clearPost,
+  clearImages,
+}: AreaProps) {
   const box = useRef<HTMLDivElement>(null)
   const first = useRef<HTMLDivElement>(null)
 
@@ -181,7 +214,7 @@ export function ImageArea({ images, drag, onAdd, onRemove, onReorder, clearPost,
     <div ref={box} className="@container relative">
       {staged ? (
         <div className="mb-4">
-          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} onReorder={onReorder} />
+          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} onReorder={onReorder} onAltChange={onAltChange} onCrop={onCrop} />
         </div>
       ) : (
         // Makes room above the buttons while the bar is up there.
@@ -267,11 +300,28 @@ type TrayProps = {
   onAdd: (files: File[]) => void
   onRemove: (id: string) => void
   onReorder: (id: string, target: string, after: boolean) => void
+  onAltChange: (id: string, alt: string) => void
+  onCrop: (id: string, crop: CropRect | null) => void
 }
 
 /** Staged images in one row: copy, drag, download or remove each one, or add more in the empty slot. */
-function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProps) {
+function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChange, onCrop }: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
+  // The image whose alt text, or crop, is being edited.
+  const [altFor, setAltFor] = useState<string | null>(null)
+  const [cropFor, setCropFor] = useState<string | null>(null)
+  const altIndex = images.findIndex((img) => img.id === altFor)
+  // Touch screens can't hover: a tap on a tile shows its buttons, and a tap anywhere else hides them.
+  const [tapped, setTapped] = useState<string | null>(null)
+  useEffect(() => {
+    if (!tapped) return
+    const away = (e: PointerEvent) => {
+      if (!(e.target as Element).closest?.(`[data-image-id="${tapped}"]`)) setTapped(null)
+    }
+    window.addEventListener("pointerdown", away, true)
+    return () => window.removeEventListener("pointerdown", away, true)
+  }, [tapped])
+  const cropIndex = images.findIndex((img) => img.id === cropFor)
   // Where a tile dragged within the tray would land: beside this one.
   const [insert, setInsert] = useState<{ id: string; after: boolean } | null>(null)
   const picker = (
@@ -291,8 +341,29 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
   return (
     <div className="space-y-2">
       {picker}
+      {altIndex >= 0 && (
+        <AltTextDialog
+          image={images[altIndex]}
+          n={altIndex + 1}
+          open
+          onOpenChange={(open) => !open && setAltFor(null)}
+          onSave={(alt) => onAltChange(images[altIndex].id, alt)}
+        />
+      )}
+      {cropIndex >= 0 && (
+        <CropDialog
+          image={images[cropIndex]}
+          n={cropIndex + 1}
+          open
+          onOpenChange={(open) => !open && setCropFor(null)}
+          onSave={(crop) => onCrop(images[cropIndex].id, crop)}
+        />
+      )}
       <ol
-        className="grid grid-cols-4 gap-2"
+        // Four across, the largest tiles; with a fifth (images and the add slot), five across, and
+        // past that a second line. Where five would make the tiles too small, four across.
+        className="grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-2 @max-[32rem]:grid-cols-4"
+        style={{ "--cols": images.length + (images.length < MAX_IMAGES ? 1 : 0) > 4 ? 5 : 4 } as React.CSSProperties}
         aria-label="Staged images"
         // Drag a tile onto another to reorder; the edge it lands by lights up.
         onDragOver={(e) => {
@@ -318,22 +389,21 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
           <li
             key={img.id}
             data-image-id={img.id}
-            className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
+            // A container, so its buttons can drop out as the tile narrows.
+            className="group @container/tile relative aspect-square overflow-hidden rounded-md border bg-muted"
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
-                <img
-                  src={img.url}
-                  alt={img.name}
-                  draggable
-                  onDragStart={(e) => dragOut(e, img, "tray")}
-                  onDragEnd={() => setInsert(null)}
-                  className="size-full cursor-grab object-cover"
-                />
-              </TooltipTrigger>
-              <TooltipContent className="max-w-64">{img.name}: drag into a post, or copy and paste</TooltipContent>
-            </Tooltip>
+            {/* No hover card: the file name says little (a pasted image's is made up), and the ALT
+                badge shows the alt text when hovered. The name is kept for downloads and sharing. */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
+            <img
+              src={img.url}
+              alt={img.alt || `Image ${i + 1}`}
+              draggable
+              onDragStart={(e) => dragOut(e, img, "tray")}
+              onDragEnd={() => setInsert(null)}
+              onPointerUp={(e) => e.pointerType !== "mouse" && setTapped(tapped === img.id ? null : img.id)}
+              className="size-full cursor-grab object-cover"
+            />
             {insert?.id === img.id && (
               <span
                 aria-hidden
@@ -346,8 +416,73 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
             <span className="absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
               <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
             </span>
-            <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-              <span className="flex gap-1">
+            {/* Shown on hover or focus, or after a tap on touch screens (which can't hover): ALT upper
+                left, crop and remove upper right, download and copy lower right. At rest, only the
+                number. On narrower tiles (five across, under 7rem) Download goes and crop moves
+                under ALT, since the top row has no room for it; on the narrowest (phones, under
+                5.5rem) crop goes too, as it would cover the number. On touch screens they're out
+                of the way entirely until the tap, so an invisible button can't take a finger. */}
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [&>*]:pointer-events-auto",
+                tapped === img.id ? "opacity-100" : "pointer-coarse:hidden",
+              )}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setAltFor(img.id)}
+                    aria-label={img.alt ? `Edit alt text for image ${i + 1}` : `Add alt text for image ${i + 1}`}
+                    className={cn(
+                      "absolute top-0 left-0 grid h-6 place-items-center rounded-md px-1.5 text-[11px] leading-none font-bold tracking-wide text-white backdrop-blur-sm transition-colors",
+                      // With alt text: the app's blue, as on the copied checks, so it's plain it has some.
+                      img.alt ? "bg-(--brand-blue) hover:bg-(--brand-blue)/85" : "bg-black/60 hover:bg-black/80",
+                    )}
+                  >
+                    <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-64">{img.alt || "Add alt text"}</TooltipContent>
+              </Tooltip>
+              {/* Narrower tiles: crop under ALT, as the top row has no room for it. */}
+              <CropButton
+                n={i + 1}
+                cropped={!!img.crop}
+                onClick={() => setCropFor(img.id)}
+                className="absolute top-7 left-0 hidden @max-[7rem]/tile:grid @max-[5.5rem]/tile:hidden"
+              />
+              <span className="absolute top-0 right-0 flex gap-1">
+                <CropButton
+                  n={i + 1}
+                  cropped={!!img.crop}
+                  onClick={() => setCropFor(img.id)}
+                  className="@max-[7rem]/tile:hidden"
+                />
+                <ConfirmX
+                  label={`Remove image ${i + 1}`}
+                  onConfirm={() => onRemove(img.id)}
+                  className="grid size-6 place-items-center rounded-md text-white backdrop-blur-sm transition-colors"
+                  idleClassName="bg-black/60 hover:bg-black/80"
+                  iconClassName="size-3.5"
+                />
+              </span>
+              <span className="absolute right-0 bottom-0 flex gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {/* Not on touch screens: a phone's tiles are too narrow, and the image is in its
+                        photo library already. */}
+                    <button
+                      type="button"
+                      className={cn(tileButton, "pointer-coarse:hidden @max-[7rem]/tile:hidden")}
+                      onClick={() => downloadImage(img)}
+                      aria-label={`Download image ${i + 1}`}
+                    >
+                      <DownloadIcon className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Download</TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -361,27 +496,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder }: TrayProp
                   </TooltipTrigger>
                   <TooltipContent>Copy</TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className={tileButton}
-                      onClick={() => downloadImage(img)}
-                      aria-label={`Download image ${i + 1}`}
-                    >
-                      <DownloadIcon className="size-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Download</TooltipContent>
-                </Tooltip>
               </span>
-              <ConfirmX
-                label={`Remove image ${i + 1}`}
-                onConfirm={() => onRemove(img.id)}
-                className="grid size-6 place-items-center rounded-md text-white backdrop-blur-sm transition-colors"
-                idleClassName="bg-black/60 hover:bg-black/80"
-                iconClassName="size-3.5"
-              />
             </div>
           </li>
         ))}
@@ -524,6 +639,8 @@ export function ImageStrip({
   insert = null,
   onMatchCompose,
 }: StripProps) {
+  // Ends following the thumbnail drag in progress, if any (see followDragOut).
+  const endDrag = useRef<(() => boolean) | null>(null)
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
@@ -533,9 +650,8 @@ export function ImageStrip({
           }
           return (
             <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
-              {/* A div acting as the button: Firefox won't start a drag from inside a real <button>. */}
-              <Tooltip>
-                <TooltipTrigger asChild>
+              {/* A div acting as the button: Firefox won't start a drag from inside a real <button>.
+                  No hover card on the image: the ALT badge shows the alt text when hovered. */}
                   <div
                     role="button"
                     tabIndex={0}
@@ -546,7 +662,7 @@ export function ImageStrip({
                       copy()
                     }}
                     aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
-                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand) focus-visible:ring-2 focus-visible:ring-(--brand)"
+                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand-blue) focus-visible:ring-2 focus-visible:ring-(--brand-blue)"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
                     <img
@@ -555,31 +671,51 @@ export function ImageStrip({
                       draggable
                       onDragStart={(e) => {
                         dragOut(e, img, { platformId: platform.id })
+                        endDrag.current = followDragOut()
                         // Chrome cancels a drag whose page changes during dragstart, so
                         // show the drop slots just after it.
                         setTimeout(() => onMovingChange?.(true), 0)
                       }}
-                      onDragEnd={() => onMovingChange?.(false)}
+                      onDragEnd={(e) => {
+                        // Dropped outside the page, somewhere that took it (the platform's
+                        // composer in another window or the other side of a split view):
+                        // as good as copied.
+                        const left = endDrag.current?.()
+                        endDrag.current = null
+                        if (left && e.dataTransfer.dropEffect !== "none") onCopiedChange(img.id, true)
+                        onMovingChange?.(false)
+                      }}
                       className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
                     />
                   </div>
-                </TooltipTrigger>
-                {!moving && (
-                  <TooltipContent className="max-w-64">
-                    {copied.has(img.id)
-                      ? `Image ${n} copied for ${platform.name}. Click to copy again.`
-                      : movable
-                        ? `Copy image ${n}. Drag it into the post, beside another image to reorder, or onto another post (hold ${MOVE_KEY} for ${platform.name} only)`
-                        : `Copy image ${n}. Drag it into the post, or beside another image to reorder`}
-                  </TooltipContent>
-                )}
-              </Tooltip>
+              {img.alt && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await writeClipboard(img.alt!)
+                          toast.success(`Copied alt text for image ${n}. Paste it into ${platform.name}'s alt text field.`)
+                        } catch {
+                          toast.error(`Couldn't copy the alt text for image ${n}.`)
+                        }
+                      }}
+                      aria-label={`Copy alt text for image ${n}`}
+                      className="absolute -top-2 -left-2 grid h-4 place-items-center rounded-full bg-(--brand-blue) px-1.5 text-[10px] leading-none font-bold text-white ring-2 ring-background transition-colors hover:bg-(--brand-blue)/85"
+                    >
+                      <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">{img.alt}</TooltipContent>
+                </Tooltip>
+              )}
               {insert?.id === img.id && (
                 // The gap this image would drop into.
                 <span
                   aria-hidden
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand)",
+                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-(--brand-blue)",
                     insert.after ? "-right-1.5" : "-left-1.5",
                   )}
                 />
@@ -590,9 +726,10 @@ export function ImageStrip({
               <ConfirmX
                 label={`Leave image ${n} off ${platform.name}`}
                 onConfirm={() => onHide(img.id)}
-                // Sits over the corner, poking out above the thumbnail.
+                // Sits over the corner, poking out above the thumbnail. On touch screens, with
+                // no hover to bring it out, it's always there.
                 className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
-                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600"
+                idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600 pointer-coarse:opacity-100"
               />
               {copied.has(img.id) && (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
@@ -604,7 +741,7 @@ export function ImageStrip({
                       type="button"
                       onClick={() => onCopiedChange(img.id, false)}
                       aria-label={`Image ${n} copied. Clear the check`}
-                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-sky-500 text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
                     >
                       <CheckIcon className="size-2.5" strokeWidth={3.5} />
                     </button>
@@ -624,7 +761,7 @@ export function ImageStrip({
           aria-hidden
           className={cn(
             "flex h-14 min-w-40 flex-1 flex-col items-center justify-center rounded border border-dashed px-3 text-center leading-tight text-muted-foreground transition-colors",
-            hovered && "border-(--brand) text-foreground",
+            hovered && "border-(--brand-blue) text-foreground",
           )}
         >
           <span className="text-sm">Move here</span>

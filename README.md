@@ -6,15 +6,15 @@
   Crosspost
 </h1>
 
-Write a post once, then copy or open it on Bluesky, Threads, LinkedIn, Twitter, Facebook and Instagram, plus Mastodon and X if you switch them on in Settings.
+Write a post once, then copy or open it on Bluesky, Threads, LinkedIn, X, Facebook and Instagram, plus Mastodon (and Twitter, with the classic bird) if you switch them on in Settings.
 
 **Use it at [redlamp.github.io/crosspost](https://redlamp.github.io/crosspost/).**
 
 ## What it does
 
-- Counts characters the way each platform does (graphemes on Bluesky, weighted characters on Twitter, emoji as bytes on Threads, links as 23 on Mastodon) and flags posts over a limit or with too many links or hashtags.
+- Counts characters the way each platform does (graphemes on Bluesky, weighted characters on X, emoji as bytes on Threads, links as 23 on Mastodon) and flags posts over a limit or with too many links or hashtags.
 - Splits long posts into threads where the platform allows it. Drag a split marker to move it, for every platform at once or one at a time, and number the posts (1/3, 2/3, 3/3) if you like.
-- Opens each platform with your text filled in where it can (Bluesky, Threads, LinkedIn, Twitter, Mastodon), with a Copy button for every post.
+- Opens each platform with your text filled in where it can (Bluesky, Threads, LinkedIn, X, Mastodon), with a Copy button for every post.
 - Stages up to four images to copy, paste or drag into each platform's composer, and keeps track of which ones you've copied.
 - Lets you choose, sort and reorder the platforms you use.
 

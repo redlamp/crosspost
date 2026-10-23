@@ -17,7 +17,7 @@ export const instagram: PlatformAdapter = {
   limit: 2200,
   count: (text) => text.length,
   chain: false,
-  countNote: "Caption only: add the photo or video in Instagram. Links aren't clickable; at most 30 hashtags",
+  countNote: "Caption only: add the photo or video in Instagram. Counts characters; an emoji counts as 2 (assumed: Instagram doesn't say). Links aren't clickable; at most 30 hashtags",
   launched: "2010-10",
   // Meta, September 2025.
   users: { millions: 3000, label: "3B" },
@@ -39,4 +39,12 @@ export const instagram: PlatformAdapter = {
   },
   needsImage: true,
   open: { label: "Open Instagram", url: () => "https://www.instagram.com/" },
+  // The app's share extension takes one image and no caption (developer reports; Meta's apps
+  // take no prefilled text). Share sends the first image and copies the caption for pasting;
+  // the other images are added in the app.
+  share: {
+    dropsText: true,
+    maxImages: 1,
+    note: "Share sends one image to Instagram, which takes a single image and no caption from the share sheet; the caption is copied to paste in, and any other images are added there.",
+  },
 };

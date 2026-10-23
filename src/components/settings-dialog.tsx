@@ -6,10 +6,13 @@ import {
   CalendarIcon,
   ArrowDownAZIcon,
   Settings2Icon,
+  Trash2Icon,
   UsersIcon,
   type LucideIcon,
 } from "lucide-react"
+import { useTheme } from "next-themes"
 
+import { ConfirmButton } from "@/components/confirm-button"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +27,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
+import { clearAllLocalData } from "@/lib/images"
 import {
   isShown,
   serverHost,
@@ -46,6 +50,7 @@ const SORTS: { by: PlatformSort["by"]; icon: LucideIcon; label: string; asc: str
 export function SettingsDialog() {
   const settings = usePlatformSettings()
   const open = useSettingsOpen()
+  const { setTheme } = useTheme()
   const shownCount = adapters.filter((a) => isShown(settings, a)).length
 
   const setShown = (id: string, shown: boolean) =>
@@ -74,7 +79,8 @@ export function SettingsDialog() {
       >
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Saved in this browser.</DialogDescription>
+          {/* For screen readers only, as the dialog's description. */}
+          <DialogDescription className="sr-only">Crosspost&apos;s platforms and the data it keeps in this browser.</DialogDescription>
         </DialogHeader>
 
         <section aria-labelledby="settings-platforms" className="space-y-3">
@@ -155,7 +161,7 @@ export function SettingsDialog() {
                             checked={shown}
                             disabled={last}
                             onCheckedChange={(on) => setShown(adapter.id, on)}
-                            className="data-[state=checked]:bg-(--brand)"
+                            className="data-[state=checked]:bg-(--brand-blue)"
                           />
                         </span>
                       </TooltipTrigger>
@@ -173,6 +179,29 @@ export function SettingsDialog() {
               )
             })}
           </ul>
+        </section>
+
+        {/* Clear Data: everything Crosspost keeps in this browser goes, settings included, so it
+            covers what a reset of the settings would. */}
+        <section aria-labelledby="settings-data" className="space-y-3 border-t pt-4">
+          <div className="space-y-1">
+            <h3 id="settings-data" className="text-sm font-medium">
+              Clear Data
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Removes and resets everything saved in this browser. There is no remote data.
+            </p>
+          </div>
+          <ConfirmButton
+            icon={<Trash2Icon />}
+            label="Clear Data"
+            confirmLabel="Confirm?"
+            onConfirm={async () => {
+              await clearAllLocalData()
+              setTheme("dark")
+              location.reload()
+            }}
+          />
         </section>
       </DialogContent>
     </Dialog>

@@ -6,18 +6,34 @@ import { useEffect, useRef, useState } from "react"
 // files). Nothing is uploaded: the user copies or drags each image into the
 // platform's own composer.
 
+/** Part of an image, as fractions of its full width and height (0 to 1). */
+export type CropRect = { x: number; y: number; w: number; h: number }
+
 export type StagedImage = {
   id: string
   name: string
+  /** The image as it goes out: cropped, if it was. */
   blob: Blob
   /** Object URL for showing and dragging the image. */
   url: string
+  /** Alt text the person wrote, to paste into each platform's alt field (the clipboard carries pixels only). */
+  alt?: string
+  /** The image as it was added, kept once it's cropped so the crop can be changed or undone. */
+  original?: Blob
+  /** The part of `original` that `blob` shows. */
+  crop?: CropRect
 }
 
-/** Most images a post can carry: Bluesky and Twitter take 4, so every platform gets the same set. */
-export const MAX_IMAGES = 4
+/** Bluesky's limit for alt text, the tightest of the platforms that take it. */
+export const ALT_LIMIT = 2000
 
-type StoredImage = { id: string; name: string; blob: Blob }
+/**
+ * Most images Compose holds. A single post on Bluesky, X or Mastodon takes 4, so more than that
+ * is for platforms that take more, or for spreading across a thread's posts.
+ */
+export const MAX_IMAGES = 10
+
+type StoredImage = { id: string; name: string; blob: Blob; alt?: string; original?: Blob; crop?: CropRect }
 
 const DB = "crosspost"
 const STORE = "images"
@@ -25,6 +41,46 @@ const KEY = "staged"
 
 // One connection for the page, opened on first use.
 let connection: Promise<IDBDatabase> | null = null
+
+/** Close and forget the connection, so the database can be deleted. */
+async function closeImageDb() {
+  const open = connection
+  connection = null
+  try {
+    ;(await open)?.close()
+  } catch {
+    // It never opened.
+  }
+}
+
+/**
+ * Zero out everything Crosspost keeps in this browser: every `crosspost:` key in localStorage
+ * and sessionStorage (the post, its splits, edits and progress, settings, the theme), the image
+ * database, a shared post not yet taken, and the offline copy of the site. The site shares its origin with others on the same host, so
+ * only Crosspost's own keys go. The caller reloads the page after.
+ */
+export async function clearAllLocalData() {
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      for (const key of Object.keys(store)) if (key.startsWith("crosspost:")) store.removeItem(key)
+    } catch {
+      // Storage blocked: nothing was kept there.
+    }
+  }
+  await closeImageDb()
+  // The image store, and a post shared in from another app that hasn't been taken yet.
+  for (const name of [DB, "crosspost-share"]) {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(name)
+      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+    })
+  }
+  try {
+    for (const key of await caches.keys()) if (key.startsWith("crosspost")) await caches.delete(key)
+  } catch {
+    // No Cache Storage here (or not allowed).
+  }
+}
 
 function openDb(): Promise<IDBDatabase> {
   connection ??= new Promise<IDBDatabase>((resolve, reject) => {
@@ -84,7 +140,7 @@ export function useStagedImages() {
   useEffect(() => {
     // Don't overwrite what's stored before it has been read.
     if (!loaded) return
-    save(images.map(({ id, name, blob }) => ({ id, name, blob }))).catch(() => {
+    save(images.map(({ id, name, blob, alt, original, crop }) => ({ id, name, blob, alt, original, crop }))).catch(() => {
       // Storage blocked or full: the images still work until the page closes.
     })
   }, [images, loaded])
@@ -230,7 +286,29 @@ export function imageFiles(data: DataTransfer | null): File[] {
   return [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"))
 }
 
-async function toPng(blob: Blob): Promise<Blob> {
+/**
+ * The part of `source` inside `crop`, at full resolution. JPEGs stay JPEG; everything else
+ * becomes a PNG, so transparency survives (a GIF loses its animation).
+ */
+export async function cropImage(source: Blob, crop: CropRect): Promise<Blob> {
+  const bitmap = await createImageBitmap(source)
+  const sx = Math.round(crop.x * bitmap.width)
+  const sy = Math.round(crop.y * bitmap.height)
+  const sw = Math.max(1, Math.round(crop.w * bitmap.width))
+  const sh = Math.max(1, Math.round(crop.h * bitmap.height))
+  const canvas = document.createElement("canvas")
+  canvas.width = sw
+  canvas.height = sh
+  canvas.getContext("2d")!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
+  bitmap.close()
+  const type = source.type === "image/jpeg" ? "image/jpeg" : "image/png"
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((out) => (out ? resolve(out) : reject(new Error("crop failed"))), type, 0.92),
+  )
+}
+
+/** The image as a PNG, drawn through a canvas (an animated GIF loses its animation). */
+export async function toPng(blob: Blob): Promise<Blob> {
   if (blob.type === "image/png") return blob
   const bitmap = await createImageBitmap(blob)
   const canvas = document.createElement("canvas")
@@ -295,6 +373,31 @@ export function dropTarget(e: React.DragEvent): { id: string; after: boolean } |
  * file too, so without this a drop on the page would stage it again.
  */
 export const isOwnDrag = (data: DataTransfer | null) => !!data?.types.some((t) => t.startsWith(OWN_PREFIX))
+
+/**
+ * Follows a drag that starts on this page. Call the returned function when it ends: it
+ * stops following and says whether the drag had left the page (for another window, or
+ * the other side of a split view).
+ */
+export function followDragOut(): () => boolean {
+  let outside = false
+  // dragover repeats while the drag is over the page; leaving the window has no element
+  // to go to. Some browsers leave relatedTarget out between elements too, but a dragover
+  // follows at once there.
+  const over = () => {
+    outside = false
+  }
+  const leave = (e: DragEvent) => {
+    if (e.relatedTarget === null) outside = true
+  }
+  window.addEventListener("dragover", over)
+  window.addEventListener("dragleave", leave)
+  return () => {
+    window.removeEventListener("dragover", over)
+    window.removeEventListener("dragleave", leave)
+    return outside
+  }
+}
 
 /**
  * Lets the image be dragged out as a file (Chrome saves it on a drop onto the

@@ -1,13 +1,13 @@
 "use client"
 
 import { BroomIcon, ImageMinusIcon, RotateCcwIcon } from "lucide-react"
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { ComposeEditor, type SplitMarker } from "@/components/compose-editor"
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
-import { firstProblem, PlatformCard } from "@/components/platform-card"
+import { firstProblem, imageProblem, imagesPerPost, PlatformCard, type PostEdit } from "@/components/platform-card"
 import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
@@ -16,27 +16,60 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
-import { graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
-import { MAX_IMAGES, reorder, usePageImageInput, useStagedImages } from "@/lib/images"
-import { isShown, usePlatformSettings } from "@/lib/platform-settings"
+import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
+import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
+import { sharedText, useSharedPost } from "@/lib/share-target"
+import {
+  arrangePlatforms,
+  isShown,
+  updatePlatformSettings,
+  usePlatformSettings,
+} from "@/lib/platform-settings"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
   /** Add " i/n" to split posts on platforms that don't number threads themselves. */
   numbering: boolean
-  /** Per-platform choice that wins over the default, e.g. numbering Bluesky anyway. */
-  numberingFor?: Record<string, boolean>
   enabled: Record<string, boolean>
-  /** Platform ids in the order the user arranged them. */
-  order?: string[]
 }
 
-const DEFAULT_PREFS: Prefs = { numbering: true, enabled: {} }
+// Numbering starts off: a thread reads fine without " 1/3", and it costs characters.
+const DEFAULT_PREFS: Prefs = { numbering: false, enabled: {} }
 
 /** Post index per image id: shared by the threaded platforms, and per-platform overrides. */
 type Placement = { shared: Record<string, number>; only: Record<string, Record<string, number>> }
 
 type Breaks = Record<string, number[]>
+
+/**
+ * Where each platform stands, kept across reloads: marked posted, the posts and images copied
+ * from its card (a post by its text, so an edit makes it new again), and images left off it.
+ */
+type Progress = {
+  posted: Record<string, boolean>
+  copiedPosts: Record<string, string[]>
+  copiedImages: Record<string, string[]>
+  hiddenImages: Record<string, string[]>
+  /** The @tags confirmed as right on each platform; a new tag needs confirming again. */
+  checkedTags: Record<string, string[]>
+}
+
+const NO_PROGRESS: Progress = { posted: {}, copiedPosts: {}, copiedImages: {}, hiddenImages: {}, checkedTags: {} }
+
+type ProgressList = Exclude<keyof Progress, "posted">
+
+/** Progress with `items` added to (on) or taken out of one platform's list. */
+function markIn(p: Progress, list: ProgressList, platformId: string, items: string[], on: boolean): Progress {
+  const now = p[list][platformId] ?? []
+  const next = on ? [...new Set([...now, ...items])] : now.filter((x) => !items.includes(x))
+  return { ...p, [list]: { ...p[list], [platformId]: next } }
+}
+
+/** The posts with any that were rewritten on the card swapped in, by post number. */
+function withEdits(chunks: Chunk[], edits: Record<number, PostEdit> | undefined): Chunk[] {
+  if (!edits) return chunks
+  return chunks.map((c, i) => (edits[i] ? { ...c, text: edits[i].text } : c))
+}
 
 function chunksFor(adapter: PlatformAdapter, text: string, numbering: boolean, breaks: number[] = []): Chunk[] {
   if (adapter.chain) return splitChunks(text, adapter.limit, adapter.count, { numbering, breaks })
@@ -60,9 +93,36 @@ export default function Composer() {
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
   const { images, setImages, add: stageImages } = useStagedImages()
+  /**
+   * Crop a staged image from the image as it was added (kept, so the crop can change or go), or
+   * with null, show all of it again. A cropped image is a new picture, so its copied checks clear.
+   */
+  const cropStaged = async (id: string, crop: CropRect | null) => {
+    const img = images.find((i) => i.id === id)
+    if (!img) return
+    const original = img.original ?? img.blob
+    let blob: Blob
+    try {
+      blob = crop ? await cropImage(original, crop) : original
+    } catch {
+      toast.error("Couldn't crop that image.")
+      return
+    }
+    setImages((list) =>
+      list.map((i) =>
+        i.id === id
+          ? { ...i, blob, url: URL.createObjectURL(blob), original: crop ? original : undefined, crop: crop ?? undefined }
+          : i,
+      ),
+    )
+    setProgress((p) => ({
+      ...p,
+      copiedImages: Object.fromEntries(Object.entries(p.copiedImages).map(([k, ids]) => [k, ids.filter((x) => x !== id)])),
+    }))
+  }
   const addImages = (files: File[]) => {
     const { added, skipped } = stageImages(files)
-    if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
+    if (skipped) toast.info(`Compose holds up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
     else if (!added) toast.info("Only images can be staged for now.")
   }
   const drag = usePageImageInput(addImages)
@@ -70,7 +130,8 @@ export default function Composer() {
   // Which post each image goes with on threaded platforms: the first unless
   // moved. A move mirrors to every threaded platform; one made with Ctrl held
   // stays on that platform and wins over the shared one.
-  const [placement, setPlacement] = useState<Placement>({ shared: {}, only: {} })
+  // Kept across reloads, so a crash or a closed tab doesn't lose where the images went.
+  const [placement, setPlacement] = useStoredState<Placement>("crosspost:image-placement", { shared: {}, only: {} })
   const imagePost = (platformId: string, id: string) =>
     placement.only[platformId]?.[id] ?? placement.shared[id] ?? 0
   const moveImage = (platformId: string, id: string, post: number, onlyHere: boolean) =>
@@ -87,7 +148,73 @@ export default function Composer() {
 
   // Image order: the Compose tray's by default. Reordering on a card sets an
   // order for that platform alone, until it's set back to match Compose.
-  const [cardOrder, setCardOrder] = useState<Record<string, string[]>>({})
+  const [cardOrder, setCardOrder] = useStoredState<Record<string, string[]>>("crosspost:image-order", {})
+  const [progress, setProgress] = useStoredState<Progress>("crosspost:progress", NO_PROGRESS, (p) => ({
+    ...NO_PROGRESS,
+    ...p,
+  }))
+  // The latest progress, for copies noted after an await (the clipboard, the share sheet), so
+  // two that overlap don't overwrite each other.
+  const progressRef = useRef(progress)
+  useEffect(() => {
+    progressRef.current = progress
+  })
+  /**
+   * Note a step done on a platform's card: a post or image copied, or its tags confirmed. Once
+   * every post and every image still on the card has been copied and any tags confirmed, the
+   * platform is marked posted on its own (never unmarked), with a toast.
+   */
+  const noteCopy = (
+    adapter: PlatformAdapter,
+    list: "copiedPosts" | "copiedImages" | "checkedTags",
+    items: string[],
+    on: boolean,
+    posts: string[],
+    imageIds: string[],
+    tags: string[],
+  ) => {
+    const next = markIn(progressRef.current, list, adapter.id, items, on)
+    progressRef.current = next
+    const done =
+      on &&
+      !next.posted[adapter.id] &&
+      posts.length > 0 &&
+      posts.every((t) => next.copiedPosts[adapter.id]?.includes(t)) &&
+      imageIds.every((id) => next.copiedImages[adapter.id]?.includes(id)) &&
+      tags.every((t) => next.checkedTags[adapter.id]?.includes(t))
+    if (!done) return setProgress(next)
+    setProgress({ ...next, posted: { ...next.posted, [adapter.id]: true } })
+    revealNextCard(adapter.id)
+    toast(`Everything for ${adapter.name} is done, so it's marked posted`, {
+      action: {
+        label: "Undo",
+        onClick: () => setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: false } })),
+      },
+    })
+  }
+  // Posts rewritten on one platform's card, by post number, each with the text Compose gave it then.
+  const [postEdits, setPostEdits] = useStoredState<Record<string, Record<number, PostEdit>>>("crosspost:post-edits", {})
+  /** Rewrite one post on one platform; null goes back to Compose's text, with an undo. */
+  const setPostEdit = (adapter: PlatformAdapter, post: number, text: string | null, base: string) => {
+    const put = (edit: PostEdit | null) =>
+      setPostEdits((all) => {
+        const posts = { ...all[adapter.id] }
+        if (edit) posts[post] = edit
+        else delete posts[post]
+        const next = { ...all, [adapter.id]: posts }
+        if (Object.keys(posts).length === 0) delete next[adapter.id]
+        return next
+      })
+    const saved = postEdits[adapter.id]?.[post]
+    // Typed back to what Compose gives: no edit left.
+    if (text !== null && text !== base) return put({ text, base: saved?.base ?? base })
+    put(null)
+    if (text === null && saved) {
+      toast(`${adapter.name} post ${post + 1} is back to Compose's text`, {
+        action: { label: "Undo", onClick: () => put(saved) },
+      })
+    }
+  }
   const reorderTray = (id: string, target: string, after: boolean) =>
     setImages((list) => {
       const ids = reorder(
@@ -148,21 +275,15 @@ export default function Composer() {
   }
 
   /** Whether this platform's split posts get " i/n" labels. */
-  // Platforms that number threads themselves (Bluesky) follow Compose's setting only when
-  // their card's switch says to.
-  const follows = (adapter: PlatformAdapter) => !adapter.numbersThreads || !!prefs.numberingFor?.[adapter.id]
+  // Platforms that number threads themselves (Bluesky) don't follow Compose's setting.
+  const follows = (adapter: PlatformAdapter) => !adapter.numbersThreads
   const numbers = (adapter: PlatformAdapter) => prefs.numbering && follows(adapter)
 
-  // Platforms in the user's order; any not in the saved order (new ones) go last.
-  const ordered = useMemo(() => {
-    const rank = (id: string) => {
-      const i = prefs.order?.indexOf(id) ?? -1
-      return i === -1 ? Number.MAX_SAFE_INTEGER : i
-    }
-    return [...adapters].sort((a, b) => rank(a.id) - rank(b.id))
-  }, [prefs.order])
-  // Platforms hidden in Settings don't appear anywhere in the composer.
+  // Platforms in the user's order (kept with the platform settings, so the introduction can
+  // rearrange them too); any not in the saved order (new ones) go last.
   const platformSettings = usePlatformSettings()
+  const ordered = useMemo(() => arrangePlatforms(adapters, platformSettings.order), [platformSettings.order])
+  // Platforms hidden in Settings don't appear anywhere in the composer.
   const hidden = useMemo(
     () => adapters.filter((a) => !isShown(platformSettings, a)).map((a) => a.id),
     [platformSettings],
@@ -172,11 +293,39 @@ export default function Composer() {
   // and the moving platform's card is kept in view.
   const [railDrag, setRailDrag] = useState<{ ids: string[]; moving: string } | null>(null)
 
-  /** Save a new order of the shown platforms; hidden ones keep their places among them. */
-  const reorderPlatforms = (shownOrder: string[]) => {
-    let next = 0
-    const order = ordered.map((a) => (hidden.includes(a.id) ? a.id : shownOrder[next++]))
-    setPrefs((p) => ({ ...p, order }))
+  /**
+   * A rail drop: the platforms posted to, in order, then the ones turned off. Saved to the
+   * platform settings Settings shows too; turning one off offers an undo.
+   */
+  const arrangeRail = (on: string[], off: string[]) => {
+    const before = platformSettings.order
+    updatePlatformSettings((s) => {
+      const shownNow = { ...s.shown }
+      for (const a of adapters) {
+        const want = on.includes(a.id)
+        if (want !== isShown(s, a)) shownNow[a.id] = want
+      }
+      return { ...s, shown: shownNow, order: [...on, ...off] }
+    })
+    const turnedOff = off.filter((id) => !hidden.includes(id))
+    if (turnedOff.length)
+      toast(`${turnedOff.map((id) => adapters.find((a) => a.id === id)?.name).join(", ")} turned off`, {
+        description: "Drag it back above the line, or use Settings.",
+        action: {
+          label: "Undo",
+          // Only what this drop turned off comes back, each in its old place; anything changed
+          // since (other platforms, servers, sorting) stays as it is.
+          onClick: () =>
+            updatePlatformSettings((s) => {
+              const order = s.order.filter((id) => !turnedOff.includes(id))
+              for (const id of turnedOff) {
+                const at = before.indexOf(id)
+                order.splice(at < 0 ? order.length : Math.min(at, order.length), 0, id)
+              }
+              return { ...s, shown: { ...s.shown, ...Object.fromEntries(turnedOff.map((id) => [id, true])) }, order }
+            }),
+        },
+      })
   }
 
   const previews = useMemo(
@@ -186,17 +335,43 @@ export default function Composer() {
         chunks: chunksFor(adapter, draft, numbers(adapter), breaks[adapter.id]),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- numbers() reads only prefs
-    [shown, draft, prefs.numbering, prefs.numberingFor, breaks],
+    [shown, draft, prefs.numbering, breaks],
   )
 
-  const isEnabled = (id: string) => prefs.enabled[id] ?? true
+  // Cards have no switch of their own: a platform is off when it's in the rail's Off part.
+  const isEnabled = (id: string) => !hidden.includes(id)
 
   const editDraft = (next: string) => {
+    // Emptied by hand: the posted marks belonged to that post, so a new one starts without them.
+    if (draft.trim() && !next.trim() && Object.keys(progress.posted).length) setProgress((p) => ({ ...p, posted: {} }))
     setBreaks((b) =>
       Object.fromEntries(Object.entries(b).map(([id, offsets]) => [id, shiftBreaks(draft, next, offsets)])),
     )
     setDraft(next)
   }
+
+  // A post shared in from another app (Crosspost is a share target once installed): its text
+  // fills the draft, or joins it on a new paragraph, and its images go to the tray.
+  useSharedPost((post) => {
+    const text = sharedText(post)
+    const before = draft
+    if (text) editDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text)
+    if (post.files.length) addImages(post.files)
+    const what = [
+      text && "text",
+      post.files.length > 0 && (post.files.length === 1 ? "an image" : `${post.files.length} images`),
+    ].filter(Boolean)
+    if (what.length === 0) return
+    toast.success(`Added the shared ${what.join(" and ")}`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setDraft(before)
+          setImages((list) => list.filter((img) => !(post.files as Blob[]).includes(img.blob)))
+        },
+      },
+    })
+  })
 
   // Placing a split (dragging a new one in, moving one, or dragging one out):
   // splits before the drop point stay put, manual ones stay, the rest reflow.
@@ -290,6 +465,31 @@ export default function Composer() {
     ? [...previews].sort((a, b) => railDrag.ids.indexOf(a.adapter.id) - railDrag.ids.indexOf(b.adapter.id))
     : previews
   const cardKey = cardList.map((p) => p.adapter.id).join(",")
+
+  /**
+   * A platform just finished: bring the next one still to do (on, with something to post, not
+   * marked posted) fully into view, unless it already is. One taller than the window lines up
+   * its top under the sticky header instead (the cards' scroll margin).
+   */
+  const revealNextCard = (doneId: string) => {
+    const after = cardList.findIndex((p) => p.adapter.id === doneId)
+    const next = cardList
+      .slice(after + 1)
+      .find((p) => isEnabled(p.adapter.id) && p.chunks.length > 0 && !progressRef.current.posted[p.adapter.id])
+    if (!next) return
+    // After the render that marks this one posted, so the measure is of the page as it'll be.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(cardId(next.adapter.id))
+      if (!el) return
+      const style = getComputedStyle(el)
+      const top = parseFloat(style.scrollMarginTop) || 0
+      const bottom = innerHeight - (parseFloat(style.scrollMarginBottom) || 0)
+      const rect = el.getBoundingClientRect()
+      if (rect.top >= top && rect.bottom <= bottom) return
+      const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+      el.scrollIntoView({ block: rect.height <= bottom - top ? "nearest" : "start", behavior })
+    })
+  }
   // When the cards change places, each glides from where it showed to its new place, with the
   // side column's tiles' timing (250ms ease). Each render notes where every card sits on the
   // page, leaving out any glide in progress, so the next reorder knows where they start.
@@ -333,15 +533,48 @@ export default function Composer() {
     lastCards.current = { key: cardKey, moving }
   })
 
-  const railItems: RailItem[] = previews.map(({ adapter, chunks }) => {
+  // What each platform posts, edits in, for the rail.
+  const outgoing = previews.map(({ adapter, chunks }) => ({ adapter, chunks: withEdits(chunks, postEdits[adapter.id]) }))
+  const railItems: RailItem[] = outgoing.map(({ adapter, chunks }) => {
     const total = adapter.count(draft.trim())
     const issue =
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
-        : firstProblem(adapter, chunks.map((c) => c.text))
-    const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "Fits in one post" : "Nothing to post"
-    return { adapter, enabled: isEnabled(adapter.id), issue, note, posts: chunks.length }
+        : (firstProblem(adapter, chunks.map((c) => c.text)) ??
+          imageProblem(
+            adapter,
+            imagesPerPost(
+              imagesFor(adapter.id)
+                .map((img) => img.id)
+                .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id)),
+              Math.max(1, chunks.length),
+              // As on the card: images on a post that no longer exists fall back to the last one.
+              (id) => (adapter.chain && chunks.length > 1 ? Math.min(imagePost(adapter.id, id), chunks.length - 1) : 0),
+            ),
+            true,
+          ))
+    const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "1 post" : "Nothing to post"
+    return {
+      adapter,
+      enabled: isEnabled(adapter.id),
+      issue,
+      note,
+      posts: chunks.length,
+      posted: !!progress.posted[adapter.id] && chunks.length > 0,
+      // How it differs from Compose: its own splits (only platforms that split have any), each
+      // post edited on its card, its own image order, and each image moved on it alone.
+      overrides:
+        Number(adapter.chain && [...(breaks[adapter.id] ?? [])].sort((x, y) => x - y).join() !== composeBreaks(adapter.id).join()) +
+        Object.keys(postEdits[adapter.id] ?? {}).length +
+        Number(hasOwnOrder(adapter.id)) +
+        Object.keys(placement.only[adapter.id] ?? {}).filter((id) => staged.has(id)).length,
+    }
   })
+
+  // The platforms turned off, for the rail's Off part, in their order.
+  const offRailItems: RailItem[] = ordered
+    .filter((a) => hidden.includes(a.id))
+    .map((adapter) => ({ adapter, enabled: false, issue: null, note: "off", posts: 0 }))
 
   /** Clear the draft and manual splits, with an undo in the toast. */
   /** Clear the images with how the cards placed and ordered them; returns how to put it all back. */
@@ -358,9 +591,11 @@ export default function Composer() {
     }
   }
   const startOver = () => {
-    const saved = { draft, breaks }
+    const saved = { draft, breaks, progress, postEdits }
     setDraft("")
     setBreaks({})
+    setProgress(NO_PROGRESS)
+    setPostEdits({})
     const restoreImages = takeImages()
     toast("Post cleared", {
       action: {
@@ -368,12 +603,19 @@ export default function Composer() {
         onClick: () => {
           setDraft(saved.draft)
           setBreaks(saved.breaks)
+          setProgress(saved.progress)
+          setPostEdits(saved.postEdits)
           restoreImages()
         },
       },
     })
   }
-  const nothingToClear = !draft && Object.keys(breaks).length === 0 && images.length === 0
+  const nothingToClear =
+    !draft &&
+    Object.keys(breaks).length === 0 &&
+    images.length === 0 &&
+    Object.keys(postEdits).length === 0 &&
+    !Object.values(progress.posted).some(Boolean)
   const clearImages = () => {
     const count = images.length
     const restoreImages = takeImages()
@@ -423,7 +665,7 @@ export default function Composer() {
                 <Label htmlFor="numbering" className="font-normal">
                   {/* One span, so the label's flex gap doesn't open up around the parentheses. */}
                   <span>
-                    Number split posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
+                    Number posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
                   </span>
                   {switchPlatforms.length > 0 && (
                     <span className="flex items-center gap-1">
@@ -453,6 +695,10 @@ export default function Composer() {
               onAdd={addImages}
               onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
               onReorder={reorderTray}
+              onAltChange={(id, alt) =>
+                setImages((list) => list.map((img) => (img.id === id ? { ...img, alt: alt || undefined } : img)))
+              }
+              onCrop={cropStaged}
               clearPost={
                 <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
               }
@@ -480,23 +726,32 @@ export default function Composer() {
       </div>
 
       <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-20 lg:order-last lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-        <StatusRail items={railItems} onReorder={reorderPlatforms} onPreview={setRailDrag} />
+        <StatusRail items={railItems} off={offRailItems} onArrange={arrangeRail} onPreview={setRailDrag} />
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        {cardList.map(({ adapter, chunks }) => (
+        {cardList.map(({ adapter, chunks: made }) => {
+          // What Compose gives each post, and the posts as they'll go out, edits in.
+          const generated = made.map((c) => c.text)
+          const chunks = withEdits(made, postEdits[adapter.id])
+          // What has to be copied for the platform to count as done: every post, and every image not left off it.
+          const chunkTexts = chunks.map((c) => c.text)
+          const cardImageIds = imagesFor(adapter.id)
+            .map((img) => img.id)
+            .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id))
+          // Tags to confirm before the platform counts as done.
+          const tags = findMentions(chunkTexts.join("\n"))
+          return (
           <PlatformCard
             key={adapter.id}
             adapter={adapter}
             text={draft}
-            chunks={chunks.map((c) => c.text)}
+            chunks={chunkTexts}
+            generated={generated}
+            manualStarts={chunks.map((c) => c.manual)}
+            edits={postEdits[adapter.id] ?? {}}
+            onEditPost={(post, text) => setPostEdit(adapter, post, text, generated[post] ?? "")}
             customSplits={(breaks[adapter.id]?.length ?? 0) > 0}
-            followsCompose={follows(adapter)}
-            onNumberingChange={
-              adapter.numbersThreads
-                ? (on) => setPrefs((p) => ({ ...p, numberingFor: { ...p.numberingFor, [adapter.id]: on } }))
-                : undefined
-            }
             onResetSplits={() => resetBreaks(adapter.id)}
             onMatchComposeSplits={adapter.chain ? matchComposeBreaks(adapter.id) : undefined}
             images={imagesFor(adapter.id)}
@@ -507,9 +762,26 @@ export default function Composer() {
             imagePost={(id) => imagePost(adapter.id, id)}
             onMoveImage={(id, post, onlyHere) => moveImage(adapter.id, id, post, onlyHere)}
             enabled={isEnabled(adapter.id)}
-            onEnabledChange={(on) => setPrefs((p) => ({ ...p, enabled: { ...p.enabled, [adapter.id]: on } }))}
+            posted={!!progress.posted[adapter.id]}
+            onPostedChange={(on) => {
+              setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: on } }))
+              if (on) revealNextCard(adapter.id)
+            }}
+            copiedPosts={progress.copiedPosts[adapter.id] ?? []}
+            onPostCopied={(text) => noteCopy(adapter, "copiedPosts", [text], true, chunkTexts, cardImageIds, tags)}
+            copiedImages={new Set(progress.copiedImages[adapter.id])}
+            onCopiedImagesChange={(ids, on) =>
+              noteCopy(adapter, "copiedImages", ids, on, chunkTexts, cardImageIds, tags)
+            }
+            tags={tags}
+            checkedTags={progress.checkedTags[adapter.id] ?? []}
+            onTagsChecked={(postTags, on) => noteCopy(adapter, "checkedTags", postTags, on, chunkTexts, cardImageIds, tags)}
+            hiddenImages={new Set(progress.hiddenImages[adapter.id])}
+            onHideImage={(id) => setProgress((p) => markIn(p, "hiddenImages", adapter.id, [id], true))}
+            onShowHidden={() => setProgress((p) => ({ ...p, hiddenImages: { ...p.hiddenImages, [adapter.id]: [] } }))}
           />
-        ))}
+          )
+        })}
       </div>
     </main>
   )
