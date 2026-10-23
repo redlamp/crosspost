@@ -2,92 +2,110 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
-// One word rolling into another, letter by letter: each letter has a slot one line tall, a window
-// onto a strip with the old letter over the new. A wave runs along the slots, each lifting as it
-// passes, while its strip scrolls up a row, so the new letter rolls up into view and the old one
-// out of the top; the slot eases from the old letter's width to the new one's, so the new word
-// ends up spaced as plain text. For the welcome card's title and the tour's (globals.css).
+// One phrase rolling into another, word by word, in a one-line window: the old words push up and
+// out of the top, one after another, then the new ones push up into view from below. Whole words
+// move, so the line reads at every moment. For the welcome card's title and the tour's, which
+// become each other as the tour opens and closes. The motion is the Web Animations API and the
+// window's shape is inline, so it doesn't lean on a stylesheet that might be stale.
 
-/** Each slot starts this long after the one before it, ms. */
-const STAGGER = 40
-/** How long one slot takes to roll (and lift), ms. */
-const ROLL = 520
+/** Each word starts this long after the one before it, ms. */
+const STAGGER = 70
+/** How long one word takes to move, ms. */
+const MOVE = 420
+/** The new words start this long after the old ones, ms. */
+const LAG = 80
+const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)"
+
+const WORD: React.CSSProperties = { display: "inline-block", whiteSpace: "pre" }
+
+/** A phrase as its words, each keeping the space after it. */
+const wordsOf = (text: string) => text.split(/(?<= )/)
 
 /**
  * Text that rolls from `from` to `to` once, as it mounts (or shows `to` at once, without `from`
  * or with reduced motion), then calls `onDone`. Screen readers get `to` alone.
  */
 export function RollText({ from, to, onDone }: { from?: string; to: string; onDone?: () => void }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  // Rolls only between two different words, and not with reduced motion (then `to` at once).
+  const box = useRef<HTMLSpanElement>(null)
+  // Rolls only between two different phrases, and not with reduced motion (then `to` at once).
   const [rolls] = useState(
     () => from !== undefined && from !== to && !matchMedia("(prefers-reduced-motion: reduce)").matches,
   )
-  // Each slot's width, before and after: measured in the text's own font once it's on screen.
-  const [widths, setWidths] = useState<{ from: number; to: number }[] | null>(null)
-  const [rolled, setRolled] = useState(false)
   const [done, setDone] = useState(!rolls)
-  const places = Math.max(from?.length ?? 0, to.length)
 
   useLayoutEffect(() => {
-    const el = ref.current
+    const el = box.current
     if (!rolls || !el) return
-    const style = getComputedStyle(el)
-    const ctx = document.createElement("canvas").getContext("2d")
-    if (ctx) ctx.font = style.font
-    // Without a canvas, a rough letter width (more than half an em).
-    const w = (c: string | undefined) =>
-      !c ? 0 : ctx ? ctx.measureText(c).width : parseFloat(style.fontSize) * 0.55
-    setWidths(Array.from({ length: places }, (_, i) => ({ from: w(from?.[i]), to: w(to[i]) })))
-  }, [rolls, from, to, places])
+    const animations: Animation[] = []
+    const move = (words: NodeListOf<Element>, keyframes: Keyframe[], start: number) =>
+      words.forEach((word, i) =>
+        animations.push(
+          word.animate(keyframes, { duration: MOVE, delay: start + i * STAGGER, easing: EASE, fill: "both" }),
+        ),
+      )
+    move(
+      el.querySelectorAll("[data-old]"),
+      [
+        { transform: "translateY(0)", opacity: 1 },
+        { transform: "translateY(-110%)", opacity: 0 },
+      ],
+      0,
+    )
+    move(
+      el.querySelectorAll("[data-new]"),
+      [
+        { transform: "translateY(110%)", opacity: 0 },
+        { transform: "translateY(0)", opacity: 1 },
+      ],
+      LAG,
+    )
+    return () => animations.forEach((a) => a.cancel())
+  }, [rolls])
 
   useEffect(() => {
-    if (!widths) return
-    // A moment after the slots are drawn at the old widths, so the change is a transition.
-    const start = setTimeout(() => setRolled(true), 20)
-    const end = setTimeout(
+    if (!rolls) return
+    const count = Math.max(wordsOf(from ?? "").length, wordsOf(to).length)
+    const id = setTimeout(
       () => {
         setDone(true)
         onDone?.()
       },
-      20 + (places - 1) * STAGGER + ROLL,
+      LAG + (count - 1) * STAGGER + MOVE,
     )
-    return () => {
-      clearTimeout(start)
-      clearTimeout(end)
-    }
+    return () => clearTimeout(id)
     // onDone is the caller's; the roll runs once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widths, places])
+  }, [rolls])
 
   return (
     <>
       <span className="sr-only">{to}</span>
-      <span ref={ref} aria-hidden className="whitespace-pre">
-        {done || !widths
-          ? done
-            ? to
-            : from
-          : widths.map((width, i) => (
-              <span
-                key={i}
-                className="roll-slot"
-                data-rolled={rolled || undefined}
-                style={
-                  {
-                    width: rolled ? width.to : width.from,
-                    "--delay": `${i * STAGGER}ms`,
-                    "--roll": `${ROLL}ms`,
-                  } as React.CSSProperties
-                }
-              >
-                <span className="roll-strip">
-                  <span>{from?.[i] ?? ""}</span>
-                  <span>{to[i] ?? ""}</span>
-                </span>
+      {done ? (
+        <span aria-hidden className="whitespace-pre">
+          {to}
+        </span>
+      ) : (
+        // The window: one line tall, clipping the words as they leave and arrive. The new phrase
+        // sits in the flow (so the window takes its width); the old one over it.
+        <span
+          ref={box}
+          aria-hidden
+          style={{ position: "relative", display: "inline-block", height: "1lh", overflow: "hidden", verticalAlign: "top" }}
+        >
+          <span style={{ position: "absolute", left: 0, top: 0, whiteSpace: "pre" }}>
+            {wordsOf(from ?? "").map((word, i) => (
+              <span key={i} data-old style={WORD}>
+                {word}
               </span>
             ))}
-      </span>
+          </span>
+          {wordsOf(to).map((word, i) => (
+            <span key={i} data-new style={WORD}>
+              {word}
+            </span>
+          ))}
+        </span>
+      )}
     </>
   )
 }

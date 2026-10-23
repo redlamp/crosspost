@@ -246,8 +246,8 @@
 .tour-morphing [data-slot="dialog-overlay"] {
   animation-duration: 350ms;
 }
-/* The title travels as itself: the live words (rolling from the card's title to the tour's, or
-   back) ride the move, with no crossfade between the two. */
+/* The title travels as itself: the live words (rolling word by word from the card's title to the
+   tour's, or back) ride the move, with no crossfade between the two. */
 ::view-transition-old(tour-title) {
   animation: none;
   opacity: 0;
@@ -301,48 +301,6 @@
   white-space: pre;
   animation: letter-wave-in 0.8s ease-out backwards;
   animation-delay: calc(var(--i) * 40ms + var(--wave-start, 0ms));
-}
-
-/* RollText: one word rolling into another. Each letter's slot is a one-line window onto a strip
-   with the old letter over the new; once rolled, a wave runs along the slots (each lifting and
-   turning the app's blue as it passes) while each strip scrolls up a row and each slot eases to
-   the new letter's width. --delay staggers the slots; --roll is each one's length. */
-.roll-slot {
-  display: inline-block;
-  height: 1lh;
-  overflow: hidden;
-  vertical-align: top;
-  transition: width var(--roll) ease-in-out var(--delay);
-}
-.roll-strip {
-  display: flex;
-  flex-direction: column;
-}
-.roll-strip > span {
-  height: 1lh;
-  white-space: pre;
-}
-.roll-slot[data-rolled] {
-  animation: roll-lift var(--roll) ease-in-out var(--delay) both;
-}
-.roll-slot[data-rolled] > .roll-strip {
-  animation: roll-up var(--roll) cubic-bezier(0.5, 0, 0.2, 1) var(--delay) both;
-}
-@keyframes roll-up {
-  to {
-    transform: translateY(-50%);
-  }
-}
-@keyframes roll-lift {
-  0%,
-  100% {
-    transform: translateY(0);
-    color: var(--foreground);
-  }
-  45% {
-    transform: translateY(-0.25em);
-    color: var(--brand-blue);
-  }
 }
 
 /* The welcome card's trail: its dots walk along it, toward Deliver, as feet would. */
