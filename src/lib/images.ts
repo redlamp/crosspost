@@ -42,6 +42,21 @@ const KEY = "staged"
 // One connection for the page, opened on first use.
 let connection: Promise<IDBDatabase> | null = null
 
+/**
+ * Where open Crosspost tabs (and the installed app's window) hear that one of them cleared
+ * everything, so they reload from the cleared storage rather than write their own copy back.
+ */
+const CHANNEL = "crosspost"
+const CLEARED = "cleared"
+
+/** Calls `onCleared` when another tab clears everything; returns how to stop listening. */
+export function onClearedElsewhere(onCleared: () => void): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => {}
+  const channel = new BroadcastChannel(CHANNEL)
+  channel.onmessage = (e) => e.data === CLEARED && onCleared()
+  return () => channel.close()
+}
+
 /** Close and forget the connection, so the database can be deleted. */
 async function closeImageDb() {
   const open = connection
@@ -56,8 +71,10 @@ async function closeImageDb() {
 /**
  * Zero out everything Crosspost keeps in this browser: every `crosspost:` key in localStorage
  * and sessionStorage (the post, its splits, edits and progress, settings, the theme), the image
- * database, a shared post not yet taken, and the offline copy of the site. The site shares its origin with others on the same host, so
- * only Crosspost's own keys go. The caller reloads the page after.
+ * database, a shared post not yet taken, and the offline copy of the site. The site shares its
+ * origin with others on the same host, so only Crosspost's own keys go. Other open Crosspost tabs
+ * let go of the image database when asked (see openDb) and reload once it's done
+ * (onClearedElsewhere), so none writes its copy back. The caller reloads the page after.
  */
 export async function clearAllLocalData() {
   for (const store of [localStorage, sessionStorage]) {
@@ -72,7 +89,10 @@ export async function clearAllLocalData() {
   for (const name of [DB, "crosspost-share"]) {
     await new Promise<void>((resolve) => {
       const req = indexedDB.deleteDatabase(name)
-      req.onsuccess = req.onerror = req.onblocked = () => resolve()
+      req.onsuccess = req.onerror = () => resolve()
+      // Held open elsewhere (a tab of an older version, say): give it a moment, then carry on;
+      // the delete still goes through once it's let go.
+      req.onblocked = () => setTimeout(resolve, 1000)
     })
   }
   try {
@@ -80,13 +100,28 @@ export async function clearAllLocalData() {
   } catch {
     // No Cache Storage here (or not allowed).
   }
+  try {
+    const channel = new BroadcastChannel(CHANNEL)
+    channel.postMessage(CLEARED)
+    channel.close()
+  } catch {
+    // No BroadcastChannel: other tabs keep what they have until they're reloaded.
+  }
 }
 
 function openDb(): Promise<IDBDatabase> {
   connection ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB, 1)
     req.onupgradeneeded = () => req.result.createObjectStore(STORE)
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // Another tab clearing everything asks to delete the database: let go, so it isn't blocked.
+      db.onversionchange = () => {
+        db.close()
+        connection = null
+      }
+      resolve(db)
+    }
     req.onerror = () => reject(req.error)
   }).catch((err) => {
     connection = null // Try again next time.

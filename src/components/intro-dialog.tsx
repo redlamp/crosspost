@@ -788,12 +788,18 @@ export function IntroDialog() {
       }),
     [],
   )
-  /** Closes the tour; `also` changes something else in the same step (Start folds the welcome card). */
-  const onOpenChange = (next: boolean, also?: () => void) => {
+  /**
+   * Closes the tour. From Done, however it closes (Start, the X, Escape, a click outside), the
+   * person has seen it all: the welcome card folds to How it works below Compose, in the same step
+   * as the tour closes, so the tour shrinks into it, and focus goes to Compose.
+   */
+  const onOpenChange = (next: boolean) => {
     if (next) return
+    const finished = step === TIMELINE_END
+    if (finished) toCompose.current = true
     const hide = () =>
       flushSync(() => {
-        also?.()
+        if (finished) setWelcomeFolded(true)
         setOpen(false)
         setTourOpen(false)
       })
@@ -988,10 +994,8 @@ export function IntroDialog() {
               className="w-full sm:col-start-3 sm:row-start-1"
               onClick={() => {
                 if (!last) return forward()
-                toCompose.current = true
-                // Start, at the end: the welcome card folds to its button below Compose, in the
-                // same step as the tour closes, so the tour shrinks into the button.
-                onOpenChange(false, () => setWelcomeFolded(true))
+                // Start, at the end: closing from Done folds the welcome card (see onOpenChange).
+                onOpenChange(false)
               }}
             >
               {last ? "Start" : "Next"}
