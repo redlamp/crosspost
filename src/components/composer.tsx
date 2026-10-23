@@ -36,6 +36,7 @@ import {
   updatePlatformSettings,
   usePlatformSettings,
 } from "@/lib/platform-settings"
+import { useGlide } from "@/lib/use-glide"
 import { useStoredState } from "@/lib/use-stored-state"
 
 type Prefs = {
@@ -628,6 +629,9 @@ export default function Composer() {
    * back, images and all.
    */
   const canTryExample = !draft.trim() && images.length === 0
+  // The tips below Compose (How it works and the reminder) glide when one's change moves another.
+  const tipsRef = useRef<HTMLDivElement>(null)
+  useGlide(tipsRef)
   const [confirmExample, setConfirmExample] = useState(false)
   const tryExample = () => (nothingToClear ? loadExample() : setConfirmExample(true))
   const loadExample = async () => {
@@ -794,7 +798,7 @@ export default function Composer() {
         {/* Below Compose, the tips: How it works (after a first visit) and the split view reminder,
             each open across the column or folded to a small button. Open ones come first; folded
             buttons gather at the bottom (their own order), How it works before the reminder. */}
-        <div className="flex flex-wrap items-start gap-x-2 gap-y-4 empty:hidden">
+        <div ref={tipsRef} className="flex flex-wrap items-start gap-x-2 gap-y-4 empty:hidden">
           <WelcomeCard place="bottom" onTryExample={tryExample} />
           <SplitViewTip />
         </div>

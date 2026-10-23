@@ -155,12 +155,13 @@ export function morphTo(update: () => void) {
 }
 
 /**
- * Fold the welcome card to its button below Compose, or open it again, gliding between the two
- * (the card and the button share the transition name "tour") where motion allows.
+ * Fold the welcome card to its button below Compose, gliding down into it (the card and the
+ * button share the transition name "tour") where motion allows, so it's clear where it went.
+ * Opening it again from the button is immediate (setWelcomeFolded).
  */
-export function foldWelcome(folded: boolean) {
-  if (!canMorph()) return setWelcomeFolded(folded)
-  morphTo(() => flushSync(() => setWelcomeFolded(folded)))
+export function foldWelcome() {
+  if (!canMorph()) return setWelcomeFolded(true)
+  morphTo(() => flushSync(() => setWelcomeFolded(true)))
 }
 
 // The introduction's dialog sits on the page with no button of its own; the welcome card asks it to open at a step.

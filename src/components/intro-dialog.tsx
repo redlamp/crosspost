@@ -1,11 +1,10 @@
 "use client"
 
-import { BotIcon, FlagIcon, PenLineIcon, SendIcon, ShieldCheckIcon, SignpostBigIcon, XIcon, type LucideIcon } from "lucide-react"
+import { FlagIcon, PenLineIcon, SendIcon, SignpostBigIcon, XIcon, type LucideIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 
-import { DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, useTouch, WriteArt, type ArtProps } from "@/components/intro-art"
-import { DecideArt } from "@/components/intro-decide"
+import { DecideArt, DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, WriteArt, type ArtProps } from "@/components/intro-art"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -35,7 +34,7 @@ type StepProps = {
   active: boolean
   draft: DraftTabs
   /** Deliver's tab (the way to post), kept by the dialog so Next and Back can move between them. */
-  deliver: { way: number; pick: (way: number) => void }
+  deliver: DeliverTabs
   /** The step's drawing ended: on to the next step, so the introduction plays through. */
   next: () => void
 }
@@ -46,9 +45,8 @@ function StepTitle({ children, className }: { children: React.ReactNode; classNa
 }
 
 /**
- * A step's body, as the Figma panels lay it out. With controls (Draft's tabs), they come first
- * with the title centered under them, then the visual; otherwise the visual, then the title and
- * its text along the left edge (Deliver).
+ * A step's body, every step alike: its tabs if it has them (Draft's, Deliver's), the title
+ * centered and a line of text under it, then the visual.
  */
 function Step({
   visual,
@@ -66,7 +64,6 @@ function Step({
   const start = align === "start"
   return (
     <div className={cn("flex flex-col gap-3", start ? "items-stretch" : "items-center")}>
-      {!controls && <div className="w-full">{visual}</div>}
       {controls}
       {/* Keyed by its words, so a new caption fades in. */}
       <StepTitle key={title} className={cn("animate-in fade-in", !start && "text-center")}>
@@ -75,7 +72,7 @@ function Step({
       {children && (
         <div className={cn("space-y-3 text-sm text-muted-foreground", start ? "w-full" : "w-full max-w-lg")}>{children}</div>
       )}
-      {controls && <div className="mt-2 w-full">{visual}</div>}
+      <div className="mt-2 w-full">{visual}</div>
     </div>
   )
 }
@@ -144,35 +141,26 @@ function Decide({ active, next }: StepProps) {
     decideStart.current = performance.now()
   }, [])
   return (
-    // The title, the instruction and the note on the left, one after the other; the list on
-    // the right, as in the Figma panel. Phones: the text first, then the list.
-    <div className="flex flex-col gap-6 sm:flex-row sm:gap-8">
-      <div className="flex flex-col gap-6 text-muted-foreground sm:min-w-0 sm:flex-1">
-        <div className="space-y-3">
-          <StepTitle>Pick your destinations</StepTitle>
-          <p className="text-base leading-5">
-            Drag the platforms you post to into the order you work in, and any you don&apos;t use down to Off. The
-            cards follow.
-          </p>
-        </div>
-        <div className="flex gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 p-3 text-sm">
-          <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-(--brand-blue)" />
-          <p>
-            <span className="block font-semibold text-foreground">Designed to be light</span>
-            The app never holds an account, a password, or a key.
-            <span className="block italic">There&apos;s nothing to connect and nothing to leak.</span>
-          </p>
-        </div>
-      </div>
-      <DecideArt
-        active={active}
-        onDone={() => {
-          DECIDE_MS = settle(DECIDE_MS, performance.now() - decideStart.current)
-          next()
-        }}
-        className="w-full shrink-0 sm:w-44"
-      />
-    </div>
+    // As the other steps: the title and a line, then the drawing (Draft's view, moved over to
+    // take in the platform icons), with its note under it.
+    <Step
+      title="Pick your destinations"
+      visual={
+        <DecideArt
+          active={active}
+          onDone={() => {
+            DECIDE_MS = settle(DECIDE_MS, performance.now() - decideStart.current)
+            next()
+          }}
+        />
+      }
+    >
+      <p className="text-center text-base leading-5 text-balance">
+        Drag the platforms into the order you want,
+        <br />
+        tuck away what you don&apos;t.
+      </p>
+    </Step>
   )
 }
 
@@ -209,7 +197,7 @@ function settle(guess: number, measured: number) {
  * How long each of Draft's drawings plays before moving on, in ms, for the timeline: a first
  * guess, then what the last pass took.
  */
-const PART_MS = [7400, 24000, 11800]
+const PART_MS = [9700, 17500, 12700]
 
 /**
  * Write, Split and Images, one at a time: each moves on to the next when its drawing ends, and
@@ -262,69 +250,95 @@ function Draft({ active, draft }: StepProps) {
   )
 }
 
-/** Deliver's two ways to post: by hand, or handed to an agent. */
-const DELIVER_WAYS = ["Post it yourself", "Have your agent do it"]
+/**
+ * Deliver's ways to post, and each one's title: by hand for now (an agent handoff is parked on
+ * feature/agent-handoff). With one way, Deliver shows no tabs.
+ */
+const DELIVER_WAYS = ["Manual"]
+const DELIVER_TITLES = ["Post it yourself"]
 
 /**
- * Deliver: tabs for the two ways to post, as Draft's, with the title (the way's name) and a
- * line under them, then the drawing. Posting by hand is drawn; handing it to an agent is still
- * to come, so its panel says so.
+ * How long each of Deliver's drawings plays before moving on, in ms, for the timeline: a first
+ * guess, then what the last pass took.
+ */
+const DELIVER_MS = [18500]
+
+/** Deliver's tabs: the one showing, and how they move on. */
+type DeliverTabs = {
+  way: number
+  /** A tab was picked (or the trail taken over): no moving on by itself. */
+  picked: boolean
+  /** The person picks a tab. */
+  pick: (way: number) => void
+  /** Moves on to the next tab by itself, or past the last, to Done. */
+  show: (way: number) => void
+  finish: () => void
+}
+
+/**
+ * Deliver: its way's title and a line under it (with tabs, as Draft's, once there's more than one
+ * way), then the drawing. Each way moves on to the next when its drawing ends, and the last on to
+ * Done, until a tab is picked.
  */
 function Deliver({ active, deliver }: StepProps) {
-  const touch = useTouch()
-  const { way, pick: setWay } = deliver
+  const { way, picked, pick: setWay, show, finish } = deliver
+  // When this tab's drawing started, to learn how long a pass takes.
+  const startedAt = useRef(0)
+  useEffect(() => {
+    startedAt.current = performance.now()
+  }, [way])
+  const onDone = picked
+    ? undefined
+    : () => {
+        DELIVER_MS[way] = settle(DELIVER_MS[way], performance.now() - startedAt.current)
+        if (way === DELIVER_WAYS.length - 1) finish()
+        else show(way + 1)
+      }
   return (
     <Step
       controls={
-        <StepTabs
-          id="intro-deliver"
-          label="Ways to post"
-          tabs={DELIVER_WAYS}
-          current={way}
-          onPick={setWay}
-          tabClassName="px-3"
-        />
+        DELIVER_WAYS.length > 1 && (
+          <StepTabs
+            id="intro-deliver"
+            label="Ways to post"
+            tabs={DELIVER_WAYS}
+            current={way}
+            onPick={setWay}
+            tabClassName="px-3"
+          />
+        )
       }
-      title={DELIVER_WAYS[way]}
+      title={DELIVER_TITLES[way]}
       visual={
         <div role="tabpanel" id="intro-deliver-panel" aria-labelledby={`intro-deliver-${way}`}>
-          {way === 0 ? (
-            <ImagesArt active={active} />
-          ) : (
-            <div className="grid h-80 place-items-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              <div className="max-w-sm space-y-2">
-                <BotIcon className="mx-auto size-8 text-(--brand-blue)" aria-hidden />
-                <p className="font-medium text-foreground">Coming soon</p>
-                <p className="text-balance">
-                  An agent in your own browser fills in each platform&apos;s post from Crosspost and stops before Post, so
-                  the last click stays yours.
-                </p>
-              </div>
-            </div>
-          )}
+          <ImagesArt active={active} onDone={onDone} />
         </div>
       }
-    >
-      <p className="text-center text-base leading-5 text-balance">
-        {way === 1
-          ? "Hand the posts to an agent you already use."
-          : touch
-            ? "Open each post in the platform's app, or copy it, then bring the images over and post."
-            : "Open each post prefilled, or copy it, then bring the images over and post."}
-      </p>
-    </Step>
+    />
   )
 }
 
 /** The end of the trail, in the tour only: where you've got to, and Start. */
+/** Done's recap: a line for each step, beside that step's icon on the trail. */
+const DONE_RECAP: { icon: LucideIcon; text: string }[] = [
+  { icon: PenLineIcon, text: "Write your post" },
+  { icon: SignpostBigIcon, text: "Choose destinations" },
+  { icon: SendIcon, text: "Post it with ease" },
+]
+
 function Done() {
   return (
     <div className="flex flex-col items-center gap-3 py-8 text-center">
       <FlagIcon className="size-8 text-(--brand-blue)" aria-hidden />
-      <StepTitle className="text-center">You&apos;re ready</StepTitle>
-      <p className="max-w-md text-base text-balance text-muted-foreground">
-        Write your post in Compose, pick your destinations, then post it yourself or hand it to your agent.
-      </p>
+      <StepTitle className="text-center">You&apos;re ready!</StepTitle>
+      <ul className="space-y-2 text-left text-base text-muted-foreground">
+        {DONE_RECAP.map(({ icon: Icon, text }) => (
+          <li key={text} className="flex items-center gap-2.5">
+            <Icon className="size-4 shrink-0 text-(--brand-blue)" aria-hidden />
+            {text}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -335,17 +349,9 @@ export const STEPS: { label: string; icon: LucideIcon; title: string; Body: (pro
   // The welcome card keeps the line breaks (its captions); the dialog's description reads them as spaces.
   { label: "Draft", icon: PenLineIcon, title: "Write once,\npreview everywhere", Body: Draft },
   { label: "Decide", icon: SignpostBigIcon, title: "Pick your\ndestinations", Body: Decide },
-  // Both of Deliver's ways, by hand or handed off (its tabs).
-  { label: "Deliver", icon: SendIcon, title: "Post it yourself,\nor let an agent", Body: Deliver },
-  { label: "Done", icon: FlagIcon, title: "You're ready", Body: Done },
+  { label: "Deliver", icon: SendIcon, title: "Open or copy,\nthen post it", Body: Deliver },
+  { label: "Done", icon: FlagIcon, title: "You're ready!", Body: Done },
 ]
-
-// The welcome card's trail: Draft, Decide and Deliver (stretched to the card's width), which
-// grows into the tour's as the tour opens.
-export const CARD_TRAIL_W = 340
-export const CARD_TRAIL_STOPS = [24, 170, 316]
-export const CARD_TRAIL_Y = 58
-export const CARD_TRAIL = "M24 58C60 58 65 70 97 70S135 58 170 58 205 46 243 46 280 58 316 58"
 
 // The steps as stops on a winding trail, a nod to the signpost, and a timeline of the
 // introduction: a marker plays along the curve as the steps do, inking the way behind it, and
@@ -353,23 +359,33 @@ export const CARD_TRAIL = "M24 58C60 58 65 70 97 70S135 58 170 58 205 46 243 46 
 // Done. Its three stretches are the same curve (the middle one mirrored), so the stops sit at
 // even thirds of its length: a place on the timeline runs from 0 (Draft) to 3 (Done), each
 // step taking the stretch up to the next stop. Small unlabeled nodes mark the tabs within a
-// step: Split and Images on Draft's stretch, the agent on Deliver's.
-const TRAIL_W = 340
-const TRAIL_STOPS = [20, 120, 220, 320]
+// step: Split and Images on Draft's stretch (and Deliver's ways, when it has more than one).
+const TRAIL_W = 430
+const TRAIL_STOPS = [20, 150, 280, 410]
 const TRAIL_Y = 58
-const TRAIL =
-  "M20 58c25 0 25 10 50 10s25 -10 50 -10c25 0 25 -10 50 -10s25 10 50 10c25 0 25 10 50 10s25 -10 50 -10"
+const TRAIL = "M20 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10c32.5 0 32.5 -10 65 -10s32.5 10 65 10c32.5 0 32.5 10 65 10s32.5 -10 65 -10"
+// The dotted way, in two: up to Deliver, the welcome card's own trail at the same size (so the
+// card's Draft to Deliver keeps its width as it becomes the tour's), and on to Done, which then
+// draws out from Deliver as the tour's addition.
+const TRAIL_TO_DELIVER = "M20 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10c32.5 0 32.5 -10 65 -10s32.5 10 65 10"
+const TRAIL_TO_DONE = "M280 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10"
+
+// The welcome card's trail: Draft, Decide and Deliver, the tour's first two stretches as they are.
+export const CARD_TRAIL_W = TRAIL_STOPS[2] + 20
+export const CARD_TRAIL_STOPS = TRAIL_STOPS.slice(0, 3)
+export const CARD_TRAIL_Y = TRAIL_Y
+export const CARD_TRAIL = TRAIL_TO_DELIVER
 const TIMELINE_END = STEPS.length - 1
 /** Deliver's stop and Done's on the timeline. */
 const DELIVER_AT = 2
-/** Where Deliver's way (tab) `way` sits: Post it yourself at Deliver's stop, the agent halfway to Done. */
+/** Where Deliver's way (tab) `way` sits: the first at Deliver's stop, the others evenly on to Done. */
 const deliverAt = (way: number) => DELIVER_AT + way / DELIVER_WAYS.length
 /** Deliver's way at a place on its stretch. */
 const wayAt = (place: number) => Math.min(DELIVER_WAYS.length - 1, Math.floor((place - DELIVER_AT) * DELIVER_WAYS.length))
 /** How long the marker takes to glide to a new place, after Next, Back or a stop. */
 const JUMP_MS = 600
 /** How long Decide's drawing plays before moving on to Deliver: a first guess, then what the last pass took. */
-let DECIDE_MS = 8500
+let DECIDE_MS = 11600
 /** Dragged past here, the timeline is at its end: Done. */
 const DONE_FROM = TIMELINE_END - 0.1
 
@@ -397,7 +413,7 @@ function partAt(place: number) {
 
 /**
  * The stretch for `step` (and its tab `part`: Draft's, or Deliver's way), from `at` or the start
- * of it. Deliver and Done don't play on by themselves: the marker waits at the place.
+ * of it. Done doesn't play on by itself: the marker waits there.
  */
 function stretchFor(step: number, part: number, at?: number): Stretch {
   if (step === 0) {
@@ -410,7 +426,12 @@ function stretchFor(step: number, part: number, at?: number): Stretch {
     const from = Math.min(DELIVER_AT, Math.max(1, at ?? 1))
     return { from, to: DELIVER_AT, ms: DECIDE_MS * (DELIVER_AT - from) }
   }
-  if (step === DELIVER_AT) return still(at ?? deliverAt(part))
+  if (step === DELIVER_AT) {
+    const start = deliverAt(part)
+    const end = deliverAt(part + 1)
+    const from = Math.min(end, Math.max(start, at ?? start))
+    return { from, to: end, ms: (DELIVER_MS[part] * (end - from)) / (end - start) }
+  }
   return still(TIMELINE_END)
 }
 
@@ -428,6 +449,15 @@ const DOT_LIT = "var(--brand-blue)"
 const DOT_AHEAD = "color-mix(in oklab, var(--muted-foreground) 75%, transparent)"
 const dotFill = (place: number, at: number) => (place <= at + 0.001 ? DOT_LIT : DOT_AHEAD)
 
+/**
+ * What only the tour's trail has (the way on to Done and its stop, the marker and its ink): kept
+ * out of the panel's own picture in the morph, so it holds its place rather than scaling with the
+ * panel. Opening, it appears where it belongs; closing, it fades out of the way at once
+ * (.tour-own in globals.css).
+ */
+const ownName = (named: boolean, name: string) =>
+  named ? ({ viewTransitionName: name, viewTransitionClass: "tour-own" } as React.CSSProperties) : undefined
+
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
 
 function Trail({
@@ -436,16 +466,25 @@ function Trail({
   onGo,
   onScrub,
   named,
+  arriving,
 }: {
   step: number
   stretch: Stretch
   onGo: (step: number) => void
   /** The marker was dragged to `at`; `done` once it's let go. */
   onScrub: (at: number, done: boolean) => void
-  /** The stops' icons carry the welcome card's transition names (while the dialog is open, not as it closes). */
+  /**
+   * What the welcome card's trail also has (the way to Deliver, its stops, waypoints, icons and
+   * names) carries the card's transition names, while the dialog is open (not as it closes).
+   */
   named: boolean
+  /** Grown out of the card: the way on to Done draws out from Deliver once the trail has landed. */
+  arriving: boolean
 }) {
   const reduced = useReducedMotion()
+  // Kept for the trail's life: the parent's flag clears before the drawing out is done.
+  const [drawOn] = useState(arriving)
+  const navRef = useRef<HTMLElement>(null)
   const pathRef = useRef<SVGPathElement>(null)
   const inkRef = useRef<SVGPathElement>(null)
   const markerRef = useRef<HTMLSpanElement>(null)
@@ -473,8 +512,8 @@ function Trail({
     if (markerRef.current) markerRef.current.style.offsetDistance = `${percent}%`
     if (inkRef.current) inkRef.current.style.strokeDashoffset = String(100 - percent)
     // Each dot lights as the marker reaches it, not when its step's drawing ends.
-    pathRef.current?.ownerSVGElement?.querySelectorAll<SVGCircleElement>("circle[data-place]").forEach((dot) => {
-      dot.style.fill = dotFill(Number(dot.dataset.place), at)
+    navRef.current?.querySelectorAll<HTMLElement>("[data-place]").forEach((dot) => {
+      dot.style.backgroundColor = dotFill(Number(dot.dataset.place), at)
     })
   }
 
@@ -537,17 +576,37 @@ function Trail({
   }
 
   return (
-    <nav aria-label="Steps" className="relative h-[72px] shrink-0" style={{ width: TRAIL_W }}>
+    <nav ref={navRef} aria-label="Steps" className="relative h-[72px] shrink-0" style={{ width: TRAIL_W }}>
+      <svg
+        aria-hidden
+        width={CARD_TRAIL_W}
+        height={72}
+        className="absolute top-0 left-0 overflow-visible"
+        fill="none"
+        // The welcome card's trail moves here as the tour opens, the same size.
+        style={{ viewTransitionName: named ? "tour-trail" : undefined }}
+      >
+        <path d={TRAIL_TO_DELIVER} stroke="var(--border)" strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" />
+      </svg>
+      <svg
+        aria-hidden
+        viewBox={`${TRAIL_STOPS[2] - 4} 0 ${TRAIL_W - TRAIL_STOPS[2] + 4} 72`}
+        className={cn("absolute top-0 h-[72px] overflow-visible", drawOn && "trail-draw-on")}
+        fill="none"
+        style={{ ...ownName(named, "tour-done-line"), left: TRAIL_STOPS[2] - 4, width: TRAIL_W - TRAIL_STOPS[2] + 4 }}
+      >
+        <path d={TRAIL_TO_DONE} stroke="var(--border)" strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" />
+      </svg>
       <svg
         aria-hidden
         width={TRAIL_W}
         height={72}
         className="absolute inset-0 overflow-visible"
         fill="none"
-        // The welcome card's trail grows into this one as the tour opens.
-        style={{ viewTransitionName: named ? "tour-trail" : undefined }}
+        style={ownName(named, "tour-ink")}
       >
-        <path ref={pathRef} d={TRAIL} stroke="var(--border)" strokeWidth={2} strokeDasharray="2 5" strokeLinecap="round" />
+        {/* The whole way, unseen, for measuring: where the marker and the nodes fall. */}
+        <path ref={pathRef} d={TRAIL} stroke="none" />
         <path
           ref={inkRef}
           d={TRAIL}
@@ -558,37 +617,57 @@ function Trail({
           strokeDasharray="100"
           strokeDashoffset={100}
         />
-        {/* The stops, then the tabs within steps as small nodes along the way (no labels). Each
-            is lit as the marker passes it (draw); the first fill is from where it starts. */}
-        {TRAIL_STOPS.map((x, i) => (
-          <circle
-            key={x}
-            data-place={i}
-            cx={x}
-            cy={TRAIL_Y}
-            r={4}
-            className="transition-[fill] duration-200"
-            style={{ fill: dotFill(i, stretch.from) }}
-          />
-        ))}
-        {nodes.map(({ place, x, y }) => (
-          <circle
-            key={place}
-            data-place={place}
-            cx={x}
-            cy={y}
-            r={2.5}
-            className="transition-[fill] duration-200"
-            style={{ fill: dotFill(place, stretch.from) }}
-          />
-        ))}
       </svg>
+      {/* The stops, then the tabs within steps as small nodes along the way (no labels), as HTML
+          so they can morph from the card's. Each is lit as the marker passes it (draw); the first
+          fill is from where it starts. Done's, and any node past Deliver, come in as the way to
+          Done draws out. */}
+      {TRAIL_STOPS.map((x, i) => (
+        <span
+          key={x}
+          aria-hidden
+          data-place={i}
+          className={cn(
+            "absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[background-color] duration-200",
+            drawOn && i > DELIVER_AT && "trail-done-in",
+          )}
+          style={{
+            left: x,
+            top: TRAIL_Y,
+            backgroundColor: dotFill(i, stretch.from),
+            ...(i <= DELIVER_AT ? { viewTransitionName: named ? `tour-dot-${i}` : undefined } : ownName(named, "tour-done-dot")),
+          }}
+        />
+      ))}
+      {nodes.map(({ place, x, y }, k) => (
+        <span
+          key={place}
+          aria-hidden
+          data-place={place}
+          className={cn(
+            "absolute size-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-[background-color] duration-200",
+            drawOn && place > DELIVER_AT && "trail-done-in [--trail-delay:900ms]",
+          )}
+          style={{
+            left: x,
+            top: y,
+            backgroundColor: dotFill(place, stretch.from),
+            ...(place < 1
+              ? { viewTransitionName: named ? `tour-node-${k}` : undefined }
+              : place > DELIVER_AT
+                ? ownName(named, `tour-done-node-${k}`)
+                : undefined),
+          }}
+        />
+      ))}
       {/* The marker: a little fingerpost board, turning with the trail as it goes. */}
       <span
         ref={markerRef}
         aria-hidden
-        className="pointer-events-none absolute top-0 left-0"
-        style={{ offsetPath: `path("${TRAIL}")`, offsetDistance: "0%", offsetRotate: "auto" }}
+        // Grown out of the card, it comes in only once the panel has landed (the morph takes 700ms):
+        // during the morph it would sit where the trail was first drawn, not where it plays from.
+        className={cn("pointer-events-none absolute top-0 left-0", drawOn && "trail-done-in [--trail-delay:750ms]")}
+        style={{ ...ownName(named, "tour-marker"), offsetPath: `path("${TRAIL}")`, offsetDistance: "0%", offsetRotate: "auto" }}
       >
         <svg width={18} height={12} viewBox="0 0 18 12" className="block drop-shadow-sm">
           <path d="M1 1.5h11.5L17 6l-4.5 4.5H1z" fill="var(--brand-blue)" stroke="var(--background)" strokeWidth={1.2} />
@@ -621,15 +700,16 @@ function Trail({
           className={cn(
             "absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base leading-5 font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
             i === step ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            drawOn && i > DELIVER_AT && "trail-done-in",
           )}
-          style={{ left: TRAIL_STOPS[i] }}
+          style={{ ...(i > DELIVER_AT && ownName(named, "tour-done-stop")), left: TRAIL_STOPS[i] }}
         >
-          {/* Named for the view transition: the welcome card's stop icon flies here as the tour opens. */}
+          {/* Named for the view transition: the welcome card's stop icon and name fly here as the tour opens. */}
           <Icon
             className={cn("size-4 shrink-0", i === step && "text-(--brand-blue)")}
-            style={{ viewTransitionName: named ? `tour-step-${i}` : undefined }}
+            style={{ viewTransitionName: named && i <= DELIVER_AT ? `tour-step-${i}` : undefined }}
           />
-          {label}
+          <span style={{ viewTransitionName: named && i <= DELIVER_AT ? `tour-label-${i}` : undefined }}>{label}</span>
         </button>
       ))}
     </nav>
@@ -657,11 +737,11 @@ export function IntroDialog() {
   // The person took over: no more moving on by itself, and the marker stays where it's put.
   const [manual, setManual] = useState(false)
   const [stretch, setStretch] = useState<Stretch>(() => stretchFor(0, 0))
-  // Deliver's tab: Post it yourself, or Have your agent do it.
+  // Deliver's way (its tab, when it has more than one).
   const [way, setWay] = useState(0)
   // After Start, focus goes to Compose.
   const toCompose = useRef(false)
-  // Next and Back walk every tab in turn: Draft's three, Decide, Deliver's two, then Done. Back
+  // Next and Back walk every tab in turn: Draft's three, Decide, Deliver's, then Done. Back
   // hides on the first (Draft's Write); at Done, Next becomes Start.
   const first = step === 0 && part === 0
   const last = step === TIMELINE_END
@@ -763,6 +843,16 @@ export function IntroDialog() {
     setPicked(true)
     setWay(next)
     setStretch(still(deliverAt(next)))
+  }
+  const deliver: DeliverTabs = {
+    way,
+    picked,
+    pick: pickWay,
+    show: (next) => {
+      setWay(next)
+      setStretch(stretchAt(DELIVER_AT, next, manual))
+    },
+    finish: () => go(TIMELINE_END, true),
   }
   /** Next: the next tab within a step (Draft's, Deliver's), else on to the next step's first. */
   const forward = () => {
@@ -874,14 +964,15 @@ export function IntroDialog() {
             </Button>
           </div>
           <div className="mt-1 grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-x-4 max-sm:grid-cols-[4.5rem_4.5rem] max-sm:justify-between max-sm:gap-y-2 sm:gap-x-6">
-            {/* Phones: the trail (340px) scaled to 90% so its end stops' names fit the panel. */}
-            <div className="justify-self-center max-sm:col-span-2 max-sm:scale-90 sm:col-start-2">
+            {/* Phones: the trail (430px) scaled to fit the panel, its box drawn in to match. */}
+            <div className="justify-self-center max-sm:col-span-2 max-sm:-mx-[69px] max-sm:scale-[0.68] sm:col-start-2">
               <Trail
               step={step}
               stretch={stretch}
               onGo={go}
               onScrub={scrub}
               named={open}
+              arriving={arriving}
             />
             </div>
             <Button
@@ -913,15 +1004,15 @@ export function IntroDialog() {
           className={cn(
             "min-h-0 overflow-y-auto p-6 animate-in fade-in [scrollbar-color:var(--border)_transparent] [scrollbar-width:thin]",
             // Grown out of the card: the step's words, which faded with the card's captions on the
-            // way, come back once the panel has arrived (the morph takes 450ms).
-            arriving && "animation-duration-400 delay-450 fill-mode-backwards",
+            // way, come back once the panel has arrived (the morph takes 700ms).
+            arriving && "animation-duration-400 delay-700 fill-mode-backwards",
           )}
           onAnimationEnd={(e) => e.target === e.currentTarget && setArriving(false)}
         >
           <DialogDescription className="sr-only">
             How Crosspost works, step {step + 1} of {STEPS.length}: {title}.
           </DialogDescription>
-          <Body active={open} draft={draft} deliver={{ way, pick: pickWay }} next={() => go(step + 1, true)} />
+          <Body active={open} draft={draft} deliver={deliver} next={() => go(step + 1, true)} />
         </div>
       </DialogContent>
     </Dialog>

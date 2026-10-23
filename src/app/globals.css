@@ -51,6 +51,10 @@
   --radius: 0.625rem;
   /* Crosspost's own blue, from the logo (#40A8F8). */
   --brand-blue: oklch(0.708 0.15 246);
+  /* The tour's Copy and Paste notes: deep blue words on a pale blue glow in the light theme,
+     pale blue words on a navy glow in the dark (each lit from the top). */
+  --note-glow: rgb(214 233 255 / 0.95);
+  --note-text: linear-gradient(180deg, #2b8ff0 0%, #0b62c4 65%, #08468f 100%);
   /* The header's and Compose card's gradient edges: the brand blue, softened with
      transparency, easing into the text box's border color with a hint of the blue,
      a touch brighter than the plain border so the edge reads clearly. */
@@ -105,6 +109,8 @@
 }
 
 .dark {
+  --note-glow: rgb(0 50 104 / 0.85);
+  --note-text: linear-gradient(180deg, #bae1ff 0%, #2aa0fb 65%, #0075d0 100%);
   --background: oklch(0.24 0 0);
   /* The logo's blue, a little lighter than the dark background. */
   --background-end: oklch(0.32 0.065 246);
@@ -223,19 +229,26 @@
 }
 
 /* The tour growing out of the welcome card, and back into it (see the introduction): the card
-   becomes the dialog, its trail becomes the dialog's, and each step's icon flies to its stop. */
-::view-transition-group(tour),
-::view-transition-group(tour-title),
-::view-transition-group(tour-trail),
-::view-transition-group(tour-step-0),
-::view-transition-group(tour-step-1),
-::view-transition-group(tour-step-2) {
-  animation-duration: 450ms;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+   becomes the dialog, its trail the dialog's way to Deliver, and each stop's icon, name and dot,
+   and the waypoints, move to their places on it. Only the card's captions stay, fading out. */
+.tour-morphing::view-transition-group(*) {
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 ::view-transition-group(tour) {
   overflow: clip;
   border-radius: var(--radius-xl);
+}
+/* What only the tour's trail has (the way to Done, its stop, the marker): opening, it comes in
+   where it belongs as the panel lands; closing, it fades out of the way at once rather than
+   shrinking with the panel. */
+.tour-morphing::view-transition-new(*.tour-own) {
+  animation-delay: 450ms;
+  animation-duration: 250ms;
+  animation-fill-mode: both;
+}
+.tour-morphing::view-transition-old(*.tour-own) {
+  animation-duration: 150ms;
 }
 /* The page holds still under the move: no crossfade of the whole page (the live page shows at
    once), so only the scrim changes, fading in (or out) on its own, a little slower than its usual. */
@@ -244,7 +257,7 @@
   animation: none;
 }
 .tour-morphing [data-slot="dialog-overlay"] {
-  animation-duration: 350ms;
+  animation-duration: 500ms;
 }
 /* The title travels as itself: the live words (rolling word by word from the card's title to the
    tour's, or back) ride the move, with no crossfade between the two. */
@@ -313,9 +326,72 @@
   animation: trail-walk 1.4s linear infinite;
 }
 
+/* The tour grown out of the card: once the card's trail has landed as the tour's Draft to
+   Deliver (700ms), the way on to Done draws out from Deliver, and any node on it, then Done,
+   come in as the line reaches them. */
+@keyframes trail-draw-on {
+  from {
+    clip-path: inset(-8px 100% -8px 0);
+  }
+  to {
+    clip-path: inset(-8px 0 -8px 0);
+  }
+}
+.trail-draw-on {
+  animation: trail-draw-on 500ms cubic-bezier(0.4, 0, 0.2, 1) 700ms backwards;
+}
+@keyframes trail-done-in {
+  from {
+    opacity: 0;
+  }
+}
+.trail-done-in {
+  animation: trail-done-in 300ms ease-out var(--trail-delay, 1100ms) backwards;
+}
+
+/* A note in a drawing on what the person does (Copy, Paste): it comes in, holds long enough to
+   read while drifting up, then rises away and fades. */
+/* It pops in like a bubble (overshooting, then settling), drifts up while it's read, and after
+   2 seconds evaporates: rising on, blurring and fading out. */
+@keyframes meta-float {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.4);
+    filter: blur(0);
+  }
+  6% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.15);
+  }
+  11% {
+    transform: translateY(0) scale(0.94);
+  }
+  16% {
+    transform: translateY(-1px) scale(1.03);
+  }
+  20% {
+    transform: translateY(-1px) scale(1);
+  }
+  71% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px) scale(1.08);
+    filter: blur(4px);
+  }
+}
+.meta-float {
+  animation: meta-float 2800ms cubic-bezier(0.3, 0, 0.3, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .letter-wave > span,
   .letter-wave-in > span,
+  .trail-draw-on,
+  .trail-done-in,
   .trail-walk {
     animation: none;
   }
