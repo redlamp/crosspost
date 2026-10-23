@@ -104,7 +104,7 @@ export function takeJustFolded() {
 // (a view transition): while it's open, the dialog carries the card's transition names, so the
 // card lets go of them.
 let tourOpen = false
-// How many times the tour has closed: the card's title, keyed by it, flaps back from the tour's.
+// How many times the tour has closed: the card's title, keyed by it, rolls back from the tour's.
 let tourCloses = 0
 const tourListeners = new Set<() => void>()
 

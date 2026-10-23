@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { STEPS, TRAIL, TRAIL_STOPS, TRAIL_W, TRAIL_Y } from "@/components/intro-dialog"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { FlapText } from "@/components/flap-text"
+import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
 import { openIntro, setWelcomeFolded, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
 import { cn } from "@/lib/utils"
@@ -97,13 +97,13 @@ function CardTrail({ touring }: { touring: boolean }) {
 
 /**
  * The card's title: "Start here" with its wave, or "How it works". Back from the tour, it first
- * flaps from the tour's title to its own (keyed by how often the tour has closed, so each close
- * flaps once), as the tour shrinks back into the card.
+ * rolls from the tour's title to its own (keyed by how often the tour has closed, so each close
+ * rolls once), as the tour shrinks back into the card.
  */
 function CardTitle({ first, fromTour }: { first: boolean; fromTour: boolean }) {
   const text = first ? "Start here" : "How it works"
-  const [flapping, setFlapping] = useState(fromTour)
-  if (flapping) return <FlapText from="Take the tour" to={text} onDone={() => setFlapping(false)} />
+  const [rolling, setRolling] = useState(fromTour)
+  if (rolling) return <RollText from="Take the tour" to={text} onDone={() => setRolling(false)} />
   return first ? <WaveText text={text} mode="loop" /> : text
 }
 

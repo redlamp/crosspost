@@ -13,7 +13,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FlapText } from "@/components/flap-text"
+import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
 import { registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
 import { cn } from "@/lib/utils"
@@ -351,6 +351,19 @@ type Stretch = { from: number; to: number; ms: number }
 const canMorph = () =>
   typeof document.startViewTransition === "function" && !matchMedia("(prefers-reduced-motion: reduce)").matches
 
+/**
+ * The tour growing out of the card, or back: a view transition marked .tour-morphing for its
+ * length (globals.css), so the page itself holds still and only the scrim fades, under the card's
+ * move, rather than the whole page crossfading.
+ */
+function morphTo(update: () => void) {
+  const root = document.documentElement
+  root.classList.add("tour-morphing")
+  const transition = document.startViewTransition(update)
+  transition.ready.catch(() => {})
+  transition.finished.finally(() => root.classList.remove("tour-morphing"))
+}
+
 /** Held at a place: the marker stays put, once the person has taken over from auto-play. */
 const still = (at: number): Stretch => ({ from: at, to: at, ms: 0 })
 
@@ -591,7 +604,7 @@ export function IntroDialog() {
   // the first (Draft's Write); on the last (Deliver's agent tab), Next becomes Start.
   const first = step === 0 && part === 0
   const last = step === STEPS.length - 1 && way === DELIVER_WAYS.length - 1
-  // The welcome card's title, which flaps into the tour's as the tour grows out of the card: read
+  // The welcome card's title, which rolls into the tour's as the tour grows out of the card: read
   // when the tour opens (a ref, as the opener is registered once), and kept for that opening.
   const welcome = useWelcome()
   const cardTitle = useRef("Start here")
@@ -629,7 +642,7 @@ export function IntroDialog() {
             setOpen(true)
             setTourOpen(true)
           })
-        if (canMorph()) document.startViewTransition(() => show(true))
+        if (canMorph()) morphTo(() => show(true))
         else show(false)
       }),
     [],
@@ -642,7 +655,7 @@ export function IntroDialog() {
         setTourOpen(false)
       })
     // Back into the card it grew from (or, folded, just away).
-    if (morph && canMorph()) document.startViewTransition(hide)
+    if (morph && canMorph()) morphTo(hide)
     else hide()
   }
   const contentRef = useRef<HTMLDivElement>(null)
@@ -767,7 +780,7 @@ export function IntroDialog() {
         <div className="border-b px-6 pt-4 pb-2 max-sm:px-4">
           <div className="flex items-center gap-2">
             {/* A fixed width, the same as the card's title, so the morph carries the words without
-                stretching them. Grown out of the card, the card's title flaps into this one as it
+                stretching them. Grown out of the card, the card's title rolls into this one as it
                 travels; otherwise it rises in. */}
             <p
               aria-hidden
@@ -775,7 +788,7 @@ export function IntroDialog() {
               style={{ viewTransitionName: open ? "tour-title" : undefined }}
             >
               {titleFrom ? (
-                <FlapText from={titleFrom} to="Take the tour" />
+                <RollText from={titleFrom} to="Take the tour" />
               ) : (
                 <WaveText text="Take the tour" mode="enter" />
               )}
