@@ -1,6 +1,7 @@
 "use client"
 
 import { useSyncExternalStore } from "react"
+import { flushSync } from "react-dom"
 
 // The welcome card and the introduction it opens. On a first visit the card sits above Compose
 // as "Start here"; after that (a later day, or once it has been folded) it lives below Compose as
@@ -134,6 +135,32 @@ export function useTourOpen(): boolean {
     () => tourOpen,
     () => false,
   )
+}
+
+/** Whether the card and the tour can morph (view transitions, and motion not reduced). */
+export const canMorph = () =>
+  typeof document.startViewTransition === "function" && !matchMedia("(prefers-reduced-motion: reduce)").matches
+
+/**
+ * A morph of the welcome card (into the tour, its folded button, or back): a view transition
+ * marked .tour-morphing for its length (globals.css), so the page itself holds still and only
+ * the moving parts (and the tour's scrim) change, rather than the whole page crossfading.
+ */
+export function morphTo(update: () => void) {
+  const root = document.documentElement
+  root.classList.add("tour-morphing")
+  const transition = document.startViewTransition(update)
+  transition.ready.catch(() => {})
+  transition.finished.finally(() => root.classList.remove("tour-morphing"))
+}
+
+/**
+ * Fold the welcome card to its button below Compose, or open it again, gliding between the two
+ * (the card and the button share the transition name "tour") where motion allows.
+ */
+export function foldWelcome(folded: boolean) {
+  if (!canMorph()) return setWelcomeFolded(folded)
+  morphTo(() => flushSync(() => setWelcomeFolded(folded)))
 }
 
 // The introduction's dialog sits on the page with no button of its own; the welcome card asks it to open at a step.

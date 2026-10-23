@@ -3,12 +3,15 @@
 import { CircleHelpIcon, PlayIcon, XIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import { STEPS, TRAIL, TRAIL_STOPS, TRAIL_W, TRAIL_Y } from "@/components/intro-dialog"
+import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, STEPS } from "@/components/intro-dialog"
+
+/** The card shows the tour's first three steps; Done is the tour's own. */
+const CARD_STEPS = STEPS.slice(0, 3)
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
-import { openIntro, setWelcomeFolded, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
+import { foldWelcome, openIntro, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
 import { cn } from "@/lib/utils"
 
 /**
@@ -24,20 +27,20 @@ import { cn } from "@/lib/utils"
  * trail, about where they were.
  */
 function CardTrail({ touring }: { touring: boolean }) {
-  const at = (x: number) => `${(x / TRAIL_W) * 100}%`
+  const at = (x: number) => `${(x / CARD_TRAIL_W) * 100}%`
   return (
     <div className="mt-2 @md:mx-12">
       <nav aria-label="Tour steps" className="relative h-[72px]">
         <svg
           aria-hidden
-          viewBox={`0 0 ${TRAIL_W} 72`}
+          viewBox={`0 0 ${CARD_TRAIL_W} 72`}
           preserveAspectRatio="none"
           className="absolute inset-0 size-full overflow-visible"
           fill="none"
           style={{ viewTransitionName: touring ? undefined : "tour-trail" }}
         >
           <path
-            d={TRAIL}
+            d={CARD_TRAIL}
             stroke="var(--brand-blue)"
             strokeOpacity={0.7}
             strokeWidth={2}
@@ -48,22 +51,22 @@ function CardTrail({ touring }: { touring: boolean }) {
           />
         </svg>
         {/* The stops' dots, as HTML: the stretched drawing would make circles ellipses. */}
-        {TRAIL_STOPS.map((x) => (
+        {CARD_TRAIL_STOPS.map((x) => (
           <span
             key={x}
             aria-hidden
             className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--brand-blue)"
-            style={{ left: at(x), top: TRAIL_Y }}
+            style={{ left: at(x), top: CARD_TRAIL_Y }}
           />
         ))}
-        {STEPS.map(({ label, icon: Icon, title }, i) => (
+        {CARD_STEPS.map(({ label, icon: Icon, title }, i) => (
           <button
             key={label}
             type="button"
             onClick={() => openIntro(i)}
             aria-label={`${label}: ${title.replace("\n", " ")}. Open the tour here`}
             className="absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base leading-5 font-semibold text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            style={{ left: at(TRAIL_STOPS[i]) }}
+            style={{ left: at(CARD_TRAIL_STOPS[i]) }}
           >
             {/* Flies to its stop on the tour's trail as the tour grows out of the card. */}
             <Icon
@@ -78,14 +81,14 @@ function CardTrail({ touring }: { touring: boolean }) {
       {/* The captions, under the track. Its stop's button already names each for screen
           readers, so these are only a wider place to click. */}
       <div aria-hidden className="relative mt-1 hidden h-12 @md:block">
-        {STEPS.map(({ label, title }, i) => (
+        {CARD_STEPS.map(({ label, title }, i) => (
           <button
             key={label}
             type="button"
             tabIndex={-1}
             onClick={() => openIntro(i)}
             className="absolute top-0 w-40 -translate-x-1/2 text-center text-base leading-6 whitespace-pre-line text-muted-foreground transition-colors hover:text-foreground"
-            style={{ left: at(TRAIL_STOPS[i]) }}
+            style={{ left: at(CARD_TRAIL_STOPS[i]) }}
           >
             {title}
           </button>
@@ -127,7 +130,9 @@ function FoldedWelcome() {
     <Button
       ref={ref}
       variant="outline"
-      onClick={() => setWelcomeFolded(false)}
+      onClick={() => foldWelcome(false)}
+      // The card's transition name: it glides from the card's place down to here, and back.
+      style={{ viewTransitionName: "tour" }}
       className="order-1 border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand-blue)_16%,var(--card))]"
     >
       <CircleHelpIcon className="text-(--brand-blue)" />
@@ -176,14 +181,14 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setWelcomeFolded(true)}
-              aria-label="Collapse How it works"
+              onClick={() => foldWelcome(true)}
+              aria-label="Dismiss How it works"
               className="-my-2 -mr-2 text-muted-foreground hover:text-foreground"
             >
               <XIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Collapse</TooltipContent>
+          <TooltipContent>Dismiss</TooltipContent>
         </Tooltip>
       </div>
       <CardTrail touring={touring} />

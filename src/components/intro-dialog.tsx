@@ -1,6 +1,6 @@
 "use client"
 
-import { BotIcon, PenLineIcon, SendIcon, ShieldCheckIcon, SignpostBigIcon, XIcon, type LucideIcon } from "lucide-react"
+import { BotIcon, FlagIcon, PenLineIcon, SendIcon, ShieldCheckIcon, SignpostBigIcon, XIcon, type LucideIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
-import { registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
+import { canMorph, morphTo, registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
 import { cn } from "@/lib/utils"
 
 /** Draft's tabs, kept by the dialog so the timeline can move between them. */
@@ -316,64 +316,76 @@ function Deliver({ active, deliver }: StepProps) {
   )
 }
 
-// What the app does, then what's in your hands, then the last steps, which are yours.
+/** The end of the trail, in the tour only: where you've got to, and Start. */
+function Done() {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <FlagIcon className="size-8 text-(--brand-blue)" aria-hidden />
+      <StepTitle className="text-center">You&apos;re ready</StepTitle>
+      <p className="max-w-md text-base text-balance text-muted-foreground">
+        Write your post in Compose, pick your destinations, then post it yourself or hand it to your agent.
+      </p>
+    </div>
+  )
+}
+
+// What the app does, then what's in your hands, then the last steps, which are yours, then the
+// end of the trail (the tour only: the welcome card shows the first three).
 export const STEPS: { label: string; icon: LucideIcon; title: string; Body: (props: StepProps) => React.ReactNode }[] = [
   // The welcome card keeps the line breaks (its captions); the dialog's description reads them as spaces.
   { label: "Draft", icon: PenLineIcon, title: "Write once,\npreview everywhere", Body: Draft },
   { label: "Decide", icon: SignpostBigIcon, title: "Pick your\ndestinations", Body: Decide },
   // Both of Deliver's ways, by hand or handed off (its tabs).
   { label: "Deliver", icon: SendIcon, title: "Post it yourself,\nor let an agent", Body: Deliver },
+  { label: "Done", icon: FlagIcon, title: "You're ready", Body: Done },
 ]
+
+// The welcome card's trail: Draft, Decide and Deliver (stretched to the card's width), which
+// grows into the tour's as the tour opens.
+export const CARD_TRAIL_W = 340
+export const CARD_TRAIL_STOPS = [24, 170, 316]
+export const CARD_TRAIL_Y = 58
+export const CARD_TRAIL = "M24 58C60 58 65 70 97 70S135 58 170 58 205 46 243 46 280 58 316 58"
 
 // The steps as stops on a winding trail, a nod to the signpost, and a timeline of the
 // introduction: a marker plays along the curve as the steps do, inking the way behind it, and
-// can be dragged back and forth. Stops sit at 0, 50 and 100% along the path (the two halves
-// are mirror images, so the same length): a place on the timeline runs from 0 (Draft) to 2
-// (Deliver), each step taking the stretch up to the next stop.
-// Exported for the welcome card, which draws the same trail (stretched to its width) and grows into this one.
-export const TRAIL_W = 340
-export const TRAIL_STOPS = [24, 170, 316]
-export const TRAIL_Y = 58
-export const TRAIL =
-  "M24 58C60 58 65 70 97 70S135 58 170 58 205 46 243 46 280 58 316 58"
+// can be dragged back and forth. The tour's trail goes one stop further than the card's, to
+// Done. Its three stretches are the same curve (the middle one mirrored), so the stops sit at
+// even thirds of its length: a place on the timeline runs from 0 (Draft) to 3 (Done), each
+// step taking the stretch up to the next stop. Small unlabeled nodes mark the tabs within a
+// step: Split and Images on Draft's stretch, the agent on Deliver's.
+const TRAIL_W = 340
+const TRAIL_STOPS = [20, 120, 220, 320]
+const TRAIL_Y = 58
+const TRAIL =
+  "M20 58c25 0 25 10 50 10s25 -10 50 -10c25 0 25 -10 50 -10s25 10 50 10c25 0 25 10 50 10s25 -10 50 -10"
 const TIMELINE_END = STEPS.length - 1
+/** Deliver's stop and Done's on the timeline. */
+const DELIVER_AT = 2
+/** Where Deliver's way (tab) `way` sits: Post it yourself at Deliver's stop, the agent halfway to Done. */
+const deliverAt = (way: number) => DELIVER_AT + way / DELIVER_WAYS.length
+/** Deliver's way at a place on its stretch. */
+const wayAt = (place: number) => Math.min(DELIVER_WAYS.length - 1, Math.floor((place - DELIVER_AT) * DELIVER_WAYS.length))
 /** How long the marker takes to glide to a new place, after Next, Back or a stop. */
 const JUMP_MS = 600
 /** How long Decide's drawing plays before moving on to Deliver: a first guess, then what the last pass took. */
 let DECIDE_MS = 8500
-/** Dragged past here, the timeline is at its end: Deliver. */
-const DELIVER_FROM = TIMELINE_END - 0.1
+/** Dragged past here, the timeline is at its end: Done. */
+const DONE_FROM = TIMELINE_END - 0.1
 
 /** A stretch of the timeline for the marker to play: from one place to another over `ms`. */
 type Stretch = { from: number; to: number; ms: number }
-
-/** Whether the tour can grow out of the welcome card: view transitions, and motion not reduced. */
-const canMorph = () =>
-  typeof document.startViewTransition === "function" && !matchMedia("(prefers-reduced-motion: reduce)").matches
-
-/**
- * The tour growing out of the card, or back: a view transition marked .tour-morphing for its
- * length (globals.css), so the page itself holds still and only the scrim fades, under the card's
- * move, rather than the whole page crossfading.
- */
-function morphTo(update: () => void) {
-  const root = document.documentElement
-  root.classList.add("tour-morphing")
-  const transition = document.startViewTransition(update)
-  transition.ready.catch(() => {})
-  transition.finished.finally(() => root.classList.remove("tour-morphing"))
-}
 
 /** Held at a place: the marker stays put, once the person has taken over from auto-play. */
 const still = (at: number): Stretch => ({ from: at, to: at, ms: 0 })
 
 /**
- * Where Draft's tab `part` starts on the timeline: each tab's share of Draft's stretch is its
- * drawing's length, so the marker keeps one pace through them.
+ * Where Draft's tab `part` starts on the timeline: each takes an even share of Draft's stretch,
+ * so the waypoints between Draft and Decide are evenly spaced (the marker crosses each share at
+ * its drawing's own pace).
  */
 function partStart(part: number) {
-  const total = PART_MS.reduce((a, b) => a + b, 0)
-  return PART_MS.slice(0, part).reduce((a, b) => a + b, 0) / total
+  return part / DRAFT_PARTS.length
 }
 
 /** Draft's tab at a place on its stretch. */
@@ -383,7 +395,10 @@ function partAt(place: number) {
   return part
 }
 
-/** The stretch for `step` (and Draft's `part`), from `at` or the start of it. */
+/**
+ * The stretch for `step` (and its tab `part`: Draft's, or Deliver's way), from `at` or the start
+ * of it. Deliver and Done don't play on by themselves: the marker waits at the place.
+ */
 function stretchFor(step: number, part: number, at?: number): Stretch {
   if (step === 0) {
     const start = partStart(part)
@@ -392,11 +407,26 @@ function stretchFor(step: number, part: number, at?: number): Stretch {
     return { from, to: end, ms: (PART_MS[part] * (end - from)) / (end - start) }
   }
   if (step === 1) {
-    const from = Math.min(TIMELINE_END, Math.max(1, at ?? 1))
-    return { from, to: TIMELINE_END, ms: DECIDE_MS * (TIMELINE_END - from) }
+    const from = Math.min(DELIVER_AT, Math.max(1, at ?? 1))
+    return { from, to: DELIVER_AT, ms: DECIDE_MS * (DELIVER_AT - from) }
   }
-  return { from: TIMELINE_END, to: TIMELINE_END, ms: 0 }
+  if (step === DELIVER_AT) return still(at ?? deliverAt(part))
+  return still(TIMELINE_END)
 }
+
+/** Where the tabs within steps sit on the timeline, for the trail's small nodes. */
+const nodePlaces = () => [
+  ...DRAFT_PARTS.slice(1).map((_, i) => partStart(i + 1)),
+  ...DELIVER_WAYS.slice(1).map((_, i) => deliverAt(i + 1)),
+]
+
+/**
+ * The trail's dots: the app's blue once the marker has reached them, and before that a gray
+ * light enough to stand out on the dotted path (brighter than the muted fill).
+ */
+const DOT_LIT = "var(--brand-blue)"
+const DOT_AHEAD = "color-mix(in oklab, var(--muted-foreground) 75%, transparent)"
+const dotFill = (place: number, at: number) => (place <= at + 0.001 ? DOT_LIT : DOT_AHEAD)
 
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
 
@@ -423,12 +453,29 @@ function Trail({
   const shown = useRef(stretch.from)
   const held = useRef<number | null>(null)
   const glide = useRef<{ from: number; start: number } | null>(null)
+  // The small nodes for the tabs within steps: where they fall on the curve, measured once drawn.
+  const [nodes, setNodes] = useState<{ place: number; x: number; y: number }[]>([])
+  useLayoutEffect(() => {
+    const path = pathRef.current
+    if (!path) return
+    const total = path.getTotalLength()
+    setNodes(
+      nodePlaces().map((place) => {
+        const p = path.getPointAtLength((place / TIMELINE_END) * total)
+        return { place, x: p.x, y: p.y }
+      }),
+    )
+  }, [])
 
   const draw = (at: number) => {
     shown.current = at
     const percent = (at / TIMELINE_END) * 100
     if (markerRef.current) markerRef.current.style.offsetDistance = `${percent}%`
     if (inkRef.current) inkRef.current.style.strokeDashoffset = String(100 - percent)
+    // Each dot lights as the marker reaches it, not when its step's drawing ends.
+    pathRef.current?.ownerSVGElement?.querySelectorAll<SVGCircleElement>("circle[data-place]").forEach((dot) => {
+      dot.style.fill = dotFill(Number(dot.dataset.place), at)
+    })
   }
 
   // A new stretch: glide there from where the marker is (unless it was just let go there), then play it.
@@ -511,14 +558,28 @@ function Trail({
           strokeDasharray="100"
           strokeDashoffset={100}
         />
+        {/* The stops, then the tabs within steps as small nodes along the way (no labels). Each
+            is lit as the marker passes it (draw); the first fill is from where it starts. */}
         {TRAIL_STOPS.map((x, i) => (
           <circle
             key={x}
+            data-place={i}
             cx={x}
             cy={TRAIL_Y}
             r={4}
-            className="transition-colors duration-700"
-            style={{ fill: i <= step ? "var(--brand-blue)" : "var(--muted)" }}
+            className="transition-[fill] duration-200"
+            style={{ fill: dotFill(i, stretch.from) }}
+          />
+        ))}
+        {nodes.map(({ place, x, y }) => (
+          <circle
+            key={place}
+            data-place={place}
+            cx={x}
+            cy={y}
+            r={2.5}
+            className="transition-[fill] duration-200"
+            style={{ fill: dotFill(place, stretch.from) }}
           />
         ))}
       </svg>
@@ -600,10 +661,10 @@ export function IntroDialog() {
   const [way, setWay] = useState(0)
   // After Start, focus goes to Compose.
   const toCompose = useRef(false)
-  // Next and Back walk every tab in turn: Draft's three, Decide, then Deliver's two. Back hides on
-  // the first (Draft's Write); on the last (Deliver's agent tab), Next becomes Start.
+  // Next and Back walk every tab in turn: Draft's three, Decide, Deliver's two, then Done. Back
+  // hides on the first (Draft's Write); at Done, Next becomes Start.
   const first = step === 0 && part === 0
-  const last = step === STEPS.length - 1 && way === DELIVER_WAYS.length - 1
+  const last = step === TIMELINE_END
   // The welcome card's title, which rolls into the tour's as the tour grows out of the card: read
   // when the tour opens (a ref, as the opener is registered once), and kept for that opening.
   const welcome = useWelcome()
@@ -647,10 +708,12 @@ export function IntroDialog() {
       }),
     [],
   )
-  const onOpenChange = (next: boolean) => {
+  /** Closes the tour; `also` changes something else in the same step (Start folds the welcome card). */
+  const onOpenChange = (next: boolean, also?: () => void) => {
     if (next) return
     const hide = () =>
       flushSync(() => {
+        also?.()
         setOpen(false)
         setTourOpen(false)
       })
@@ -659,8 +722,11 @@ export function IntroDialog() {
     else hide()
   }
   const contentRef = useRef<HTMLDivElement>(null)
-  /** To step `to`: by the person's hand (taking over from auto-play), or as the drawings move on by themselves (`auto`). */
-  const go = (to: number, auto = false) => {
+  /**
+   * To step `to`: by the person's hand (taking over from auto-play), or as the drawings move on by
+   * themselves (`auto`). Deliver opens on its way `toWay` (Post it yourself, unless coming back).
+   */
+  const go = (to: number, auto = false, toWay = 0) => {
     if (auto && manual) return
     const held = manual || !auto
     if (!auto) {
@@ -672,7 +738,8 @@ export function IntroDialog() {
     if (next === 0 && contentRef.current?.contains(document.activeElement) && document.activeElement?.textContent === "Back")
       contentRef.current.focus()
     setStep(next)
-    setStretch(stretchAt(next, part, held))
+    if (next === DELIVER_AT) setWay(toWay)
+    setStretch(stretchAt(next, next === DELIVER_AT ? toWay : part, held))
   }
   const showPart = (next: number, held = manual) => {
     setPrevious(part)
@@ -695,20 +762,18 @@ export function IntroDialog() {
     setManual(true)
     setPicked(true)
     setWay(next)
+    setStretch(still(deliverAt(next)))
   }
   /** Next: the next tab within a step (Draft's, Deliver's), else on to the next step's first. */
   const forward = () => {
     if (step === 0 && part < DRAFT_PARTS.length - 1) return draft.pick(part + 1)
-    if (step === STEPS.length - 1) {
-      if (way < DELIVER_WAYS.length - 1) pickWay(way + 1)
-      return
-    }
-    if (step === 1) setWay(0)
-    go(step + 1)
+    if (step === DELIVER_AT && way < DELIVER_WAYS.length - 1) return pickWay(way + 1)
+    if (step < TIMELINE_END) go(step + 1)
   }
   /** Back: the tab before within a step, else the last tab of the step before. */
   const backward = () => {
-    if (step === STEPS.length - 1 && way > 0) return pickWay(way - 1)
+    if (step === TIMELINE_END) return go(DELIVER_AT, false, DELIVER_WAYS.length - 1)
+    if (step === DELIVER_AT && way > 0) return pickWay(way - 1)
     if (step === 0) {
       if (part === 0) return
       // Back hides on the first tab: focus moves to the dialog, where the arrow keys work.
@@ -723,9 +788,10 @@ export function IntroDialog() {
   }
   /** The marker dragged along the timeline: the step and Draft's tab follow it, and it plays on from where it's let go. */
   const scrub = (at: number, done: boolean) => {
-    const place = at >= DELIVER_FROM ? TIMELINE_END : at
+    const place = at >= DONE_FROM ? TIMELINE_END : at
     const nextStep = place >= TIMELINE_END ? TIMELINE_END : Math.floor(place)
-    const nextPart = nextStep === 0 ? partAt(place) : part
+    const nextPart = nextStep === 0 ? partAt(place) : nextStep === DELIVER_AT ? wayAt(place) : part
+    if (nextStep === DELIVER_AT && nextPart !== way) setWay(nextPart)
     if (nextStep !== step) setStep(nextStep)
     if (nextStep === 0 && nextPart !== part) {
       setPrevious(part)
@@ -746,8 +812,9 @@ export function IntroDialog() {
         showCloseButton={false}
         // Pinned near the top rather than centered, so the steps and buttons stay put while
         // the content below changes height; a long step scrolls under them.
+        // Wider on big screens, so the drawings (which fill the frame's width) come out larger.
         className={cn(
-          "top-[max(1rem,6dvh)] flex max-h-[calc(100dvh-max(1rem,6dvh)-1rem)] translate-y-0 flex-col gap-0 p-0 sm:max-w-2xl",
+          "top-[max(1rem,6dvh)] flex max-h-[calc(100dvh-max(1rem,6dvh)-1rem)] translate-y-0 flex-col gap-0 p-0 sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl",
           // The welcome card's transition name while open, so the card grows into it and back.
           open && "[view-transition-name:tour]",
           // Important, to win over the dialog's own enter and exit animations.
@@ -809,7 +876,13 @@ export function IntroDialog() {
           <div className="mt-1 grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-x-4 max-sm:grid-cols-[4.5rem_4.5rem] max-sm:justify-between max-sm:gap-y-2 sm:gap-x-6">
             {/* Phones: the trail (340px) scaled to 90% so its end stops' names fit the panel. */}
             <div className="justify-self-center max-sm:col-span-2 max-sm:scale-90 sm:col-start-2">
-              <Trail step={step} stretch={stretch} onGo={go} onScrub={scrub} named={open} />
+              <Trail
+              step={step}
+              stretch={stretch}
+              onGo={go}
+              onScrub={scrub}
+              named={open}
+            />
             </div>
             <Button
               variant="secondary"
@@ -825,9 +898,9 @@ export function IntroDialog() {
               onClick={() => {
                 if (!last) return forward()
                 toCompose.current = true
-                // Start, at the end: the welcome card folds to its button below Compose.
-                setWelcomeFolded(true)
-                onOpenChange(false)
+                // Start, at the end: the welcome card folds to its button below Compose, in the
+                // same step as the tour closes, so the tour shrinks into the button.
+                onOpenChange(false, () => setWelcomeFolded(true))
               }}
             >
               {last ? "Start" : "Next"}
