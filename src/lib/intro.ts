@@ -144,24 +144,27 @@ export const canMorph = () =>
 /**
  * A morph of the welcome card (into the tour, its folded button, or back): a view transition
  * marked .tour-morphing for its length (globals.css), so the page itself holds still and only
- * the moving parts (and the tour's scrim) change, rather than the whole page crossfading.
+ * the moving parts (and the tour's scrim) change, rather than the whole page crossfading. `kind`
+ * marks a particular morph for its own styling (the card folding, .card-folding).
  */
-export function morphTo(update: () => void) {
+export function morphTo(update: () => void, kind?: string) {
   const root = document.documentElement
   root.classList.add("tour-morphing")
+  if (kind) root.classList.add(kind)
   const transition = document.startViewTransition(update)
   transition.ready.catch(() => {})
-  transition.finished.finally(() => root.classList.remove("tour-morphing"))
+  transition.finished.finally(() => root.classList.remove("tour-morphing", ...(kind ? [kind] : [])))
 }
 
 /**
- * Fold the welcome card to its button below Compose, gliding down into it (the card and the
- * button share the transition name "tour") where motion allows, so it's clear where it went.
- * Opening it again from the button is immediate (setWelcomeFolded).
+ * Fold the welcome card to its button below Compose, shrinking down into it (the card and the
+ * button share the transition name "tour") where motion allows, so it's clear where it went: the
+ * card moves as one piece and nothing stretches (.card-folding in globals.css). Opening it again
+ * from the button is immediate (setWelcomeFolded).
  */
 export function foldWelcome() {
   if (!canMorph()) return setWelcomeFolded(true)
-  morphTo(() => flushSync(() => setWelcomeFolded(true)))
+  morphTo(() => flushSync(() => setWelcomeFolded(true)), "card-folding")
 }
 
 // The introduction's dialog sits on the page with no button of its own; the welcome card asks it to open at a step.

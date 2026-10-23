@@ -217,10 +217,14 @@ export function ComposeEditor({
       }
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
       const children = [...column.children] as HTMLElement[]
-      // Everything but the text box, with the 1rem gaps between the column's parts.
-      const others = children.reduce((sum, el) => sum + el.offsetHeight, 0) + rem * (children.length - 1) - ta.offsetHeight
+      // Everything but the text box, with the 1rem gaps between the column's parts. Fractional
+      // heights, as the box eases to a new height: rounded ones would retarget it a pixel each way.
+      const height = (el: HTMLElement) => el.getBoundingClientRect().height
+      const others = children.reduce((sum, el) => sum + height(el), 0) + rem * (children.length - 1) - height(ta)
       const available = parseFloat(getComputedStyle(column).minHeight) // the window less 6rem
-      ta.style.minHeight = `${Math.max(0, Math.min(TEXT_BOX_HEIGHT, available - others))}px`
+      const target = Math.round(Math.max(0, Math.min(TEXT_BOX_HEIGHT, available - others)))
+      // Only a real change: setting it again restarts the ease.
+      if (Math.abs(target - (parseFloat(ta.style.minHeight) || 0)) >= 1) ta.style.minHeight = `${target}px`
       // Pinned 5rem down (below the header) when it fits; higher by the overflow when it
       // doesn't, so its bottom can still reach 1rem above the window's edge.
       column.style.top = `${Math.min(5 * rem, window.innerHeight - rem - column.offsetHeight)}px`
@@ -229,10 +233,21 @@ export function ComposeEditor({
     const ro = new ResizeObserver(fit)
     ro.observe(column)
     for (const child of column.children) ro.observe(child)
+    // The tips below Compose come and go (a card folding, the reminder appearing) in ways the
+    // resize watch can miss, leaving the box at a stale height until something else moves it (a
+    // theme switch, mid-transition). So any change in the column fits it again, once a frame.
+    let frame = 0
+    const later = () => {
+      if (!frame) frame = requestAnimationFrame(() => ((frame = 0), fit()))
+    }
+    const mo = new MutationObserver(later)
+    mo.observe(column, { childList: true, subtree: true })
     wide.addEventListener("change", fit)
     window.addEventListener("resize", fit)
     return () => {
       ro.disconnect()
+      mo.disconnect()
+      cancelAnimationFrame(frame)
       wide.removeEventListener("change", fit)
       window.removeEventListener("resize", fit)
     }
@@ -438,8 +453,9 @@ export function ComposeEditor({
           onScroll={measure}
           placeholder="What's happening?"
           // Wide screens: grows with its text, never scrolling inside; its minimum height is set
-          // below (fitToWindow) from the room the Compose column has left.
-          className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none"
+          // below (fitToWindow) from the room the Compose column has left, and eases to a new one
+          // (a tip below folding or opening), so what's under it slides rather than jumps.
+          className="max-h-[70vh] min-h-48 text-base leading-7 [scrollbar-gutter:stable] md:text-base lg:max-h-none lg:transition-[color,box-shadow,min-height] lg:duration-300 lg:ease-out"
           autoFocus
         />
         {style && (
