@@ -25,13 +25,14 @@ export default function Home() {
             <span className="[text-box:trim-both_cap_alphabetic]">Crosspost</span>
           </h1>
           <div className="flex items-center gap-1">
-            <IntroDialog />
             <ThemeToggle />
             <SettingsDialog />
           </div>
         </div>
       </header>
       <ComposerLoader />
+      {/* The introduction, opened from the welcome card (it has no button of its own). */}
+      <IntroDialog />
       {/* On wide screens the footer sits under the Compose column instead (see the composer). */}
       <MadeBy className="mx-auto mt-auto w-full max-w-7xl px-4 pb-4 sm:px-6 lg:hidden" />
       {/* A tuning panel for the background noise, on the dev server only (?lab). */}

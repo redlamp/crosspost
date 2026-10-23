@@ -48,7 +48,7 @@ export function SplitViewTip() {
       aria-label="Reminder"
       // Opaque (the card color with the amber tint mixed in), so the page's blue glow
       // doesn't show through and clash with the amber.
-      className="flex flex-wrap items-center gap-x-1.5 gap-y-2 rounded-xl border max-sm:hidden border-amber-500/40 bg-[color-mix(in_oklab,var(--color-amber-500)_8%,var(--card))] p-4 text-sm text-muted-foreground dark:border-amber-400/35 dark:bg-[color-mix(in_oklab,var(--color-amber-400)_8%,var(--card))]"
+      className="flex w-full flex-wrap items-center gap-x-1.5 gap-y-2 rounded-xl border max-sm:hidden border-amber-500/40 bg-[color-mix(in_oklab,var(--color-amber-500)_8%,var(--card))] p-4 text-sm text-muted-foreground dark:border-amber-400/35 dark:bg-[color-mix(in_oklab,var(--color-amber-400)_8%,var(--card))]"
     >
       <LightbulbIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
       <span className="mr-0.5 font-medium text-amber-700 dark:text-amber-300">Reminder:</span>

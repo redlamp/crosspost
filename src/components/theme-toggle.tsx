@@ -4,6 +4,7 @@ import { MoonIcon, SunIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Switch the theme with the new one blooming out from the page's blue glow (its corner at the
@@ -36,16 +37,22 @@ function switchTheme(next: string, setTheme: (theme: string) => void) {
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
 
-  // Both icons render and CSS picks one, so server and client markup match.
+  // Both icons render and CSS picks one, so server and client markup match. The hover card
+  // names the theme a click switches to (it only renders once open, on the client).
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label="Toggle light and dark theme"
-      onClick={() => switchTheme(resolvedTheme === "dark" ? "light" : "dark", setTheme)}
-    >
-      <SunIcon className="hidden dark:block" />
-      <MoonIcon className="dark:hidden" />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Toggle light and dark theme"
+          onClick={() => switchTheme(resolvedTheme === "dark" ? "light" : "dark", setTheme)}
+        >
+          <SunIcon className="hidden dark:block" />
+          <MoonIcon className="dark:hidden" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{resolvedTheme === "dark" ? "Light theme" : "Dark theme"}</TooltipContent>
+    </Tooltip>
   )
 }
