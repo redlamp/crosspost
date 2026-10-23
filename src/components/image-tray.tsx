@@ -346,7 +346,11 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
         />
       )}
       <ol
-        className="grid grid-cols-4 gap-2"
+        // Four across, the largest tiles; past four images (and the add slot), a column more for
+        // each, up to eight. Where eight would make the tiles too small, four across, with the
+        // rest on a second line.
+        className="grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-2 @max-[32rem]:grid-cols-4"
+        style={{ "--cols": Math.min(8, Math.max(4, images.length + (images.length < MAX_IMAGES ? 1 : 0))) } as React.CSSProperties}
         aria-label="Staged images"
         // Drag a tile onto another to reorder; the edge it lands by lights up.
         onDragOver={(e) => {
@@ -374,21 +378,18 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
             data-image-id={img.id}
             className="group relative aspect-square overflow-hidden rounded-md border bg-muted"
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
-                <img
-                  src={img.url}
-                  alt={img.name}
-                  draggable
-                  onDragStart={(e) => dragOut(e, img, "tray")}
-                  onDragEnd={() => setInsert(null)}
-                  onPointerUp={(e) => e.pointerType !== "mouse" && setTapped(tapped === img.id ? null : img.id)}
-                  className="size-full cursor-grab object-cover"
-                />
-              </TooltipTrigger>
-              <TooltipContent className="max-w-64">{img.name}</TooltipContent>
-            </Tooltip>
+            {/* No hover card: the file name says little (a pasted image's is made up), and the ALT
+                badge shows the alt text when hovered. The name is kept for downloads and sharing. */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
+            <img
+              src={img.url}
+              alt={img.alt || `Image ${i + 1}`}
+              draggable
+              onDragStart={(e) => dragOut(e, img, "tray")}
+              onDragEnd={() => setInsert(null)}
+              onPointerUp={(e) => e.pointerType !== "mouse" && setTapped(tapped === img.id ? null : img.id)}
+              className="size-full cursor-grab object-cover"
+            />
             {insert?.id === img.id && (
               <span
                 aria-hidden
@@ -419,8 +420,8 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                     aria-label={img.alt ? `Edit alt text for image ${i + 1}` : `Add alt text for image ${i + 1}`}
                     className={cn(
                       "absolute top-0 left-0 grid h-6 place-items-center rounded-md px-1.5 text-[11px] leading-none font-bold tracking-wide text-white backdrop-blur-sm transition-colors",
-                      // With alt text: the blue of the copied checks, so it's plain it has some.
-                      img.alt ? "bg-sky-500 hover:bg-sky-600" : "bg-black/60 hover:bg-black/80",
+                      // With alt text: the app's blue, as on the copied checks, so it's plain it has some.
+                      img.alt ? "bg-(--brand-blue) hover:bg-(--brand-blue)/85" : "bg-black/60 hover:bg-black/80",
                     )}
                   >
                     <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
@@ -633,9 +634,8 @@ export function ImageStrip({
           }
           return (
             <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
-              {/* A div acting as the button: Firefox won't start a drag from inside a real <button>. */}
-              <Tooltip>
-                <TooltipTrigger asChild>
+              {/* A div acting as the button: Firefox won't start a drag from inside a real <button>.
+                  No hover card on the image: the ALT badge shows the alt text when hovered. */}
                   <div
                     role="button"
                     tabIndex={0}
@@ -672,9 +672,6 @@ export function ImageStrip({
                       className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
                     />
                   </div>
-                </TooltipTrigger>
-                {!moving && <TooltipContent className="max-w-64">{img.name}</TooltipContent>}
-              </Tooltip>
               {img.alt && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -689,7 +686,7 @@ export function ImageStrip({
                         }
                       }}
                       aria-label={`Copy alt text for image ${n}`}
-                      className="absolute -top-2 -left-2 grid h-4 place-items-center rounded-full bg-sky-500 px-1.5 text-[10px] leading-none font-bold text-white ring-2 ring-background transition-colors hover:bg-sky-600"
+                      className="absolute -top-2 -left-2 grid h-4 place-items-center rounded-full bg-(--brand-blue) px-1.5 text-[10px] leading-none font-bold text-white ring-2 ring-background transition-colors hover:bg-(--brand-blue)/85"
                     >
                       <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
                     </button>

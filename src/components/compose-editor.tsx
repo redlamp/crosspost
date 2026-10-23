@@ -1,6 +1,6 @@
 "use client"
 
-import { ScissorsIcon } from "lucide-react"
+import { PenLineIcon, ScissorsIcon } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
@@ -397,6 +397,8 @@ export function ComposeEditor({
     <div className="space-y-3 lg:flex lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Label htmlFor="compose" className="text-base font-semibold">
+          {/* The pencil the platform row's Compose button uses too. */}
+          <PenLineIcon className="size-4 text-muted-foreground" aria-hidden />
           Compose
         </Label>
         {chips.length > 0 && (

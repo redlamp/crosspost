@@ -13,8 +13,9 @@ function isChrome() {
 }
 
 /**
- * A reminder about opening the manual platforms beside Crosspost. Only shown in Chrome.
- * Its X collapses it to a bulb button that opens it again (remembered in this browser).
+ * A reminder about opening the manual platforms beside Crosspost. Only shown in Chrome, and
+ * not at phone widths, where there's no split view to open them in. Its X collapses it to a
+ * bulb button that opens it again (remembered in this browser).
  */
 export function SplitViewTip() {
   const [closed, setClosed] = useStoredState("crosspost:split-view-tip-closed", false)
@@ -23,7 +24,7 @@ export function SplitViewTip() {
   if (closed) {
     return (
       // A wrapper, so the button keeps its own width in the Compose column.
-      <div>
+      <div className="max-sm:hidden">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -47,7 +48,7 @@ export function SplitViewTip() {
       aria-label="Reminder"
       // Opaque (the card color with the amber tint mixed in), so the page's blue glow
       // doesn't show through and clash with the amber.
-      className="flex flex-wrap items-center gap-x-1.5 gap-y-2 rounded-xl border border-amber-500/40 bg-[color-mix(in_oklab,var(--color-amber-500)_8%,var(--card))] p-4 text-sm text-muted-foreground dark:border-amber-400/35 dark:bg-[color-mix(in_oklab,var(--color-amber-400)_8%,var(--card))]"
+      className="flex flex-wrap items-center gap-x-1.5 gap-y-2 rounded-xl border max-sm:hidden border-amber-500/40 bg-[color-mix(in_oklab,var(--color-amber-500)_8%,var(--card))] p-4 text-sm text-muted-foreground dark:border-amber-400/35 dark:bg-[color-mix(in_oklab,var(--color-amber-400)_8%,var(--card))]"
     >
       <LightbulbIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
       <span className="mr-0.5 font-medium text-amber-700 dark:text-amber-300">Reminder:</span>

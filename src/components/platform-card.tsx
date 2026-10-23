@@ -14,7 +14,7 @@ import {
   Undo2Icon,
   UndoDotIcon,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
@@ -30,6 +30,7 @@ import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
 import { dropTarget, moveType, type StagedImage } from "@/lib/images"
 import { serverHost, usePlatformSettings } from "@/lib/platform-settings"
 import { canShare } from "@/lib/share"
+import { findMentions } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
 const NEAR_LIMIT = 0.9
@@ -119,8 +120,8 @@ type Props = {
   /** The @tags in this platform's posts, and those confirmed as right here. */
   tags: string[]
   checkedTags: readonly string[]
-  /** Confirm the tags (or take it back). */
-  onTagsChecked: (checked: boolean) => void
+  /** Confirm these tags (one post's), or take it back. */
+  onTagsChecked: (tags: string[], checked: boolean) => void
   /** The user has moved this platform's splits by hand. */
   customSplits?: boolean
   onResetSplits?: () => void
@@ -139,6 +140,50 @@ type Props = {
   onReorderImage?: (id: string, target: string, after: boolean) => void
   /** Go back to the tray's order. */
   onMatchCompose?: () => void
+}
+
+/**
+ * The tags in one post, to confirm for this platform: "Check tags: @alice" with Confirm; once
+ * confirmed, a quiet line with Undo.
+ */
+function TagCheck({
+  tags,
+  checked,
+  platform,
+  onChecked,
+}: {
+  tags: string[]
+  checked: boolean
+  platform: string
+  onChecked: (checked: boolean) => void
+}) {
+  if (checked) {
+    return (
+      <p className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
+        <CheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
+        <span className="mr-auto">Tags checked: {tags.join(", ")}</span>
+        <button
+          type="button"
+          onClick={() => onChecked(false)}
+          className="text-xs underline underline-offset-4 hover:text-foreground"
+        >
+          Undo
+        </button>
+      </p>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+      <AtSignIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <span className="mr-auto">
+        Check tags: <span className="font-medium">{tags.join(", ")}</span>
+      </span>
+      <Button variant="outline" size="sm" onClick={() => onChecked(true)} aria-label={`Confirm the tags are right on ${platform}`}>
+        <CheckIcon />
+        Confirm
+      </Button>
+    </div>
+  )
 }
 
 export function PlatformCard({
@@ -252,7 +297,7 @@ export function PlatformCard({
       className={cn(
         // The app's own border and surface, as every card has; the logo carries the brand
         // (tints made gray marks look switched off and pink ones look like errors).
-        "scroll-mt-32 gap-4 py-4 outline-none lg:scroll-mt-20",
+        "scroll-mt-32 scroll-mb-4 gap-4 py-4 outline-none lg:scroll-mt-20",
         !enabled && "opacity-60",
         // Done: dimmed a little, still readable, so what is left stands out.
         enabled && posted && "opacity-75",
@@ -323,37 +368,6 @@ export function PlatformCard({
         </CardContent>
       )}
 
-      {enabled && tags.length > 0 && (
-        <CardContent className="px-4">
-          {tagsChecked ? (
-            // Confirmed: a quiet line, with a way to take it back.
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckIcon className="size-4 shrink-0 text-sky-600 dark:text-sky-400" />
-              <span className="mr-auto">Tags checked: {tags.join(", ")}</span>
-              <button
-                type="button"
-                onClick={() => onTagsChecked(false)}
-                className="text-xs underline underline-offset-4 hover:text-foreground"
-              >
-                Undo
-              </button>
-            </p>
-          ) : (
-            // A handle can mean a different account, or nobody, on each platform: a step to confirm.
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
-              <AtSignIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-              <span className="mr-auto">
-                Check these tags are right on {adapter.name}: <span className="font-medium">{tags.join(", ")}</span>
-              </span>
-              <Button variant="outline" size="sm" onClick={() => onTagsChecked(true)}>
-                <CheckIcon />
-                Tags look right
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      )}
-
       {enabled && needsImage && (
         <CardContent className="px-4">
           <p className="text-sm text-muted-foreground">{adapter.name} posts need a photo or video. Add one above.</p>
@@ -396,186 +410,200 @@ export function PlatformCard({
           )}
           <ol className="space-y-2">
             {chunks.map((chunk, i) => {
+              const postTags = findMentions(chunk)
               const n = adapter.count(chunk)
               const what = chunks.length > 1 ? `${adapter.name} post ${i + 1}` : `${adapter.name} post`
               const edit = edits[i]
               const open = editing === i || !!edit
               return (
-                <li
-                  key={i}
-                  className={cn(
-                    "rounded-md border bg-background/40 p-3 transition-colors",
-                    // Edited on this platform: the whole post goes orange.
-                    edit && "border-orange-500/70 bg-orange-500/10 dark:border-orange-400/60 dark:bg-orange-400/10",
-                    dropOn?.post === i && !dropOn.target && "border-(--brand-blue)/60 bg-(--brand-blue)/10",
-                  )}
-                  // The whole post takes an image dragged from another of this card's
-                  // posts; dropped beside an image, it also takes that place in the order.
-                  onDragOver={(e) => {
-                    const at = dropAt(e, i)
-                    if (!at) {
-                      if (dropOn?.post === i) setDropOn(null)
-                      return
-                    }
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = "move"
-                    if (!sameDrop(dropOn, at)) setDropOn(at)
-                  }}
-                  onDragLeave={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dropOn?.post === i) setDropOn(null)
-                  }}
-                  onDrop={(e) => {
-                    setDropOn(null)
-                    const at = dropAt(e, i)
-                    if (!at) return
-                    e.preventDefault()
-                    const id = e.dataTransfer.getData(moveType(adapter.id))
-                    if (splits && movingFrom !== i) onMoveImage?.(id, i, at.onlyHere)
-                    if (at.target) onReorderImage?.(id, at.target.id, at.target.after)
-                    setMovingFrom(null)
-                  }}
-                >
-                  {open ? (
-                    <>
-                      <Textarea
-                        value={chunk}
-                        onChange={(e) => onEditPost(i, e.target.value)}
-                        onBlur={() => editing === i && setEditing(null)}
-                        onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
-                        aria-label={`Edit ${what}`}
-                        autoFocus={editing === i}
-                        className={cn(
-                          "min-h-0 bg-background/60 px-2 py-1.5 text-sm md:text-sm",
-                          // Edited: the orange post around it says so; the box drops its own outline.
-                          edit &&
-                            "border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-orange-500/30",
-                        )}
+                <Fragment key={i}>
+                  {postTags.length > 0 && (
+                    // Just above the post that has them: a handle can mean a different account, or
+                    // nobody, on each platform, so they're a step to confirm.
+                    <li className="list-none">
+                      <TagCheck
+                        tags={postTags}
+                        checked={postTags.every((t) => checkedTags.includes(t))}
+                        platform={adapter.name}
+                        onChecked={(on) => onTagsChecked(postTags, on)}
                       />
-                      {edit && edit.base !== generated[i] && (
-                        <p className="mt-1 text-xs text-muted-foreground">Compose has changed since this edit.</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
+                    </li>
                   )}
-                  {(() => {
-                    const items = shown.filter(({ img }) => postOf(img.id) === i)
-                    const showHidden = i === 0 && hiddenCount > 0
-                    const showMatch = i === 0 && !!ownOrder
-                    if (items.length === 0 && !showHidden && !showMatch && !(movingFrom !== null && splits)) return null
-                    return (
-                      <div className="mt-2">
-                        <ImageStrip
-                          items={items}
-                          platform={adapter}
-                          copied={copiedImages}
-                          onCopiedChange={(id, copied) => onCopiedImagesChange([id], copied)}
-                          onHide={onHideImage}
-                          hiddenCount={showHidden ? hiddenCount : 0}
-                          onShowHidden={onShowHidden}
-                          movable={splits}
-                          moving={movingFrom !== null && movingFrom !== i}
-                          onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
-                          hovered={dropOn?.post === i && !dropOn.target}
-                          onlyHere={keyHeld}
-                          insert={dropOn?.post === i ? dropOn.target : null}
-                          onMatchCompose={showMatch ? onMatchCompose : undefined}
-                        />
-                      </div>
-                    )
-                  })()}
-                  <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-                    <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
-                      {chunks.length > 1 && (
-                        <>
-                          {manualStarts[i] && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <ScissorsIcon
-                                  aria-label="Starts at a split moved by hand"
-                                  className="mr-1 inline size-3.5 align-[-2px] text-(--brand-blue)"
-                                />
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom">Starts at a split moved by hand</TooltipContent>
-                            </Tooltip>
+                  <li
+                    className={cn(
+                      "rounded-md border bg-background/40 p-3 transition-colors",
+                      // Edited on this platform: the whole post goes orange.
+                      edit && "border-orange-500/70 bg-orange-500/10 dark:border-orange-400/60 dark:bg-orange-400/10",
+                      dropOn?.post === i && !dropOn.target && "border-(--brand-blue)/60 bg-(--brand-blue)/10",
+                    )}
+                    // The whole post takes an image dragged from another of this card's
+                    // posts; dropped beside an image, it also takes that place in the order.
+                    onDragOver={(e) => {
+                      const at = dropAt(e, i)
+                      if (!at) {
+                        if (dropOn?.post === i) setDropOn(null)
+                        return
+                      }
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = "move"
+                      if (!sameDrop(dropOn, at)) setDropOn(at)
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dropOn?.post === i) setDropOn(null)
+                    }}
+                    onDrop={(e) => {
+                      setDropOn(null)
+                      const at = dropAt(e, i)
+                      if (!at) return
+                      e.preventDefault()
+                      const id = e.dataTransfer.getData(moveType(adapter.id))
+                      if (splits && movingFrom !== i) onMoveImage?.(id, i, at.onlyHere)
+                      if (at.target) onReorderImage?.(id, at.target.id, at.target.after)
+                      setMovingFrom(null)
+                    }}
+                  >
+                    {open ? (
+                      <>
+                        <Textarea
+                          value={chunk}
+                          onChange={(e) => onEditPost(i, e.target.value)}
+                          onBlur={() => editing === i && setEditing(null)}
+                          onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
+                          aria-label={`Edit ${what}`}
+                          autoFocus={editing === i}
+                          className={cn(
+                            "min-h-0 bg-background/60 px-2 py-1.5 text-sm md:text-sm",
+                            // Edited: the orange post around it says so; the box drops its own outline.
+                            edit &&
+                              "border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-orange-500/30",
                           )}
-                          {/* Its own width: a tabular "1" is padded out to a "0"'s and would crowd the dot. */}
-                          <span className="proportional-nums">{i + 1}</span>
-                          <Dot />
-                        </>
-                      )}
-                      {n.toLocaleString()} / {adapter.limit.toLocaleString()}
-                    </span>
-                    {/* The post and its images to the platform's app, where there's a share sheet (phones). */}
-                    <ShareButton
-                      adapter={adapter}
-                      text={chunk}
-                      images={shown.filter(({ img }) => postOf(img.id) === i).map(({ img }) => img)}
-                      what={what}
-                      onShared={(ids, textWent) => {
-                        if (ids.length) markCopied(ids)
-                        if (textWent) onPostCopied(chunk)
-                      }}
-                    />
-                    {i === 0 && (
-                      <Button variant="outline" size="sm" asChild>
-                        {/* Opening it prefilled delivers the text, so it counts as copied. */}
-                        <a
-                          href={adapter.open.url(chunk, server)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => onPostCopied(chunk)}
-                        >
-                          <ExternalLinkIcon />
-                          {adapter.open.label}
-                        </a>
-                      </Button>
-                    )}
-                    {edit ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="icon-sm"
-                            onClick={() => {
-                              setEditing(null)
-                              onEditPost(i, null)
-                            }}
-                            aria-label={`Reset ${what} to Compose`}
-                            className="border-orange-500/60 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
-                          >
-                            <Undo2Icon />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">Reset to Compose</TooltipContent>
-                      </Tooltip>
+                        />
+                        {edit && edit.base !== generated[i] && (
+                          <p className="mt-1 text-xs text-muted-foreground">Compose has changed since this edit.</p>
+                        )}
+                      </>
                     ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="icon-sm"
-                            aria-pressed={editing === i}
-                            // Keep the box's blur from closing it before this click toggles it.
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => setEditing(editing === i ? null : i)}
-                            aria-label={`Edit ${what}`}
-                          >
-                            <PencilIcon />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{editing === i ? "Done" : "Edit"}</TooltipContent>
-                      </Tooltip>
+                      <p className="max-h-80 overflow-y-auto text-sm break-words whitespace-pre-wrap">{chunk}</p>
                     )}
-                    <CopyButton
-                      text={chunk}
-                      what={what}
-                      iconOnly
-                      done={copiedPosts.includes(chunk)}
-                      onCopied={() => onPostCopied(chunk)}
-                    />
-                  </div>
-                </li>
+                    {(() => {
+                      const items = shown.filter(({ img }) => postOf(img.id) === i)
+                      const showHidden = i === 0 && hiddenCount > 0
+                      const showMatch = i === 0 && !!ownOrder
+                      if (items.length === 0 && !showHidden && !showMatch && !(movingFrom !== null && splits)) return null
+                      return (
+                        <div className="mt-2">
+                          <ImageStrip
+                            items={items}
+                            platform={adapter}
+                            copied={copiedImages}
+                            onCopiedChange={(id, copied) => onCopiedImagesChange([id], copied)}
+                            onHide={onHideImage}
+                            hiddenCount={showHidden ? hiddenCount : 0}
+                            onShowHidden={onShowHidden}
+                            movable={splits}
+                            moving={movingFrom !== null && movingFrom !== i}
+                            onMovingChange={(moving) => setMovingFrom(moving ? i : null)}
+                            hovered={dropOn?.post === i && !dropOn.target}
+                            onlyHere={keyHeld}
+                            insert={dropOn?.post === i ? dropOn.target : null}
+                            onMatchCompose={showMatch ? onMatchCompose : undefined}
+                          />
+                        </div>
+                      )
+                    })()}
+                    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                      <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
+                        {chunks.length > 1 && (
+                          <>
+                            {manualStarts[i] && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <ScissorsIcon
+                                    aria-label="Starts at a split moved by hand"
+                                    className="mr-1 inline size-3.5 align-[-2px] text-(--brand-blue)"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">Starts at a split moved by hand</TooltipContent>
+                              </Tooltip>
+                            )}
+                            {/* Its own width: a tabular "1" is padded out to a "0"'s and would crowd the dot. */}
+                            <span className="proportional-nums">{i + 1}</span>
+                            <Dot />
+                          </>
+                        )}
+                        {n.toLocaleString()} / {adapter.limit.toLocaleString()}
+                      </span>
+                      {/* The post and its images to the platform's app, where there's a share sheet (phones). */}
+                      <ShareButton
+                        adapter={adapter}
+                        text={chunk}
+                        images={shown.filter(({ img }) => postOf(img.id) === i).map(({ img }) => img)}
+                        what={what}
+                        onShared={(ids, textWent) => {
+                          if (ids.length) markCopied(ids)
+                          if (textWent) onPostCopied(chunk)
+                        }}
+                      />
+                      {i === 0 && (
+                        <Button variant="outline" size="sm" asChild>
+                          {/* Opening it prefilled delivers the text, so it counts as copied. */}
+                          <a
+                            href={adapter.open.url(chunk, server)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => onPostCopied(chunk)}
+                          >
+                            <ExternalLinkIcon />
+                            {adapter.open.label}
+                          </a>
+                        </Button>
+                      )}
+                      {edit ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              onClick={() => {
+                                setEditing(null)
+                                onEditPost(i, null)
+                              }}
+                              aria-label={`Reset ${what} to Compose`}
+                              className="border-orange-500/60 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+                            >
+                              <Undo2Icon />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Reset to Compose</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              aria-pressed={editing === i}
+                              // Keep the box's blur from closing it before this click toggles it.
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => setEditing(editing === i ? null : i)}
+                              aria-label={`Edit ${what}`}
+                            >
+                              <PencilIcon />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{editing === i ? "Done" : "Edit"}</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <CopyButton
+                        text={chunk}
+                        what={what}
+                        iconOnly
+                        done={copiedPosts.includes(chunk)}
+                        onCopied={() => onPostCopied(chunk)}
+                      />
+                    </div>
+                  </li>
+                </Fragment>
               )
             })}
           </ol>
