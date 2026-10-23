@@ -2,6 +2,7 @@
 
 import { GlobeIcon } from "lucide-react"
 
+import { ChangelogDialog } from "@/components/changelog-dialog"
 import { Dot } from "@/components/dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { linkedin } from "@/lib/adapters/linkedin"
@@ -35,6 +36,10 @@ export function MadeBy({ className }: { className?: string }) {
         {new Date().getFullYear()}
         <Dot />
         Made by Taylor Wright
+        {/* The version, from package.json, opening the changelog; on its own line at phone
+            widths, where the line is full. */}
+        <Dot className="max-sm:hidden" />
+        <ChangelogDialog className="max-sm:block" />
       </p>
       <ul className="flex items-center gap-1">
         {LINKS.map(({ label, href, Icon }) => (
