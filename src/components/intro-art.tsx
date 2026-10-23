@@ -5,11 +5,12 @@ import {
   CircleCheckBigIcon,
   CopyIcon,
   ExternalLinkIcon,
+  ImageIcon,
   ImagePlusIcon,
-  LockIcon,
   PlusIcon,
   ScissorsIcon,
   ShieldCheckIcon,
+  SmileIcon,
 } from "lucide-react"
 import { Fragment, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 
@@ -31,8 +32,6 @@ import { cn } from "@/lib/utils"
 const STAGE_W = 520
 /** Every drawing is this tall, so the panels match from step to step and tab to tab (Decide's live list too). */
 export const STAGE_H = 260
-/** The framed box each step's visual sits in, taller than the drawing so it has room around it. */
-export const FRAME_H = 320
 
 /** The sample post: 445 characters, so it splits on Bluesky and X. */
 const LOREM =
@@ -189,7 +188,9 @@ function Stage({
       <div
         ref={frameRef}
         className={cn("flex shrink-0 overflow-hidden", anchor === "top" ? "items-start pt-2.5" : "items-center")}
-        style={{ height: FRAME_H }}
+        // The tallest canvas's proportions (with the margin), so every step's frame is the same
+        // height and grows with the dialog's width: the drawings come out larger on big screens.
+        style={{ aspectRatio: `${STAGE_W + 20} / ${DRAFT_H + 20}` }}
       >
         <div
           ref={canvasRef}
@@ -404,19 +405,20 @@ const DRAFT_WORDS = Array.from(DRAFT_TEXT.matchAll(/\S+/g), (m) => m[0])
 const DRAFT_PACE = 1.4
 
 /**
- * Draft's canvas: just tall enough for Compose, so the drawing fills the frame. Images grows it
- * to fit the tile row once images arrive, and the drawing zooms out to match.
+ * Draft's canvas, the same on all three tabs (tall enough for Compose with Images' tile row),
+ * so they draw at one scale: Write's and Split's leave room below.
  */
-const DRAFT_H = 264
-const GROWN_H = 340
-/** Compose's width, its text box's height, and how tall it is before images land. */
-const COMPOSE_W = 300
+const DRAFT_H = 320
+/**
+ * Compose's width and the platforms' column beside it: as wide as each other, as the app's two
+ * columns are, within the canvas's 12px margins and an 8px gap.
+ */
+const COMPOSE_W = 244
+const SIDE_W = 244
+/** Compose's text box height. */
 const TEXT_H = 144
-const COMPOSE_H = 248
-/** Where Compose sits, the same on every tab: the canvas grows below it. */
-const COMPOSE_TOP = (DRAFT_H - COMPOSE_H) / 2
-/** The column beside Compose. */
-const SIDE_W = 184
+/** Where Compose sits, the same on every tab, with the platforms' column level with it. */
+const COMPOSE_TOP = 8
 /** The threading platforms, in the order their chips and flags show. */
 const THREADERS = [bluesky, threads, x]
 /** A split flag at the drawings' size (the real one is 16px tall). */
@@ -566,8 +568,9 @@ function MiniCompose({
     >
       <div className="flex h-5 items-center justify-between gap-2">
         <span className="text-[12px] font-semibold">Compose</span>
-        <span className={cn("flex items-center gap-1 transition-opacity duration-500", lit ? "opacity-100" : "opacity-30")}>
-          <span className="mr-0.5 text-[9px] text-muted-foreground">Drag to split</span>
+        {/* One line, at Compose's width (half the canvas, as the app's column is half the page). */}
+        <span className={cn("flex items-center gap-0.5 whitespace-nowrap transition-opacity duration-500", lit ? "opacity-100" : "opacity-30")}>
+          <span className="mr-0.5 text-[8px] text-muted-foreground">Drag to split</span>
           <span data-at="chip-all" className="flex h-5 items-center gap-0.5 rounded border bg-secondary px-1 text-[9px] font-medium">
             <ScissorsIcon className="size-2.5" />
             All
@@ -755,7 +758,7 @@ export function WriteArt({ active, onDone }: ArtProps) {
         </div>
       </MiniCompose>
       <SplitMarkers splits={ownSplits(text)} words={layout?.words} />
-      <div className="absolute top-1/2 right-3 -translate-y-1/2 space-y-2" style={{ width: SIDE_W }}>
+      <div className="absolute right-3 space-y-2" style={{ width: SIDE_W, top: COMPOSE_TOP }}>
         {WRITE_ROWS.map((a) => {
           const n = a.count(text)
           const posts = a.chain ? splitChunks(text, a.limit, a.count).length : 1
@@ -969,8 +972,8 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
         await drag(wait, "all", true, tag, below(tag), 1100)
         await wait(300)
         set({ hoverAll: false })
+        // The pointer stays where it let go, rather than wandering off to a corner.
         await letGo(wait)
-        moveTo(SPLIT_REST)
         await wait(1800)
         done()
         await wait(600)
@@ -1025,8 +1028,8 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
       />
 
       <div
-        style={{ ...brandVars(bluesky), width: SIDE_W }}
-        className={cn("absolute top-1/2 right-3 -translate-y-1/2 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
+        style={{ ...brandVars(bluesky), width: SIDE_W, top: COMPOSE_TOP }}
+        className={cn("absolute right-3 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
       >
         <MiniCardHeader adapter={bluesky} note={chunks.length === 1 ? "1 post" : `${chunks.length} posts`} />
         <ol className="mt-2.5 space-y-1.5">
@@ -1075,11 +1078,12 @@ export function SplitArt({ active, onDone, onBeat }: ArtProps) {
 
 // Images: on Split's text as Split left it, files dragged in from outside the page, which
 // Compose's drop bar opens up to take, then the third one moved on X's card to its second post,
-// as the app does it. The drawing zooms out to fit the tile row as it opens.
+// as the app does it. Drawn on Draft's one canvas (with room for the tile row), so nothing zooms.
 
 type StagingFrame = {
   cursor: Point
   duration: number
+  easing?: string
   pose: Pose
   /** Files on the pointer, coming in from outside the page. */
   carrying: boolean
@@ -1093,10 +1097,11 @@ type StagingFrame = {
   moved: boolean
 }
 
-const STAGING_IN: Point = { x: 580, y: 90 }
+/** Where the pointer waits before coming in: well past the frame's edge, out of sight at any zoom. */
+const STAGING_IN: Point = { x: 820, y: 90 }
 /** Where the files come over the page's edge. */
 const STAGING_EDGE: Point = { x: 520, y: 112 }
-const STAGING_REST: Point = { x: 264, y: GROWN_H - 24 }
+const STAGING_REST: Point = { x: 264, y: DRAFT_H - 24 }
 const STAGING_START: StagingFrame = {
   cursor: STAGING_IN,
   duration: 0,
@@ -1135,26 +1140,31 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
     return loop(
       async (wait) => {
         await wait(600)
-        // In from outside the window, as a drag of files from the desktop.
-        set({ cursor: STAGING_EDGE, duration: 450 })
-        await wait(450)
-        // Over the page: the drop bar opens up where the image row will be, lit by a glow
-        // that spreads from where the files came in, and the drawing zooms out to fit it.
+        // In from outside the window, as a drag of files from the desktop, in one steady move to
+        // the middle of the bar it opens; the glow starts as the pointer crosses the page's edge.
         const canvas = canvasRef.current
         const area = areaRef.current
         if (canvas && area) {
           const box = canvasBox(canvas, area)
           // The open bar fills the top of the area.
           const top = box.y
+          const to = { x: box.x + AREA_W / 2, y: top + TILE / 2 }
+          const MOVE = 1400
+          set({ cursor: to, duration: MOVE, easing: "cubic-bezier(0.25, 0.1, 0.25, 1)" })
+          // When (roughly) the pointer reaches the page's edge, and where.
+          const across = (STAGING_IN.x - STAGING_EDGE.x) / (STAGING_IN.x - to.x)
+          await wait(MOVE * across * 0.75)
+          // Over the page: the drop bar opens up where the image row will be, lit by a glow
+          // that spreads from where the files came in.
           const x = STAGING_EDGE.x - box.x
           const y = STAGING_EDGE.y - top
           // Big enough to cover the open bar's farthest corner, with the rim beyond it.
           const r = 1.25 * Math.max(...[0, AREA_W].flatMap((cx) => [0, TILE].map((cy) => Math.hypot(cx - x, cy - y))))
           set({ glow: { x, y, r } })
-          // On to the middle of the bar where it's opening to.
-          set({ cursor: { x: box.x + AREA_W / 2, y: top + TILE / 2 }, duration: 1000 })
+          await wait(MOVE * (1 - across * 0.75))
+          set({ easing: undefined })
         }
-        await wait(1300)
+        await wait(300)
         set({ glow: null, carrying: false, staged: true })
         await wait(1000)
         // Moved: the third image, from post 1 to post 2 on X's card.
@@ -1170,7 +1180,8 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
         await wait(450)
         set({ pose: "hand", moving: false, over: false, moved: true })
         await wait(400)
-        set({ pose: "arrow", cursor: STAGING_REST, duration: 700 })
+        // It stays where it let go, rather than drifting down before the next tab.
+        set({ pose: "arrow" })
         await wait(2200)
         done()
         await wait(300)
@@ -1188,11 +1199,9 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
   const posts = splitChunks(DRAFT_TEXT, x.limit, x.count)
   /** Whether image `k` sits on `post`: all on the first, until the third moves to the second. */
   const sitsOn = (post: number, k: number) => (k === 2 && frame.moved ? post === 1 : post === 0)
-  const grown = frame.staged || frame.glow !== null
-
   return (
     <Stage
-      height={grown ? GROWN_H : DRAFT_H}
+      height={DRAFT_H}
       anchor="top"
       note={
         <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-sm text-muted-foreground">
@@ -1271,7 +1280,7 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
         </ol>
       </div>
 
-      <Cursor at={frame.cursor} duration={frame.duration} pose={frame.pose}>
+      <Cursor at={frame.cursor} duration={frame.duration} pose={frame.pose} easing={frame.easing}>
         {/* Files from outside: the desktop's drag picture, a little stack beside the pointer. */}
         {frame.carrying && (
           <span className="absolute top-3 left-3 block">
@@ -1524,18 +1533,35 @@ function DesktopImagesArt({ active }: { active: boolean }) {
           frame.open ? "-translate-y-1/2 opacity-100" : "-translate-y-[48%] scale-95 opacity-0",
         )}
       >
-        <div className="flex h-6 items-center gap-1 border-b bg-muted/60 px-2">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="size-1.5 rounded-full bg-muted-foreground/40" />
-          ))}
-          <span className="mx-auto flex h-4 items-center gap-1 rounded-full bg-background/80 px-2 text-[9px] text-muted-foreground">
-            <LockIcon className="size-2" />
-            bsky.app
+        {/* The browser's tab bar: Crosspost's tab behind, Bluesky's in front (the one the Open
+            button opened), joined to the page below it. */}
+        <div className="flex h-7 items-end gap-1 border-b bg-muted/60 px-2 pt-1">
+          <span className="mr-1 flex gap-1 self-center">
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="size-1.5 rounded-full bg-muted-foreground/40" />
+            ))}
           </span>
-          {/* Balances the dots, so the address centers. */}
-          <span className="w-[22px]" />
+          <span className="flex h-5 w-16 items-center gap-1 rounded-t-md px-1.5 text-[8px] text-muted-foreground">
+            <span className="size-2 shrink-0 rounded-sm bg-(--brand-blue)" />
+            <span className="truncate">Crosspost</span>
+          </span>
+          <span
+            style={brandVars(bluesky)}
+            className="-mb-px flex h-5 w-[72px] items-center gap-1 rounded-t-md border border-b-0 bg-card px-1.5 text-[8px] font-medium"
+          >
+            <PlatformLogo adapter={bluesky} className="size-2.5 shrink-0" />
+            <span className="truncate">Bluesky</span>
+          </span>
         </div>
-        <div className="space-y-2 p-2.5">
+        {/* Bluesky's composer: Cancel and Post along the top, the posts with their avatars, and
+            its toolbar along the bottom, where a post is added to the thread. */}
+        <div className="flex h-6 items-center justify-between px-2.5">
+          <span className="text-[9px] font-medium text-[#1185FE]">Cancel</span>
+          <span data-at="post" className="flex h-5 items-center rounded-full bg-[#1185FE] px-3 text-[9px] font-semibold text-white">
+            {frame.thread ? "Post all" : "Post"}
+          </span>
+        </div>
+        <div className="space-y-2 px-2.5 pt-1">
           {DELIVER_POSTS.map((text, i) => {
             const post = `post-${i}` as Piece
             const img = `img-${i}` as Piece
@@ -1555,7 +1581,7 @@ function DesktopImagesArt({ active }: { active: boolean }) {
                         <Ghost text={text} />
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">Write your reply</span>
+                      <span className="text-muted-foreground">{i === 0 ? "What's up?" : "Write your reply"}</span>
                     )}
                   </p>
                   <span data-at={`slot-${i}`} className="mt-1.5 block size-9">
@@ -1572,13 +1598,13 @@ function DesktopImagesArt({ active }: { active: boolean }) {
             )
           })}
         </div>
-        <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-between">
+        <div className="absolute inset-x-0 bottom-0 flex h-7 items-center gap-2 border-t px-2.5 text-[#1185FE]">
+          <ImageIcon className="size-3" />
+          <span className="rounded-sm border border-current px-0.5 text-[6px] leading-none font-bold">GIF</span>
+          <SmileIcon className="size-3" />
           {/* Adds a post to the thread, as Bluesky's composer does. */}
-          <span data-at="add" className="grid size-6 place-items-center rounded-full border text-[#1185FE]">
-            <PlusIcon className="size-3.5" />
-          </span>
-          <span data-at="post" className="flex h-6 items-center rounded-full bg-[#1185FE] px-3.5 text-[10px] font-semibold text-white">
-            {frame.thread ? "Post all" : "Post"}
+          <span data-at="add" className="ml-auto grid size-5 place-items-center rounded-full border border-current">
+            <PlusIcon className="size-3" />
           </span>
         </div>
       </div>
