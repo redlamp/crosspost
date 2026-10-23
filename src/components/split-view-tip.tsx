@@ -23,8 +23,9 @@ export function SplitViewTip() {
 
   if (closed) {
     return (
-      // A wrapper, so the button keeps its own width in the Compose column.
-      <div className="max-sm:hidden">
+      // A wrapper, so the button keeps its own width in the Compose column. Folded buttons sort
+      // after the open cards (order), so they gather at the bottom.
+      <div className="order-1 max-sm:hidden">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

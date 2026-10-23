@@ -678,9 +678,10 @@ export default function Composer() {
         data-compose-column
         className="space-y-4 lg:sticky lg:top-20 lg:flex lg:min-h-[calc(100dvh-6rem)] lg:flex-col"
       >
-        <WelcomeCard place="top" onTryExample={canTryExample ? tryExample : undefined} />
-        <Card className="brand-edge gap-4 border-2">
-          <CardContent className="space-y-4 lg:flex lg:flex-col">
+        <WelcomeCard place="top" onTryExample={tryExample} canTry={canTryExample} />
+        {/* The platform cards' padding (16px), not the card's default 24px. */}
+        <Card className="brand-edge gap-4 border-2 py-4">
+          <CardContent className="space-y-4 px-4 lg:flex lg:flex-col">
             <ComposeEditor
               value={draft}
               onChange={editDraft}
@@ -772,9 +773,10 @@ export default function Composer() {
           </CardContent>
         </Card>
         {/* Below Compose, the tips: How it works (after a first visit) and the split view reminder,
-            each open across the column or folded to a small button, the buttons side by side. */}
+            each open across the column or folded to a small button. Open ones come first; folded
+            buttons gather at the bottom (their own order), How it works before the reminder. */}
         <div className="flex flex-wrap items-start gap-x-2 gap-y-4 empty:hidden">
-          <WelcomeCard place="bottom" onTryExample={canTryExample ? tryExample : undefined} />
+          <WelcomeCard place="bottom" onTryExample={tryExample} canTry={canTryExample} />
           <SplitViewTip />
         </div>
         <MadeBy className="hidden lg:mt-auto lg:flex" />
