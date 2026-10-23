@@ -28,7 +28,7 @@ import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
-import { cropImage, MAX_IMAGES, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
+import { cropImage, MAX_IMAGES, onClearedElsewhere, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
   arrangePlatforms,
@@ -105,6 +105,9 @@ export default function Composer() {
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
   const { images, setImages, add: stageImages } = useStagedImages()
+  // Clear Data in another tab (or the installed app's window): start fresh here too, rather than
+  // keep this tab's copy, which it would write back the next time anything changed.
+  useEffect(() => onClearedElsewhere(() => location.reload()), [])
   /**
    * Crop a staged image from the image as it was added (kept, so the crop can change or go), or
    * with null, show all of it again. A cropped image is a new picture, so its copied checks clear.
