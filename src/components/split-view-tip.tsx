@@ -25,7 +25,7 @@ export function SplitViewTip() {
     return (
       // A wrapper, so the button keeps its own width in the Compose column. Folded buttons sort
       // after the open cards (order), so they gather at the bottom.
-      <div className="order-1 max-sm:hidden">
+      <div data-glide="reminder" className="order-1 max-sm:hidden">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -46,6 +46,7 @@ export function SplitViewTip() {
 
   return (
     <aside
+      data-glide="reminder"
       aria-label="Reminder"
       // Opaque (the card color with the amber tint mixed in), so the page's blue glow
       // doesn't show through and clash with the amber.

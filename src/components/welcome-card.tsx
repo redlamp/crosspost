@@ -1,7 +1,7 @@
 "use client"
 
 import { CircleHelpIcon, PlayIcon, XIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
 import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, STEPS } from "@/components/intro-dialog"
 
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
-import { foldWelcome, openIntro, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
+import { foldWelcome, openIntro, setWelcomeFolded, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
 import { cn } from "@/lib/utils"
 
 /**
@@ -26,10 +26,26 @@ import { cn } from "@/lib/utils"
  * and the captions fade with the card; the step's own header then fades in under the tour's
  * trail, about where they were.
  */
-function CardTrail({ touring }: { touring: boolean }) {
+function CardTrail({ touring, walking }: { touring: boolean; walking: boolean }) {
   const at = (x: number) => `${(x / CARD_TRAIL_W) * 100}%`
+  // The waypoints for Split and Images, as in the tour: evenly along the way from Draft to
+  // Decide (the first half of the path), measured on the path once it's drawn.
+  const pathRef = useRef<SVGPathElement>(null)
+  const [nodes, setNodes] = useState<{ x: number; y: number }[]>([])
+  useLayoutEffect(() => {
+    const path = pathRef.current
+    if (!path) return
+    const total = path.getTotalLength()
+    setNodes(
+      [1, 2].map((k) => {
+        const p = path.getPointAtLength((total / 2) * (k / 3))
+        return { x: p.x, y: p.y }
+      }),
+    )
+  }, [])
   return (
-    <div className="mt-2 @md:mx-12">
+    // The tour's own size (its Draft to Deliver), centered, so it keeps its width as the tour opens.
+    <div className="mx-auto mt-2 max-w-full" style={{ width: CARD_TRAIL_W }}>
       <nav aria-label="Tour steps" className="relative h-[72px]">
         <svg
           aria-hidden
@@ -40,6 +56,7 @@ function CardTrail({ touring }: { touring: boolean }) {
           style={{ viewTransitionName: touring ? undefined : "tour-trail" }}
         >
           <path
+            ref={pathRef}
             d={CARD_TRAIL}
             stroke="var(--brand-blue)"
             strokeOpacity={0.7}
@@ -47,16 +64,26 @@ function CardTrail({ touring }: { touring: boolean }) {
             strokeDasharray="2 5"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
-            className="trail-walk"
+            // Walking on Start here; still on How it works, once the person has seen it.
+            className={walking ? "trail-walk" : undefined}
           />
         </svg>
-        {/* The stops' dots, as HTML: the stretched drawing would make circles ellipses. */}
-        {CARD_TRAIL_STOPS.map((x) => (
+        {/* The waypoints and the stops' dots, as HTML: the stretched drawing would make circles
+            ellipses. Each moves to its place on the tour's trail as the tour grows out of the card. */}
+        {nodes.map(({ x, y }, k) => (
+          <span
+            key={x}
+            aria-hidden
+            className="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--brand-blue)"
+            style={{ left: at(x), top: y, viewTransitionName: touring ? undefined : `tour-node-${k}` }}
+          />
+        ))}
+        {CARD_TRAIL_STOPS.map((x, i) => (
           <span
             key={x}
             aria-hidden
             className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--brand-blue)"
-            style={{ left: at(x), top: CARD_TRAIL_Y }}
+            style={{ left: at(x), top: CARD_TRAIL_Y, viewTransitionName: touring ? undefined : `tour-dot-${i}` }}
           />
         ))}
         {CARD_STEPS.map(({ label, icon: Icon, title }, i) => (
@@ -68,13 +95,14 @@ function CardTrail({ touring }: { touring: boolean }) {
             className="absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base leading-5 font-semibold text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             style={{ left: at(CARD_TRAIL_STOPS[i]) }}
           >
-            {/* Flies to its stop on the tour's trail as the tour grows out of the card. */}
+            {/* The icon and name fly to their stop on the tour's trail as the tour grows out of the
+                card; only the captions below stay behind, fading with the card. */}
             <Icon
               className="size-4 shrink-0 text-(--brand-blue)"
               aria-hidden
               style={{ viewTransitionName: touring ? undefined : `tour-step-${i}` }}
             />
-            {label}
+            <span style={{ viewTransitionName: touring ? undefined : `tour-label-${i}` }}>{label}</span>
           </button>
         ))}
       </nav>
@@ -117,22 +145,32 @@ function CardTitle({ first, fromTour }: { first: boolean; fromTour: boolean }) {
 function FoldedWelcome() {
   const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (!takeJustFolded() || matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    ref.current?.animate(
-      [
-        { boxShadow: "0 0 0 0 color-mix(in oklab, var(--brand-blue) 70%, transparent)" },
-        { boxShadow: "0 0 0 10px transparent" },
-      ],
-      { duration: 900, iterations: 3, easing: "ease-out" },
-    )
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    const pulse = (iterations: number) =>
+      ref.current?.animate(
+        [
+          { boxShadow: "0 0 0 0 color-mix(in oklab, var(--brand-blue) 70%, transparent)" },
+          { boxShadow: "0 0 0 10px transparent" },
+        ],
+        { duration: 900, iterations, easing: "ease-out" },
+      )
+    // Just folded: it draws the eye as it lands.
+    if (takeJustFolded()) return void pulse(3)
+    // Folded as the page opens: twice in its first ten seconds (about 2s and 7s in), then left be.
+    const since = performance.now()
+    if (since > 10_000) return
+    const timers = [2_000, 7_000].map((at) => setTimeout(() => pulse(2), Math.max(0, at - since)))
+    return () => timers.forEach(clearTimeout)
   }, [])
   return (
     <Button
       ref={ref}
       variant="outline"
-      onClick={() => foldWelcome(false)}
-      // The card's transition name: it glides from the card's place down to here, and back.
+      // Opens at once (a glide back up read oddly); folding is what glides, so it's clear where it went.
+      onClick={() => setWelcomeFolded(false)}
+      // The card's transition name: it glides from the card's place down to here.
       style={{ viewTransitionName: "tour" }}
+      data-glide="how"
       className="order-1 border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand-blue)_16%,var(--card))]"
     >
       <CircleHelpIcon className="text-(--brand-blue)" />
@@ -159,6 +197,7 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
 
   return (
     <section
+      data-glide="how"
       aria-labelledby="welcome-title"
       style={{ viewTransitionName: touring ? undefined : "tour" }}
       className={cn(
@@ -181,7 +220,7 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => foldWelcome(true)}
+              onClick={() => foldWelcome()}
               aria-label="Dismiss How it works"
               className="-my-2 -mr-2 text-muted-foreground hover:text-foreground"
             >
@@ -191,7 +230,7 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
           <TooltipContent>Dismiss</TooltipContent>
         </Tooltip>
       </div>
-      <CardTrail touring={touring} />
+      <CardTrail touring={touring} walking={welcome.first} />
       {/* The two ways in, filling the card's width between them. Try It is always there: over a
           post of your own, it asks first (the composer's confirmation). */}
       <div className="mt-3 grid grid-cols-2 gap-2">

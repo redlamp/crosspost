@@ -27,7 +27,8 @@ const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
  * Hands the post to the share sheet, text and images together, for the platform's app. The
  * text goes on the clipboard as well whenever images go along, since some apps keep only
  * those (Bluesky on an iPhone); apps that drop shared text (Meta's) get the images only, and
- * only as many as they take. Nothing when the browser has no share sheet.
+ * only as many as they take. Nothing when the browser has no share sheet, and hidden on a
+ * desktop (a mouse or trackpad pointer).
  */
 export function ShareButton({ adapter, text, images, what, onShared }: Props) {
   const [done, setDone] = useState(false)
@@ -83,7 +84,9 @@ export function ShareButton({ adapter, text, images, what, onShared }: Props) {
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={share} aria-label={`Share ${what}`}>
+    // Touch screens only (phones, tablets), where the share sheet is the way into the apps; on a
+    // desktop, Copy and Open do the job, and the sheet there rarely reaches the platforms.
+    <Button variant="outline" size="sm" onClick={share} aria-label={`Share ${what}`} className="pointer-fine:hidden">
       {done ? <CheckIcon /> : <ShareIcon />}
       {done ? "Shared" : "Share"}
     </Button>

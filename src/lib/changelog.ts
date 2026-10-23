@@ -1,26 +1,50 @@
+/**
+ * One change in a release: a line, or a headline with points under it (a new feature and what
+ * comes with it).
+ */
+export type Change = string | { text: string; items: string[] }
+
 /** A release, for the changelog opened from the footer's version: the high-level changes only. */
 export type Release = {
   version: string
   /** The working day it went out ("YYYY-MM-DD"). */
   date: string
-  changes: string[]
+  changes: Change[]
 }
 
 /** Newest first. The first entry's version matches package.json (a test checks). */
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.0",
+    date: "2026-10-23",
+    changes: [
+      {
+        text: 'New feature: "Start Here / How it Works" onboarding tour.',
+        items: [
+          "Improved onboarding flow.",
+          "New drawings and animations for every step.",
+          "On mobile: the tour's drawings crop in and follow the action.",
+        ],
+      },
+      'New feature: "Try It" loads a sample post.',
+      "Share on each post shows on phones and tablets only.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-22",
     changes: [
-      "An introduction: Draft, Decide and Deliver.",
-      "Drag platforms to reorder them, or below the line to turn them off.",
-      "Edit any post on its card.",
-      "Platforms mark themselves posted once everything is copied, and the next one scrolls into view.",
-      "Alt text and cropping for images, and up to 10 in Compose.",
-      "A warning when a post has more images than Bluesky, X or Mastodon take.",
+      'New feature: "Introduction" walkthrough of Draft, Decide, and Deliver.',
+      "New feature: Reorder platforms from the side rail.",
+      "New feature: Customize any platform posts.",
+      {
+        text: "New feature: Progress tracking for posting steps.",
+        items: ["Platforms mark themselves posted once everything is copied.", "The next platform scrolls into view."],
+      },
+      "New feature: Install as an app on mobile.",
+      "Images: alt text, cropping, and up to 10 in Compose.",
       "Tags to check, above each post that has them.",
-      "Install it as an app: it opens offline, and on Android takes shared posts.",
-      "A Compose button in the phone layout's platform row.",
+      "On mobile: a Compose button in the platform row.",
       "A new theme switch, and Clear Data in Settings.",
     ],
   },
@@ -28,11 +52,15 @@ export const CHANGELOG: Release[] = [
     version: "1.0.0",
     date: "2026-10-21",
     changes: [
-      "Write once, then copy or open it on Bluesky, Threads, LinkedIn, X, Facebook, Instagram and Mastodon.",
-      "Long posts split into threads, with splits you can drag.",
-      "Images to copy, drag or download into each post.",
-      "Counts and limits for each platform, with warnings in the status rail.",
-      "Settings to show, hide and sort platforms.",
+      {
+        text: "First release: write once, then copy or open it on Bluesky, Threads, LinkedIn, X, Facebook, Instagram, and Mastodon.",
+        items: [
+          "Long posts split into threads, with splits you can drag.",
+          "Images to copy, drag, or download into each post.",
+          "Counts and limits for each platform, with warnings in the status rail.",
+        ],
+      },
+      "Settings to show, hide, and sort platforms.",
       "Everything stays in your browser: no accounts, no server.",
     ],
   },
