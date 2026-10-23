@@ -122,7 +122,7 @@ export default function Composer() {
   }
   const addImages = (files: File[]) => {
     const { added, skipped } = stageImages(files)
-    if (skipped) toast.info(`Posts take up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
+    if (skipped) toast.info(`Compose holds up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
     else if (!added) toast.info("Only images can be staged for now.")
   }
   const drag = usePageImageInput(addImages)
@@ -184,6 +184,7 @@ export default function Composer() {
       tags.every((t) => next.checkedTags[adapter.id]?.includes(t))
     if (!done) return setProgress(next)
     setProgress({ ...next, posted: { ...next.posted, [adapter.id]: true } })
+    revealNextCard(adapter.id)
     toast(`Everything for ${adapter.name} is done, so it's marked posted`, {
       action: {
         label: "Undo",
@@ -464,6 +465,31 @@ export default function Composer() {
     ? [...previews].sort((a, b) => railDrag.ids.indexOf(a.adapter.id) - railDrag.ids.indexOf(b.adapter.id))
     : previews
   const cardKey = cardList.map((p) => p.adapter.id).join(",")
+
+  /**
+   * A platform just finished: bring the next one still to do (on, with something to post, not
+   * marked posted) fully into view, unless it already is. One taller than the window lines up
+   * its top under the sticky header instead (the cards' scroll margin).
+   */
+  const revealNextCard = (doneId: string) => {
+    const after = cardList.findIndex((p) => p.adapter.id === doneId)
+    const next = cardList
+      .slice(after + 1)
+      .find((p) => isEnabled(p.adapter.id) && p.chunks.length > 0 && !progressRef.current.posted[p.adapter.id])
+    if (!next) return
+    // After the render that marks this one posted, so the measure is of the page as it'll be.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(cardId(next.adapter.id))
+      if (!el) return
+      const style = getComputedStyle(el)
+      const top = parseFloat(style.scrollMarginTop) || 0
+      const bottom = innerHeight - (parseFloat(style.scrollMarginBottom) || 0)
+      const rect = el.getBoundingClientRect()
+      if (rect.top >= top && rect.bottom <= bottom) return
+      const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+      el.scrollIntoView({ block: rect.height <= bottom - top ? "nearest" : "start", behavior })
+    })
+  }
   // When the cards change places, each glides from where it showed to its new place, with the
   // side column's tiles' timing (250ms ease). Each render notes where every card sits on the
   // page, leaving out any glide in progress, so the next reorder knows where they start.
@@ -523,13 +549,13 @@ export default function Composer() {
       note,
       posts: chunks.length,
       posted: !!progress.posted[adapter.id] && chunks.length > 0,
-      // Different from Compose: its own splits (only platforms that split have any), edited
-      // text, or its own image layout.
-      overridden:
-        (adapter.chain && [...(breaks[adapter.id] ?? [])].sort((x, y) => x - y).join() !== composeBreaks(adapter.id).join()) ||
-        Object.keys(postEdits[adapter.id] ?? {}).length > 0 ||
-        Object.keys(placement.only[adapter.id] ?? {}).some((id) => staged.has(id)) ||
-        hasOwnOrder(adapter.id),
+      // How it differs from Compose: its own splits (only platforms that split have any), each
+      // post edited on its card, its own image order, and each image moved on it alone.
+      overrides:
+        Number(adapter.chain && [...(breaks[adapter.id] ?? [])].sort((x, y) => x - y).join() !== composeBreaks(adapter.id).join()) +
+        Object.keys(postEdits[adapter.id] ?? {}).length +
+        Number(hasOwnOrder(adapter.id)) +
+        Object.keys(placement.only[adapter.id] ?? {}).filter((id) => staged.has(id)).length,
     }
   })
 
@@ -725,7 +751,10 @@ export default function Composer() {
             onMoveImage={(id, post, onlyHere) => moveImage(adapter.id, id, post, onlyHere)}
             enabled={isEnabled(adapter.id)}
             posted={!!progress.posted[adapter.id]}
-            onPostedChange={(on) => setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: on } }))}
+            onPostedChange={(on) => {
+              setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: on } }))
+              if (on) revealNextCard(adapter.id)
+            }}
             copiedPosts={progress.copiedPosts[adapter.id] ?? []}
             onPostCopied={(text) => noteCopy(adapter, "copiedPosts", [text], true, chunkTexts, cardImageIds, tags)}
             copiedImages={new Set(progress.copiedImages[adapter.id])}
@@ -734,7 +763,7 @@ export default function Composer() {
             }
             tags={tags}
             checkedTags={progress.checkedTags[adapter.id] ?? []}
-            onTagsChecked={(on) => noteCopy(adapter, "checkedTags", tags, on, chunkTexts, cardImageIds, tags)}
+            onTagsChecked={(postTags, on) => noteCopy(adapter, "checkedTags", postTags, on, chunkTexts, cardImageIds, tags)}
             hiddenImages={new Set(progress.hiddenImages[adapter.id])}
             onHideImage={(id) => setProgress((p) => markIn(p, "hiddenImages", adapter.id, [id], true))}
             onShowHidden={() => setProgress((p) => ({ ...p, hiddenImages: { ...p.hiddenImages, [adapter.id]: [] } }))}

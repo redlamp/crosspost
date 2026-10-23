@@ -27,8 +27,11 @@ export type StagedImage = {
 /** Bluesky's limit for alt text, the tightest of the platforms that take it. */
 export const ALT_LIMIT = 2000
 
-/** Most images a post can carry: Bluesky and X take 4, so every platform gets the same set. */
-export const MAX_IMAGES = 4
+/**
+ * Most images Compose holds. A single post on Bluesky, X or Mastodon takes 4, so more than that
+ * is for platforms that take more, or for spreading across a thread's posts.
+ */
+export const MAX_IMAGES = 8
 
 type StoredImage = { id: string; name: string; blob: Blob; alt?: string; original?: Blob; crop?: CropRect }
 

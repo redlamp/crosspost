@@ -21,8 +21,8 @@ import {
 } from "@dnd-kit/core"
 import { arrayMove, rectSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { CheckIcon, TriangleAlertIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { CheckIcon, PenLineIcon, TriangleAlertIcon } from "lucide-react"
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 
 import { PlatformLogo } from "@/components/platform-logo"
@@ -41,8 +41,11 @@ export type RailItem = {
   posts: number
   /** Marked posted on its card. */
   posted?: boolean
-  /** It differs from Compose (its own splits, edited text or its own image layout): outlined in the warning color. */
-  overridden?: boolean
+  /**
+   * How many ways it differs from Compose (its own splits, edited posts, its own image layout):
+   * any, and it's outlined in the warning color, with the count in its tooltip.
+   */
+  overrides?: number
 }
 
 export function cardId(platformId: string) {
@@ -84,6 +87,15 @@ class RailKeyboardSensor extends KeyboardSensor {
   }
 }
 
+/**
+ * Back to Compose, from the phone-width row: Compose leads the page there, so to the top (its
+ * own top would sit under the sticky header and this row), with its text box focused.
+ */
+function toCompose() {
+  window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+  document.getElementById("compose")?.focus({ preventScroll: true })
+}
+
 function jump(id: string) {
   const card = document.getElementById(cardId(id))
   card?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -91,19 +103,20 @@ function jump(id: string) {
 }
 
 /** The tile's look, shared by the tile in the rail and the copy that follows the pointer while it's dragged. */
-function tileLook({ adapter, enabled, issue, overridden }: RailItem, extra?: string) {
+function tileLook({ adapter, enabled, issue, overrides = 0 }: RailItem, extra?: string) {
   return {
     style: { "--brand": adapter.brand.color ?? "var(--foreground)" } as React.CSSProperties,
     className: cn(
       // The app's own border and surface: brand tints made gray marks (Threads, X) look
       // switched off and pink ones (Instagram) look like errors. The logo carries the brand.
-      "relative grid size-10 cursor-grab touch-none place-items-center rounded-lg border bg-card transition-colors hover:bg-accent active:cursor-grabbing",
+      // 36px in the phone row, so the usual platforms fit on one line; 40px in the column.
+      "relative grid size-9 cursor-grab touch-none place-items-center rounded-lg border bg-card transition-colors hover:bg-accent active:cursor-grabbing lg:size-10",
       // Issues show as a ring plus a warning badge, never by recoloring the tile,
       // so a red or pink brand can't be mistaken for one.
       issue && enabled && "ring-2 ring-destructive ring-offset-2 ring-offset-background",
       !enabled && "opacity-40 grayscale",
       // Different from Compose on its card: outlined in the warning color (an issue's ring wins).
-      overridden && enabled && !issue && "border-amber-500 dark:border-amber-400",
+      overrides > 0 && enabled && !issue && "border-amber-500 dark:border-amber-400",
       extra,
     ),
   }
@@ -154,13 +167,29 @@ function TileFace({ item: { adapter, enabled, issue, posts, posted } }: { item: 
 function slot(collapsed: boolean) {
   return cn(
     "relative shrink-0 transition-[height,width,margin,opacity] duration-300 ease-out",
-    "lg:w-10 lg:not-first:mt-2 max-lg:h-10 max-lg:not-first:ml-2",
-    collapsed ? "overflow-hidden opacity-0 lg:h-0 lg:not-first:mt-0 max-lg:w-0 max-lg:not-first:ml-0" : "lg:h-10 max-lg:w-10",
+    "lg:w-10 lg:not-first:mt-2 max-lg:h-9 max-lg:not-first:ml-1.5",
+    collapsed ? "overflow-hidden opacity-0 lg:h-0 lg:not-first:mt-0 max-lg:w-0 max-lg:not-first:ml-0" : "lg:h-10 max-lg:w-9",
+  )
+}
+
+/** The side column (the lg breakpoint); below it the rail is a row across the top. */
+const SIDE_COLUMN = "(min-width: 64rem)"
+function useSideColumn() {
+  return useSyncExternalStore(
+    (listener) => {
+      const list = matchMedia(SIDE_COLUMN)
+      list.addEventListener("change", listener)
+      return () => list.removeEventListener("change", listener)
+    },
+    () => matchMedia(SIDE_COLUMN).matches,
+    () => true,
   )
 }
 
 function RailTile({ item, off, collapsed = false }: { item: RailItem; off: boolean; collapsed?: boolean }) {
-  const { adapter, enabled, issue, note } = item
+  const { adapter, enabled, issue, note, overrides = 0 } = item
+  // Beside the column, tooltips open to its right, away from the cards; in the phone row, above.
+  const side = useSideColumn() ? "right" : "top"
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: adapter.id })
   const status = off
     ? "turned off. Drag it above the line to post to it (or press Space, then the arrow keys)"
@@ -179,24 +208,38 @@ function RailTile({ item, off, collapsed = false }: { item: RailItem; off: boole
             {...attributes}
             {...listeners}
             onClick={off ? undefined : () => jump(adapter.id)}
-            aria-label={off ? `${adapter.name}: ${status}.` : `${adapter.name}: ${status}. Drag to reorder, or below the line to turn it off.`}
+            aria-label={
+              off
+                ? `${adapter.name}: ${status}.`
+                : `${adapter.name}: ${status}${overrides > 0 ? `, ${overrides} override${overrides === 1 ? "" : "s"}` : ""}. Drag to reorder, or below the line to turn it off.`
+            }
             // While dragged, this stays behind as a faint placeholder where the tile will land.
             {...tileLook(item, isDragging ? "opacity-30" : undefined)}
           >
             <TileFace item={item} />
           </button>
         </TooltipTrigger>
-        {/* Away from the cards, flipping to the left when the window has no room on the right. */}
+        {/* Away from the cards in the side column (flipping left when there is no room on the right); above the tile in the phone row. */}
         {!isDragging && (
-          <TooltipContent side="right" collisionPadding={8}>
+          <TooltipContent side={side} collisionPadding={8}>
             {/* Short for a platform that's off; how to bring it back is in its label for screen readers. */}
             {adapter.name}: {off ? "currently off" : status}
+            {/* Its overrides, on a line of their own. */}
+            {!off && enabled && overrides > 0 && (
+              <span className="block">
+                {overrides} override{overrides === 1 ? "" : "s"}
+              </span>
+            )}
           </TooltipContent>
         )}
       </Tooltip>
     </div>
   )
 }
+
+/** A tile and the gap before it in the phone row (size-9 and ml-1.5), for balancing its lines. */
+const ROW_TILE = 36
+const ROW_GAP = 6
 
 /** How long More stays open after the last activity on the rail. */
 const CLOSE_MS = 5000
@@ -281,6 +324,31 @@ export function StatusRail({
     if (more && !over.current) later(() => setMore(false), CLOSE_MS)
   }
   const draggingItem = all.find((i) => i.adapter.id === dragging)
+
+  // The phone row: when the tiles need more than one line, as many on each line as can be, so
+  // the lines come out even (9 tiles as 5 and 4, not 8 and 1). The column needs none of this.
+  const sideColumn = useSideColumn()
+  const rowRef = useRef<HTMLDivElement>(null)
+  const [navWidth, setNavWidth] = useState<number | undefined>(undefined)
+  const shownCount = open ? items.length + 1 + off.length : items.length
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    if (sideColumn || !row) return
+    const fit = () => {
+      // The tiles have the row's width less the Compose button and More, each with its gap.
+      const room = row.clientWidth - 2 * (ROW_TILE + ROW_GAP)
+      const perLine = Math.max(1, Math.floor((room + ROW_GAP) / (ROW_TILE + ROW_GAP)))
+      const lines = Math.ceil(shownCount / perLine)
+      const each = Math.ceil(shownCount / lines)
+      // Each tile after the very first keeps its gap, a new line's first included, so every
+      // line is budgeted a tile and a gap for each of its tiles.
+      setNavWidth(lines > 1 ? each * (ROW_TILE + ROW_GAP) : undefined)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(row)
+    return () => ro.disconnect()
+  }, [sideColumn, shownCount])
   const sensors = useSensors(
     // A few pixels of movement before a drag starts, so a click still jumps to the card.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -327,6 +395,7 @@ export function StatusRail({
 
   return (
     <div
+      ref={rowRef}
       className="flex flex-col items-center max-lg:flex-row max-lg:items-start"
       // On the rail, any movement keeps it open; leaving starts the countdown (unless a drag is
       // going, which starts it when it ends).
@@ -347,6 +416,23 @@ export function StatusRail({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) idle()
       }}
     >
+      {/* Compose, first in the phone-width row, where the cards push it out of view. The side
+          column sits beside Compose, so it has none. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={toCompose}
+            aria-label="Compose"
+            className="mr-1.5 grid size-9 shrink-0 place-items-center rounded-lg border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
+          >
+            <PenLineIcon className="size-5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" collisionPadding={8}>
+          Compose
+        </TooltipContent>
+      </Tooltip>
       <DndContext
         id="status-rail"
         sensors={sensors}
@@ -370,7 +456,11 @@ export function StatusRail({
           {/* One list: the tiles, the line and the platforms turned off. The line and those after
               it open while a tile is dragged, or from More, growing into place and shrinking back
               after. A row on phones, wrapping once the platforms outgrow the width. */}
-          <nav aria-label="Platform status" className="flex flex-wrap items-start gap-y-2 lg:flex-col lg:gap-y-0">
+          <nav
+            aria-label="Platform status"
+            className="flex flex-wrap items-start gap-y-1.5 lg:flex-col lg:gap-y-0"
+            style={{ maxWidth: sideColumn ? undefined : navWidth }}
+          >
             {items.map((item) => (
               <RailTile key={item.adapter.id} item={item} off={false} />
             ))}
@@ -427,7 +517,7 @@ export function StatusRail({
           setMore((v) => !v)
         }}
         // Lettered as the legend's gestures (CLICK, DRAG), faded back to 60% until hovered.
-        className="mt-2 grid h-7 w-10 shrink-0 place-items-center rounded-lg text-[11px] leading-tight font-bold tracking-wide text-foreground/60 uppercase hover:text-foreground transition-colors select-none hover:bg-accent max-lg:mt-0 max-lg:ml-2 max-lg:h-10 lg:mt-3"
+        className="mt-2 grid h-7 w-10 shrink-0 place-items-center rounded-lg text-[11px] leading-tight font-bold tracking-wide text-foreground/60 uppercase hover:text-foreground transition-colors select-none hover:bg-accent max-lg:mt-0 max-lg:ml-1.5 max-lg:h-9 max-lg:w-9 lg:mt-3"
       >
         {more ? "Less" : "More"}
       </button>
