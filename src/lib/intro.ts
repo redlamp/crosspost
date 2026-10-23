@@ -100,6 +100,42 @@ export function takeJustFolded() {
   return was
 }
 
+// Whether the tour (the introduction's dialog) is open. The welcome card grows into it and back
+// (a view transition): while it's open, the dialog carries the card's transition names, so the
+// card lets go of them.
+let tourOpen = false
+// How many times the tour has closed: the card's title, keyed by it, flaps back from the tour's.
+let tourCloses = 0
+const tourListeners = new Set<() => void>()
+
+export function setTourOpen(open: boolean) {
+  if (tourOpen && !open) tourCloses++
+  tourOpen = open
+  for (const listener of tourListeners) listener()
+}
+
+export function useTourCloses(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      tourListeners.add(listener)
+      return () => tourListeners.delete(listener)
+    },
+    () => tourCloses,
+    () => 0,
+  )
+}
+
+export function useTourOpen(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      tourListeners.add(listener)
+      return () => tourListeners.delete(listener)
+    },
+    () => tourOpen,
+    () => false,
+  )
+}
+
 // The introduction's dialog sits on the page with no button of its own; the welcome card asks it to open at a step.
 let opener: ((step: number) => void) | null = null
 

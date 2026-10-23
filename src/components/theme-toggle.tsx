@@ -22,6 +22,8 @@ function switchTheme(next: string, setTheme: (theme: string) => void) {
   root.style.setProperty("--theme-x", `${x}px`)
   root.style.setProperty("--theme-y", `${y}px`)
   root.style.setProperty("--theme-r", `${Math.hypot(Math.max(x, innerWidth - x), y)}px`)
+  // Scopes the bloom's styles to this transition (globals.css).
+  root.classList.add("theme-switching")
   const transition = document.startViewTransition(() => {
     // Applied at once, inside the transition, so the new snapshot has it; next-themes then
     // keeps the choice (and sets the same class again).
@@ -32,6 +34,7 @@ function switchTheme(next: string, setTheme: (theme: string) => void) {
   })
   // A second click mid-bloom skips this one (the theme still switches): nothing to report.
   transition.ready.catch(() => {})
+  transition.finished.finally(() => root.classList.remove("theme-switching"))
 }
 
 export function ThemeToggle() {

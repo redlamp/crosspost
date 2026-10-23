@@ -392,9 +392,10 @@ export function ComposeEditor({
   return (
     <div className="space-y-3 lg:flex lg:flex-col">
       <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
-        <Label htmlFor="compose" className="text-base font-semibold">
+        {/* A size up from the cards' titles, as "Start here" is: where to begin. */}
+        <Label htmlFor="compose" className="text-lg font-semibold">
           {/* The pencil the platform row's Compose button uses too. */}
-          <PenLineIcon className="size-4 text-muted-foreground" aria-hidden />
+          <PenLineIcon className="size-5 text-muted-foreground" aria-hidden />
           Compose
         </Label>
         {chips.length > 0 && (

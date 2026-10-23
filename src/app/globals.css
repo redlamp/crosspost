@@ -192,18 +192,20 @@
 }
 
 /* Switching the theme: the new one blooms out from the page's blue glow, a soft-edged circle
-   growing over the old until it covers the window (the theme toggle sets where and how far). */
+   growing over the old until it covers the window (the theme toggle sets where and how far, and
+   marks the page .theme-switching for the length of it, so other view transitions keep the
+   browser's plain crossfade). */
 @property --theme-reveal {
   syntax: "<length>";
   inherits: false;
   initial-value: 0px;
 }
-::view-transition-old(root),
-::view-transition-new(root) {
+.theme-switching::view-transition-old(root),
+.theme-switching::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
-::view-transition-new(root) {
+.theme-switching::view-transition-new(root) {
   mask-image: radial-gradient(
     circle at var(--theme-x, 100%) var(--theme-y, 100%),
     #000 var(--theme-reveal),
@@ -217,5 +219,95 @@
   }
   to {
     --theme-reveal: var(--theme-r, 150vmax);
+  }
+}
+
+/* The tour growing out of the welcome card, and back into it (see the introduction): the card
+   becomes the dialog, its trail becomes the dialog's, and each step's icon flies to its stop. */
+::view-transition-group(tour),
+::view-transition-group(tour-title),
+::view-transition-group(tour-trail),
+::view-transition-group(tour-step-0),
+::view-transition-group(tour-step-1),
+::view-transition-group(tour-step-2) {
+  animation-duration: 450ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-group(tour) {
+  overflow: clip;
+  border-radius: var(--radius-xl);
+}
+/* The title travels as itself: the live words (flapping from the card's title to the tour's, or
+   back) ride the move, with no crossfade between the two. */
+::view-transition-old(tour-title) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(tour-title) {
+  animation: none;
+}
+
+/* "Start here", letter by letter: a wave runs through it, each letter rising and turning the
+   app's blue as it passes, then settling back to the text color; about a second's rest between
+   waves (each letter's rise takes 0.9s of the 2.4s, and the wave crosses in half a second). */
+@keyframes letter-wave {
+  0%,
+  37.5%,
+  100% {
+    transform: translateY(0);
+    color: var(--foreground);
+  }
+  13.5% {
+    transform: translateY(-0.3em);
+    color: var(--brand-blue);
+  }
+}
+.letter-wave > span {
+  display: inline-block;
+  white-space: pre;
+  animation: letter-wave 2.4s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 55ms + 0.6s);
+}
+
+/* "Take the tour", arriving as the tour opens: each letter rises into place in blue, in turn,
+   and settles to the text color (WaveText's enter; --wave-start delays the first). */
+@keyframes letter-wave-in {
+  from {
+    transform: translateY(0.6em);
+    opacity: 0;
+    color: var(--brand-blue);
+  }
+  55% {
+    transform: translateY(-0.2em);
+    opacity: 1;
+    color: var(--brand-blue);
+  }
+  to {
+    transform: translateY(0);
+    color: var(--foreground);
+  }
+}
+.letter-wave-in > span {
+  display: inline-block;
+  white-space: pre;
+  animation: letter-wave-in 0.8s ease-out backwards;
+  animation-delay: calc(var(--i) * 40ms + var(--wave-start, 0ms));
+}
+
+/* The welcome card's trail: its dots walk along it, toward Deliver, as feet would. */
+@keyframes trail-walk {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.trail-walk {
+  animation: trail-walk 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-wave > span,
+  .letter-wave-in > span,
+  .trail-walk {
+    animation: none;
   }
 }

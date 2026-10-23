@@ -1,14 +1,116 @@
 "use client"
 
 import { CircleHelpIcon, PlayIcon, XIcon } from "lucide-react"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
-import { STEPS } from "@/components/intro-dialog"
+import { STEPS, TRAIL, TRAIL_STOPS, TRAIL_W, TRAIL_Y } from "@/components/intro-dialog"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { openIntro, setWelcomeFolded, takeJustFolded, useWelcome } from "@/lib/intro"
+import { FlapText } from "@/components/flap-text"
+import { WaveText } from "@/components/wave-text"
+import { openIntro, setWelcomeFolded, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
+import { cn } from "@/lib/utils"
 
-/** The card folded: a small "How it works" button that opens it again, drawing the eye as it first appears. */
+/**
+ * The tour's trail, the way between Draft, Decide and Deliver: the same path as the tour's
+ * header, stretched across the card, with its dots walking toward Deliver, and a stop for each
+ * step (its icon over its name, as in the tour's header) that opens the tour there. Under the
+ * track, where the card is wide enough (not on phones), each step's caption centered under its
+ * stop: the header the tour shows for it, so the track runs between where you stop and what you
+ * do there. There, the trail is drawn in from the card's sides (3rem each), so the end captions
+ * have room to center under Draft and Deliver. As the
+ * tour opens, the trail and the stops' icons grow into the tour's own (their transition names),
+ * and the captions fade with the card; the step's own header then fades in under the tour's
+ * trail, about where they were.
+ */
+function CardTrail({ touring }: { touring: boolean }) {
+  const at = (x: number) => `${(x / TRAIL_W) * 100}%`
+  return (
+    <div className="mt-2 @md:mx-12">
+      <nav aria-label="Tour steps" className="relative h-[72px]">
+        <svg
+          aria-hidden
+          viewBox={`0 0 ${TRAIL_W} 72`}
+          preserveAspectRatio="none"
+          className="absolute inset-0 size-full overflow-visible"
+          fill="none"
+          style={{ viewTransitionName: touring ? undefined : "tour-trail" }}
+        >
+          <path
+            d={TRAIL}
+            stroke="var(--brand-blue)"
+            strokeOpacity={0.7}
+            strokeWidth={2}
+            strokeDasharray="2 5"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className="trail-walk"
+          />
+        </svg>
+        {/* The stops' dots, as HTML: the stretched drawing would make circles ellipses. */}
+        {TRAIL_STOPS.map((x) => (
+          <span
+            key={x}
+            aria-hidden
+            className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--brand-blue)"
+            style={{ left: at(x), top: TRAIL_Y }}
+          />
+        ))}
+        {STEPS.map(({ label, icon: Icon, title }, i) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => openIntro(i)}
+            aria-label={`${label}: ${title.replace("\n", " ")}. Open the tour here`}
+            className="absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base leading-5 font-semibold text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            style={{ left: at(TRAIL_STOPS[i]) }}
+          >
+            {/* Flies to its stop on the tour's trail as the tour grows out of the card. */}
+            <Icon
+              className="size-4 shrink-0 text-(--brand-blue)"
+              aria-hidden
+              style={{ viewTransitionName: touring ? undefined : `tour-step-${i}` }}
+            />
+            {label}
+          </button>
+        ))}
+      </nav>
+      {/* The captions, under the track. Its stop's button already names each for screen
+          readers, so these are only a wider place to click. */}
+      <div aria-hidden className="relative mt-1 hidden h-12 @md:block">
+        {STEPS.map(({ label, title }, i) => (
+          <button
+            key={label}
+            type="button"
+            tabIndex={-1}
+            onClick={() => openIntro(i)}
+            className="absolute top-0 w-40 -translate-x-1/2 text-center text-base leading-6 whitespace-pre-line text-muted-foreground transition-colors hover:text-foreground"
+            style={{ left: at(TRAIL_STOPS[i]) }}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The card's title: "Start here" with its wave, or "How it works". Back from the tour, it first
+ * flaps from the tour's title to its own (keyed by how often the tour has closed, so each close
+ * flaps once), as the tour shrinks back into the card.
+ */
+function CardTitle({ first, fromTour }: { first: boolean; fromTour: boolean }) {
+  const text = first ? "Start here" : "How it works"
+  const [flapping, setFlapping] = useState(fromTour)
+  if (flapping) return <FlapText from="Take the tour" to={text} onDone={() => setFlapping(false)} />
+  return first ? <WaveText text={text} mode="loop" /> : text
+}
+
+/**
+ * The card folded: a small "How it works" button that opens it again, drawing the eye as it
+ * first appears. Folded buttons sort after the open cards (order), so they gather at the bottom.
+ */
 function FoldedWelcome() {
   const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -26,7 +128,7 @@ function FoldedWelcome() {
       ref={ref}
       variant="outline"
       onClick={() => setWelcomeFolded(false)}
-      className="border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand-blue)_16%,var(--card))]"
+      className="order-1 border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand-blue)_16%,var(--card))]"
     >
       <CircleHelpIcon className="text-(--brand-blue)" />
       How it works
@@ -35,26 +137,48 @@ function FoldedWelcome() {
 }
 
 /**
- * The welcome: the introduction's three steps, each opening it there under the header it has
- * there, Take the Tour (from the start) and, while Compose is empty, Try It (the example post).
+ * The welcome: the tour's trail, its stops opening the tour at each step, then Take the Tour
+ * (from the start) and Try It (the example post, while Compose is empty).
  * Rendered in two places, `top` (above Compose) and `bottom` (below it, beside the split view
  * reminder), it shows in one: above as "Start here" on a first visit until it's folded, below as
  * "How it works" from then on, open or folded to its button. In place of the introduction opening
  * over the app, so nothing stands between a newcomer and the tool.
  */
-export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; onTryExample?: () => void }) {
+export function WelcomeCard({
+  place,
+  onTryExample,
+  canTry,
+}: {
+  place: "top" | "bottom"
+  onTryExample: () => void
+  /** Compose is empty, so the example has room; otherwise Try It is there but disabled. */
+  canTry: boolean
+}) {
   const welcome = useWelcome()
+  // While the tour is open it carries the card's transition names (it grew out of the card).
+  const touring = useTourOpen()
+  const tourCloses = useTourCloses()
   if (!welcome || (place === "top") !== welcome.first) return null
   if (welcome.folded) return <FoldedWelcome />
 
   return (
     <section
       aria-labelledby="welcome-title"
-      className="@container w-full rounded-xl border border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] p-4"
+      style={{ viewTransitionName: touring ? undefined : "tour" }}
+      className={cn(
+        "@container w-full rounded-xl border border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] p-4",
+        // It became the tour: hidden while the tour is open (keeping its place), to grow back into.
+        touring && "invisible",
+      )}
     >
       <div className="flex items-center gap-2">
-        <h2 id="welcome-title" className="mr-auto font-semibold">
-          {welcome.first ? "Start here" : "How it works"}
+        {/* "Start here" a size up, as Compose's heading, with its wave; "How it works" plainer. */}
+        {/* The title's words travel to the tour's title as the tour grows out of the card (a
+            fixed width, the same as the tour's, so the morph doesn't stretch them). */}
+        <h2 id="welcome-title" className={cn("mr-auto font-semibold", welcome.first && "text-lg")}>
+          <span className="inline-block w-40" style={{ viewTransitionName: touring ? undefined : "tour-title" }}>
+            <CardTitle key={tourCloses} first={welcome.first} fromTour={tourCloses > 0} />
+          </span>
         </h2>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -71,37 +195,25 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
           <TooltipContent>Collapse</TooltipContent>
         </Tooltip>
       </div>
-      {/* Three across; the captions only where there is room for them (not on phones). */}
-      <ol className="mt-3 grid grid-cols-3 gap-2">
-        {STEPS.map(({ label, icon: Icon, title }, i) => (
-          <li key={label}>
-            <button
-              type="button"
-              onClick={() => openIntro(i)}
-              className="flex h-full w-full flex-col gap-1 rounded-lg border bg-card p-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none @md:p-3"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <Icon className="size-4 shrink-0 text-(--brand-blue)" aria-hidden />
-                <span>
-                  <span className="hidden @md:inline">{i + 1}. </span>
-                  {label}
-                </span>
-              </span>
-              {/* Under the icon and name, so it has the tile's width. Line breaks in a title
-                  are kept: Draft's breaks after its comma. */}
-              <span className="hidden text-sm whitespace-pre-line text-muted-foreground @md:block">{title}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button onClick={() => openIntro(0)}>Take the Tour</Button>
-        {onTryExample && (
-          <Button variant="outline" onClick={onTryExample}>
-            <PlayIcon />
-            Try It
-          </Button>
-        )}
+      <CardTrail touring={touring} />
+      {/* The two ways in, filling the card's width between them. Try It waits for an empty
+          Compose (it fills it), disabled until then, with its hover card saying so. */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button size="lg" onClick={() => openIntro(0)}>
+          Take the Tour
+        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {/* A span, as a disabled button gets no pointer events for its hover card. */}
+            <span tabIndex={canTry ? -1 : 0} className="grid">
+              <Button size="lg" variant="outline" onClick={onTryExample} disabled={!canTry}>
+                <PlayIcon />
+                Try It
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{canTry ? "Load an example post" : "Clear Compose to try the example"}</TooltipContent>
+        </Tooltip>
       </div>
     </section>
   )
