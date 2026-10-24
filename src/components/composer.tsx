@@ -758,7 +758,7 @@ export default function Composer() {
                 <button
                   type="button"
                   onClick={tryExample}
-                  className="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  className="py-0.5 underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   Try an example
                 </button>

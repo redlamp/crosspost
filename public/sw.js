@@ -56,7 +56,10 @@ self.addEventListener("fetch", (event) => {
 /**
  * The network, with the copy kept from last time when it's unreachable. Network first keeps
  * every visit current (the page and its hashed assets come straight from the host), and the
- * copy only matters offline.
+ * copy only matters offline. The page itself is asked for afresh (no-cache: the host answers
+ * 304 when it hasn't changed), never taken from the browser's cache: the host keeps it for ten
+ * minutes, and a deploy in that time replaces the hashed assets the kept page names, so a stale
+ * page would load against assets that are gone.
  */
 async function networkFirst(event) {
   const { request } = event
@@ -68,7 +71,7 @@ async function networkFirst(event) {
   // Only the app's page is kept, not a 404 page under its address.
   const keep = !page || url.pathname === base || url.pathname === `${base}index.html`
   try {
-    const response = await fetch(request)
+    const response = await fetch(page ? new Request(request.url, { cache: "no-cache", credentials: "same-origin" }) : request)
     if (keep && response.ok && response.type === "basic") {
       event.waitUntil(page ? keepPage(cache, key, response.clone()) : cache.put(key, response.clone()))
     }

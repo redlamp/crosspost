@@ -348,7 +348,8 @@ export function PlatformCard({
               <button
                 type="button"
                 aria-label={`How ${adapter.name} counts: ${adapter.countNote}`}
-                className="-mr-1.5 rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+                // A 16px icon with a 28px hit area (the pseudo-element), for fingers.
+                className="relative -mr-1.5 rounded-full text-muted-foreground transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
               >
                 <CircleHelpIcon className="size-4" />
               </button>
