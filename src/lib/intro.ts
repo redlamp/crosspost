@@ -167,18 +167,42 @@ export function foldWelcome() {
   morphTo(() => flushSync(() => setWelcomeFolded(true)), "card-folding")
 }
 
-// The introduction's dialog sits on the page with no button of its own; the welcome card asks it to open at a step.
+// The introduction's dialog sits on the page with no button of its own; the welcome card asks it
+// to open at a step. The dialog is fetched on demand (src/components/intro-loader.tsx): until it's
+// in, opening it means fetching it, with the step kept to open at once it registers.
 let opener: ((step: number) => void) | null = null
+let loader: (() => void) | null = null
+let pending: number | null = null
 
-/** The dialog registers how it opens; the returned function unregisters it. */
+/** The loader registers how the dialog is fetched; the returned function unregisters it. */
+export function registerIntroLoader(load: () => void) {
+  loader = load
+  return () => {
+    if (loader === load) loader = null
+  }
+}
+
+/** Fetch the dialog, if it isn't in yet (a hover or focus of the welcome card, ahead of a click). */
+export function requestIntro() {
+  loader?.()
+}
+
+/** The dialog registers how it opens (and opens at any step asked for meanwhile); the returned function unregisters it. */
 export function registerIntroOpener(open: (step: number) => void) {
   opener = open
+  if (pending !== null) {
+    const step = pending
+    pending = null
+    open(step)
+  }
   return () => {
     if (opener === open) opener = null
   }
 }
 
-/** Open the introduction at `step` (0 Draft, 1 Decide, 2 Deliver). */
+/** Open the introduction at `step` (0 Draft, 1 Decide, 2 Deliver), fetching the dialog first if need be. */
 export function openIntro(step = 0) {
-  opener?.(step)
+  if (opener) return opener(step)
+  pending = step
+  loader?.()
 }

@@ -15,6 +15,11 @@ export type Release = {
 /** Newest first. The first entry's version matches package.json (a test checks). */
 export const CHANGELOG: Release[] = [
   {
+    version: "1.2.2",
+    date: "2026-10-24",
+    changes: ["A smoother tour on phones, and a lighter first load.", "Fixes: a stale page after an update, light theme contrast, and tap targets."],
+  },
+  {
     version: "1.2.1",
     date: "2026-10-23",
     changes: ["Minor display bug fixes."],

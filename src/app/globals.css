@@ -51,6 +51,9 @@
   --radius: 0.625rem;
   /* Crosspost's own blue, from the logo (#40A8F8). */
   --brand-blue: oklch(0.708 0.15 246);
+  /* The blue as words (the Start here wave, a Copied button): the logo's blue is too light to read
+     on white, so the light theme darkens it for text; icons and fills keep the logo's. */
+  --brand-blue-text: oklch(0.5 0.16 246);
   /* The tour's Copy and Paste notes: deep blue words on a pale blue glow in the light theme,
      pale blue words on a navy glow in the dark (each lit from the top). */
   --note-glow: rgb(214 233 255 / 0.95);
@@ -86,7 +89,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.53 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -109,6 +112,7 @@
 }
 
 .dark {
+  --brand-blue-text: var(--brand-blue);
   --note-glow: rgb(0 50 104 / 0.85);
   --note-text: linear-gradient(180deg, #bae1ff 0%, #2aa0fb 65%, #0075d0 100%);
   --background: oklch(0.24 0 0);
@@ -320,7 +324,7 @@
   }
   13.5% {
     transform: translateY(-0.3em);
-    color: var(--brand-blue);
+    color: var(--brand-blue-text);
   }
 }
 .letter-wave > span {
@@ -336,12 +340,12 @@
   from {
     transform: translateY(0.6em);
     opacity: 0;
-    color: var(--brand-blue);
+    color: var(--brand-blue-text);
   }
   55% {
     transform: translateY(-0.2em);
     opacity: 1;
-    color: var(--brand-blue);
+    color: var(--brand-blue-text);
   }
   to {
     transform: translateY(0);
