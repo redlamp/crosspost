@@ -172,8 +172,9 @@ const easeOut = (t: number) => 1 - (1 - t) ** 3
  * The frame for an illustration: a fixed canvas, zoomed to fill the frame (with a 10px margin)
  * either way, so the drawing keeps its proportions at phone widths. Read as one image. When
  * `height` changes, the drawing zooms to fit the new canvas, as a camera pulling back; with
- * `anchor="top"` it stays pinned at the top while it does. A `note` sits in a strip along the
- * bottom of the frame, at full size, under the drawing's own area.
+ * `anchor="top"` it stays pinned at the top while it does. On phones a `note` sits in the band
+ * under the drawing inside the frame, a size down; on desktop the frame shows no note (a step's
+ * note goes in its row over the title).
  *
  * On phones the frame is square. A drawing given a `focus` (a place across its canvas) then fills
  * the frame's height, larger than fitting it whole would allow, and the camera shows the part of
@@ -200,6 +201,11 @@ function Stage({
   focus?: number
   /** Phones: the drawing fills the frame's whole height, the note band too (a drawing with no note). */
   fill?: boolean
+  /**
+   * A line for the drawing, shown in the band under it inside the phone frame. Nothing goes under
+   * the drawing on desktop (so the drawing sits at one height on every step): a step's note goes
+   * in its row over the title instead, as Decide's does.
+   */
   note?: React.ReactNode
   children: React.ReactNode
 }) {
@@ -213,7 +219,6 @@ function Stage({
   useLayoutEffect(() => {
     const frame = frameRef.current
     if (!frame) return
-    // With the camera, the drawing fills the frame's height; otherwise it fits whole.
     // With the camera, the drawing fills the square part of the frame (its width), or the whole
     // frame (fill); otherwise it fits whole.
     const fit = () =>
@@ -315,7 +320,6 @@ function Stage({
           <div className="absolute inset-x-2.5 bottom-2.5 [&>p]:py-2 [&>p]:text-sm [&>p]:leading-5 [&_svg]:size-4">{note}</div>
         )}
       </div>
-      {note && !phone && <div className="-mt-2 px-6 pb-6">{note}</div>}
     </div>
   )
 }
@@ -514,8 +518,10 @@ function BrowserTabBar({ children }: { children: React.ReactNode }) {
 function MiniButton({ children, className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
+      // The padding above: in a scaled drawing, a label this small comes out about half a pixel
+      // high (its baseline rounds up); a pixel of padding brings the centered label down by half (less rounds away).
       className={cn(
-        "flex h-5 items-center gap-1 rounded border bg-background/60 px-1.5 text-[9px] font-medium whitespace-nowrap [&_svg]:size-2.5",
+        "flex h-5 items-center gap-1 rounded border bg-background/60 px-1.5 pt-px text-[9px] font-medium whitespace-nowrap [&_svg]:size-2.5",
         className,
       )}
       {...props}
@@ -1444,13 +1450,7 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
       anchor="top"
       // Phones: the camera follows the pointer, in with the files to Compose, then over to X's card.
       focus={frame.cursor.x}
-      note={
-        <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-base text-muted-foreground">
-          <ShieldCheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
-          Images stay in your browser, never uploaded directly.
-        </p>
-      }
-      label="Three images dragged in from outside the page: Compose's drop bar opens up to take them, and they land in Compose and on X's first post. A pointer then drags the third image across X's card onto the second post's Move here space. A note under the drawing says images stay in your browser."
+      label="Three images dragged in from outside the page: Compose's drop bar opens up to take them, and they land in Compose and on X's first post. A pointer then drags the third image across X's card onto the second post's Move here space. A note under X's card says images stay in your browser."
       canvasRef={canvasRef}
     >
       <MiniCompose
@@ -1465,10 +1465,10 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
       {/* X's own split, as Split left it. */}
       <SplitMarkers splits={ownSplits(DRAFT_TEXT)} words={layout?.words} />
 
-      <div
-        style={{ ...brandVars(x), width: SIDE_W, top: COMPOSE_TOP }}
-        className={cn("absolute right-3 rounded-xl border p-2.5 shadow-sm", MINI_CARD)}
-      >
+      {/* The right column, level with Compose and running to the canvas's bottom margin: X's card
+          at the top, the note along the bottom. */}
+      <div style={{ width: SIDE_W, top: COMPOSE_TOP, bottom: 12 }} className="absolute right-3 flex flex-col justify-between gap-2.5">
+      <div style={brandVars(x)} className={cn("rounded-xl border p-2.5 shadow-sm", MINI_CARD)}>
         <MiniCardHeader adapter={x} note={posts.length === 1 ? "1 post" : `${posts.length} posts`} />
         <ol className="mt-2.5 space-y-1.5">
           {posts.map((c, post) => {
@@ -1519,6 +1519,15 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
             )
           })}
         </ol>
+      </div>
+      <p className="flex items-center gap-1.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-2 py-1.5 text-[8px] leading-[11px] text-muted-foreground">
+        <ShieldCheckIcon className="size-3 shrink-0 text-(--brand-blue)" />
+        <span>
+          Images stay in your browser,
+          <br />
+          never uploaded directly.
+        </span>
+      </p>
       </div>
 
       <Cursor at={frame.cursor} duration={frame.duration} pose={frame.pose} easing={frame.easing}>
@@ -1615,6 +1624,25 @@ const DECIDE_FRAME: DecideFrame = {
   duration: 0,
   clicks: 0,
   pose: "arrow",
+}
+
+/**
+ * Decide's note: in the step's 40px row over the title on desktop (where Draft has its tabs), in
+ * the drawing's band on phones, where its three lines take the height they need (the band sets
+ * their padding and size).
+ */
+export function DecideNote({ className }: { className?: string }) {
+  return (
+    <p
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 text-sm text-muted-foreground sm:min-h-10",
+        className,
+      )}
+    >
+      <ShieldCheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
+      Designed to be light: no account, password, or key. Nothing to connect, nothing to leak.
+    </p>
+  )
 }
 
 export function DecideArt({ active, onDone }: ArtProps) {
@@ -1714,12 +1742,8 @@ export function DecideArt({ active, onDone }: ArtProps) {
       // left it), over to the cards and icons as the pointer heads for More.
       focus={frame.cursor.x}
       label="A pointer moves right to the column of platform icons beside the cards, the view moving over with it, and rests on More, which opens the platforms that are off: Mastodon and Twitter. It drags Twitter's icon up to just above X's, and Twitter's card joins the others; then it drags X's icon down past the line into Off, and X's card goes. Less closes the Off part."
-      note={
-        <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-base text-muted-foreground">
-          <ShieldCheckIcon className="size-4 shrink-0 text-(--brand-blue)" />
-          Designed to be light: no account, password, or key. Nothing to connect, nothing to leak.
-        </p>
-      }
+      // On desktop the note is in the step's row over the title (intro-dialog's Decide).
+      note={<DecideNote />}
     >
       {/* Everything moves over together, as a camera panning; what moves out of view is clipped. */}
       <div className="absolute inset-0 overflow-hidden">
@@ -2064,7 +2088,8 @@ function DesktopImagesArt({ active, onDone }: { active: boolean; onDone?: () => 
             its toolbar along the bottom, where a post is added to the thread. */}
         <div className="flex h-6 items-center justify-between px-2.5">
           <span className="text-[9px] font-medium text-[#1185FE]">Cancel</span>
-          <span data-at="post" className="flex h-5 items-center rounded-full bg-[#1185FE] px-3 text-[9px] font-semibold text-white">
+          {/* A pixel of padding above Post, as MiniButton has, so its label sits centered. */}
+          <span data-at="post" className="flex h-5 items-center rounded-full bg-[#1185FE] px-3 pt-px text-[9px] font-semibold text-white">
             {frame.thread ? "Post all" : "Post"}
           </span>
         </div>
