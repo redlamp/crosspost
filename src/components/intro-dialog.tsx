@@ -4,7 +4,17 @@ import { FlagIcon, PenLineIcon, SendIcon, SignpostBigIcon, XIcon, type LucideIco
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 
-import { DecideArt, DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, useTouch, WriteArt, type ArtProps } from "@/components/intro-art"
+import {
+  DecideArt,
+  DecideNote,
+  DraftImagesArt,
+  ImagesArt,
+  SplitArt,
+  useReducedMotion,
+  useTouch,
+  WriteArt,
+  type ArtProps,
+} from "@/components/intro-art"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -46,40 +56,32 @@ function StepTitle({ children, className }: { children: React.ReactNode; classNa
 }
 
 /**
- * A step's body, every step alike: a row for its tabs (Draft's; kept, empty, on the steps without
- * tabs, so the title and the visual sit at the same height on every step), the title centered and
- * the visual, then its line of text, if any, under the visual (so a step with text doesn't push
- * the visual down; on phones the text is left out, so the dialog sits snug under the visual on
- * every step).
+ * A step's body, every step alike, so the drawing sits at one height and one place on every
+ * step: a 40px row for what goes over the title (Draft's tabs; Decide's note, which has no tabs
+ * to share the row with; empty otherwise), the title centered, then the visual. Nothing goes
+ * under the visual: a step's note is in that row, or in the drawing's own band on phones.
  */
 function Step({
   visual,
   controls,
   title,
-  children,
   align = "center",
 }: {
   visual: React.ReactNode
   controls?: React.ReactNode
   title: string
-  children?: React.ReactNode
   align?: "center" | "start"
 }) {
   const start = align === "start"
   return (
     <div className={cn("flex flex-col gap-3", start ? "items-stretch" : "items-center")}>
+      {/* 40px on every step; only a note that wraps (Decide's, on the sm dialog) grows it. */}
       <div className="flex min-h-10 items-center justify-center">{controls}</div>
       {/* Keyed by its words, so a new caption fades in. */}
       {/* Phones: room for two lines, as Split's title takes, so the visual sits at one height on every step. */}
       <StepTitle key={title} className={cn("animate-in fade-in max-sm:min-h-[2lh]", !start && "text-center")}>
         {title}
       </StepTitle>
-      {children && (
-        // Not on phones, where the dialog sits snug under the visual on every step.
-        <div className={cn("order-last space-y-3 text-sm text-muted-foreground max-sm:hidden", start ? "w-full" : "w-full max-w-lg")}>
-          {children}
-        </div>
-      )}
       <div className="mt-2 w-full">{visual}</div>
     </div>
   )
@@ -149,10 +151,11 @@ function Decide({ active, next }: StepProps) {
     decideStart.current = performance.now()
   }, [])
   return (
-    // As the other steps: the title and a line, then the drawing (Draft's view, moved over to
-    // take in the platform icons), with its note under it.
+    // Its note in the row the other steps keep for tabs (on phones it's in the drawing's band
+    // instead), the title, then the drawing: Draft's view, moved over to take in the platform icons.
     <Step
       title="Pick your destinations"
+      controls={<DecideNote className="max-sm:hidden" />}
       visual={
         <DecideArt
           active={active}
@@ -162,13 +165,7 @@ function Decide({ active, next }: StepProps) {
           }}
         />
       }
-    >
-      <p className="text-center text-base leading-5 text-balance">
-        Drag the platforms into the order you want,
-        <br />
-        tuck away what you don&apos;t.
-      </p>
-    </Step>
+    />
   )
 }
 
@@ -285,9 +282,9 @@ type DeliverTabs = {
 }
 
 /**
- * Deliver: its way's title and a line under it (with tabs, as Draft's, once there's more than one
- * way), then the drawing. Each way moves on to the next when its drawing ends, and the last on to
- * Done, until a tab is picked.
+ * Deliver: its way's title (with tabs, as Draft's, once there's more than one way), then the
+ * drawing. Each way moves on to the next when its drawing ends, and the last on to Done, until a
+ * tab is picked.
  */
 function Deliver({ active, deliver }: StepProps) {
   const { way, picked, pick: setWay, show, finish } = deliver
@@ -340,15 +337,19 @@ const DONE_RECAP: { icon: LucideIcon; text: string }[] = [
   { icon: SendIcon, text: "Post it with ease" },
 ]
 
-/** Done's pieces fade up one after another: the flag, the title, then each line of the recap. */
+/** Done's pieces fade up one after another: the header, then each line of the recap. */
 const RISE = "animate-in fade-in slide-in-from-bottom-3 duration-500 fill-mode-backwards motion-reduce:animate-none"
 const RISE_DELAYS = ["delay-250", "delay-400", "delay-550"]
 
 function Done() {
   return (
-    <div className="flex flex-col items-center gap-3 py-8 text-center">
-      <FlagIcon className={cn("size-8 text-(--brand-blue)", RISE)} aria-hidden />
-      <StepTitle className={cn("text-center", RISE, "delay-100")}>You&apos;re ready!</StepTitle>
+    // On the other steps' grid: the header, flag and all, in the 40px row they keep over their
+    // titles, and the recap starting where their titles sit.
+    <div className="flex flex-col items-center gap-3 text-center">
+      <div className={cn("flex h-10 items-center justify-center gap-2.5", RISE)}>
+        <FlagIcon className="size-7 text-(--brand-blue)" aria-hidden />
+        <StepTitle className="text-2xl text-foreground">You&apos;re ready!</StepTitle>
+      </div>
       <ul className="space-y-2 text-left text-base text-muted-foreground">
         {DONE_RECAP.map(({ icon: Icon, text }, i) => (
           <li key={text} className={cn("flex items-center gap-2.5", RISE, RISE_DELAYS[i])}>
