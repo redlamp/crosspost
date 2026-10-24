@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 
 type Listener = (event: { request: Request; respondWith: (r: Promise<Response> | Response) => void }) => void
 
-function loadWorker(href: string) {
+function loadWorker(href: string, fetch: (request: Request) => Promise<Response> = () => Promise.reject(new Error("offline"))) {
   const listeners: Record<string, Listener> = {}
   const stored = new Map<string, unknown>()
   // The slice of IndexedDB the worker uses: open, one object store, put in a transaction.
@@ -54,7 +54,7 @@ function loadWorker(href: string) {
     File,
     FormData,
     Date,
-    fetch: () => Promise.reject(new Error("offline")),
+    fetch,
   }
   vm.runInNewContext(readFileSync("public/sw.js", "utf8"), sandbox)
   const handle = (request: Request) =>
@@ -97,5 +97,34 @@ describe("the service worker's share target", () => {
     form.set("text", "hello")
     const response = await handle(new Request("http://127.0.0.1:4321/share", { method: "POST", body: form }))
     expect(response.headers.get("location")).toBe("http://127.0.0.1:4321/?share-target")
+  })
+})
+
+describe("the service worker's page loads", () => {
+  // A page load is a navigate request, which Node won't build: a plain object stands in.
+  const pageLoad = (url: string) => ({ url, method: "GET", mode: "navigate" }) as Request
+
+  it("asks the host for the page afresh, never the browser's kept copy", async () => {
+    const seen: Request[] = []
+    const { handle } = loadWorker("https://example.test/crosspost/sw.js", async (request) => {
+      seen.push(request)
+      return new Response("<html>", { status: 200 })
+    })
+    const response = await handle(pageLoad("https://example.test/crosspost/"))
+    expect(response.status).toBe(200)
+    expect(seen).toHaveLength(1)
+    expect(seen[0].url).toBe("https://example.test/crosspost/")
+    expect(seen[0].cache).toBe("no-cache")
+  })
+
+  it("leaves hashed assets to the browser's cache", async () => {
+    const seen: Request[] = []
+    const { handle } = loadWorker("https://example.test/crosspost/sw.js", async (request) => {
+      seen.push(request)
+      return new Response("", { status: 200 })
+    })
+    const asset = new Request("https://example.test/crosspost/_next/static/chunks/abc123.js")
+    await handle(asset)
+    expect(seen[0]).toBe(asset)
   })
 })

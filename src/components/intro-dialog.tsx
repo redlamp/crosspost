@@ -4,7 +4,7 @@ import { FlagIcon, PenLineIcon, SendIcon, SignpostBigIcon, XIcon, type LucideIco
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 
-import { DecideArt, DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, WriteArt, type ArtProps } from "@/components/intro-art"
+import { DecideArt, DraftImagesArt, ImagesArt, SplitArt, useReducedMotion, useTouch, WriteArt, type ArtProps } from "@/components/intro-art"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
 import { canMorph, morphTo, registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
+import { CARD_TRAIL_W, TOUR_STEPS, TRAIL, TRAIL_STOPS, TRAIL_TO_DELIVER, TRAIL_TO_DONE, TRAIL_W, TRAIL_Y } from "@/lib/tour-steps"
 import { cn } from "@/lib/utils"
 
 /** Draft's tabs, kept by the dialog so the timeline can move between them. */
@@ -45,8 +46,11 @@ function StepTitle({ children, className }: { children: React.ReactNode; classNa
 }
 
 /**
- * A step's body, every step alike: its tabs if it has them (Draft's, Deliver's), the title
- * centered and a line of text under it, then the visual.
+ * A step's body, every step alike: a row for its tabs (Draft's; kept, empty, on the steps without
+ * tabs, so the title and the visual sit at the same height on every step), the title centered and
+ * the visual, then its line of text, if any, under the visual (so a step with text doesn't push
+ * the visual down; on phones the text is left out, so the dialog sits snug under the visual on
+ * every step).
  */
 function Step({
   visual,
@@ -64,13 +68,17 @@ function Step({
   const start = align === "start"
   return (
     <div className={cn("flex flex-col gap-3", start ? "items-stretch" : "items-center")}>
-      {controls}
+      <div className="flex min-h-10 items-center justify-center">{controls}</div>
       {/* Keyed by its words, so a new caption fades in. */}
-      <StepTitle key={title} className={cn("animate-in fade-in", !start && "text-center")}>
+      {/* Phones: room for two lines, as Split's title takes, so the visual sits at one height on every step. */}
+      <StepTitle key={title} className={cn("animate-in fade-in max-sm:min-h-[2lh]", !start && "text-center")}>
         {title}
       </StepTitle>
       {children && (
-        <div className={cn("space-y-3 text-sm text-muted-foreground", start ? "w-full" : "w-full max-w-lg")}>{children}</div>
+        // Not on phones, where the dialog sits snug under the visual on every step.
+        <div className={cn("order-last space-y-3 text-sm text-muted-foreground max-sm:hidden", start ? "w-full" : "w-full max-w-lg")}>
+          {children}
+        </div>
       )}
       <div className="mt-2 w-full">{visual}</div>
     </div>
@@ -259,9 +267,10 @@ const DELIVER_TITLES = ["Post it yourself"]
 
 /**
  * How long each of Deliver's drawings plays before moving on, in ms, for the timeline: a first
- * guess, then what the last pass took.
+ * guess (the desktop's drawing, or the phone's, which is shorter), then what the last pass took.
  */
-const DELIVER_MS = [18500]
+const DELIVER_MS = { desktop: [18500], phone: [10800] }
+let deliverMs = DELIVER_MS.desktop
 
 /** Deliver's tabs: the one showing, and how they move on. */
 type DeliverTabs = {
@@ -290,7 +299,7 @@ function Deliver({ active, deliver }: StepProps) {
   const onDone = picked
     ? undefined
     : () => {
-        DELIVER_MS[way] = settle(DELIVER_MS[way], performance.now() - startedAt.current)
+        deliverMs[way] = settle(deliverMs[way], performance.now() - startedAt.current)
         if (way === DELIVER_WAYS.length - 1) finish()
         else show(way + 1)
       }
@@ -310,9 +319,14 @@ function Deliver({ active, deliver }: StepProps) {
       }
       title={DELIVER_TITLES[way]}
       visual={
-        <div role="tabpanel" id="intro-deliver-panel" aria-labelledby={`intro-deliver-${way}`}>
+        // A tab panel only with tabs to name it.
+        DELIVER_WAYS.length > 1 ? (
+          <div role="tabpanel" id="intro-deliver-panel" aria-labelledby={`intro-deliver-${way}`}>
+            <ImagesArt active={active} onDone={onDone} />
+          </div>
+        ) : (
           <ImagesArt active={active} onDone={onDone} />
-        </div>
+        )
       }
     />
   )
@@ -326,14 +340,18 @@ const DONE_RECAP: { icon: LucideIcon; text: string }[] = [
   { icon: SendIcon, text: "Post it with ease" },
 ]
 
+/** Done's pieces fade up one after another: the flag, the title, then each line of the recap. */
+const RISE = "animate-in fade-in slide-in-from-bottom-3 duration-500 fill-mode-backwards motion-reduce:animate-none"
+const RISE_DELAYS = ["delay-250", "delay-400", "delay-550"]
+
 function Done() {
   return (
     <div className="flex flex-col items-center gap-3 py-8 text-center">
-      <FlagIcon className="size-8 text-(--brand-blue)" aria-hidden />
-      <StepTitle className="text-center">You&apos;re ready!</StepTitle>
+      <FlagIcon className={cn("size-8 text-(--brand-blue)", RISE)} aria-hidden />
+      <StepTitle className={cn("text-center", RISE, "delay-100")}>You&apos;re ready!</StepTitle>
       <ul className="space-y-2 text-left text-base text-muted-foreground">
-        {DONE_RECAP.map(({ icon: Icon, text }) => (
-          <li key={text} className="flex items-center gap-2.5">
+        {DONE_RECAP.map(({ icon: Icon, text }, i) => (
+          <li key={text} className={cn("flex items-center gap-2.5", RISE, RISE_DELAYS[i])}>
             <Icon className="size-4 shrink-0 text-(--brand-blue)" aria-hidden />
             {text}
           </li>
@@ -343,38 +361,10 @@ function Done() {
   )
 }
 
-// What the app does, then what's in your hands, then the last steps, which are yours, then the
-// end of the trail (the tour only: the welcome card shows the first three).
-export const STEPS: { label: string; icon: LucideIcon; title: string; Body: (props: StepProps) => React.ReactNode }[] = [
-  // The welcome card keeps the line breaks (its captions); the dialog's description reads them as spaces.
-  { label: "Draft", icon: PenLineIcon, title: "Write once,\npreview everywhere", Body: Draft },
-  { label: "Decide", icon: SignpostBigIcon, title: "Pick your\ndestinations", Body: Decide },
-  { label: "Deliver", icon: SendIcon, title: "Open or copy,\nthen post it", Body: Deliver },
-  { label: "Done", icon: FlagIcon, title: "You're ready!", Body: Done },
-]
-
-// The steps as stops on a winding trail, a nod to the signpost, and a timeline of the
-// introduction: a marker plays along the curve as the steps do, inking the way behind it, and
-// can be dragged back and forth. The tour's trail goes one stop further than the card's, to
-// Done. Its three stretches are the same curve (the middle one mirrored), so the stops sit at
-// even thirds of its length: a place on the timeline runs from 0 (Draft) to 3 (Done), each
-// step taking the stretch up to the next stop. Small unlabeled nodes mark the tabs within a
-// step: Split and Images on Draft's stretch (and Deliver's ways, when it has more than one).
-const TRAIL_W = 430
-const TRAIL_STOPS = [20, 150, 280, 410]
-const TRAIL_Y = 58
-const TRAIL = "M20 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10c32.5 0 32.5 -10 65 -10s32.5 10 65 10c32.5 0 32.5 10 65 10s32.5 -10 65 -10"
-// The dotted way, in two: up to Deliver, the welcome card's own trail at the same size (so the
-// card's Draft to Deliver keeps its width as it becomes the tour's), and on to Done, which then
-// draws out from Deliver as the tour's addition.
-const TRAIL_TO_DELIVER = "M20 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10c32.5 0 32.5 -10 65 -10s32.5 10 65 10"
-const TRAIL_TO_DONE = "M280 58c32.5 0 32.5 10 65 10s32.5 -10 65 -10"
-
-// The welcome card's trail: Draft, Decide and Deliver, the tour's first two stretches as they are.
-export const CARD_TRAIL_W = TRAIL_STOPS[2] + 20
-export const CARD_TRAIL_STOPS = TRAIL_STOPS.slice(0, 3)
-export const CARD_TRAIL_Y = TRAIL_Y
-export const CARD_TRAIL = TRAIL_TO_DELIVER
+// The steps (src/lib/tour-steps.ts, shared with the welcome card, as is the trail), each with
+// its body here.
+export const STEPS: { label: string; icon: LucideIcon; title: string; Body: (props: StepProps) => React.ReactNode }[] =
+  TOUR_STEPS.map((step, i) => ({ ...step, Body: [Draft, Decide, Deliver, Done][i] }))
 const TIMELINE_END = STEPS.length - 1
 /** Deliver's stop and Done's on the timeline. */
 const DELIVER_AT = 2
@@ -430,7 +420,7 @@ function stretchFor(step: number, part: number, at?: number): Stretch {
     const start = deliverAt(part)
     const end = deliverAt(part + 1)
     const from = Math.min(end, Math.max(start, at ?? start))
-    return { from, to: end, ms: (DELIVER_MS[part] * (end - from)) / (end - start) }
+    return { from, to: end, ms: (deliverMs[part] * (end - from)) / (end - start) }
   }
   return still(TIMELINE_END)
 }
@@ -725,6 +715,11 @@ function Trail({
  */
 export function IntroDialog() {
   const [open, setOpen] = useState(false)
+  // Deliver's drawing, and so its timing, is the desktop's or the phone's (ImagesArt).
+  const touch = useTouch()
+  useLayoutEffect(() => {
+    deliverMs = touch ? DELIVER_MS.phone : DELIVER_MS.desktop
+  }, [touch])
   // Opened by growing out of the welcome card (a view transition), so it closes back into it:
   // the dialog's own fade and zoom stand aside for the morph.
   const [morph, setMorph] = useState(false)

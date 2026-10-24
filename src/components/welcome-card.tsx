@@ -3,15 +3,24 @@
 import { CircleHelpIcon, PlayIcon, XIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
-import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, STEPS } from "@/components/intro-dialog"
+import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, TOUR_STEPS } from "@/lib/tour-steps"
 
 /** The card shows the tour's first three steps; Done is the tour's own. */
-const CARD_STEPS = STEPS.slice(0, 3)
+const CARD_STEPS = TOUR_STEPS.slice(0, 3)
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
-import { foldWelcome, openIntro, setWelcomeFolded, takeJustFolded, useTourCloses, useTourOpen, useWelcome } from "@/lib/intro"
+import {
+  foldWelcome,
+  openIntro,
+  requestIntro,
+  setWelcomeFolded,
+  takeJustFolded,
+  useTourCloses,
+  useTourOpen,
+  useWelcome,
+} from "@/lib/intro"
 import { cn } from "@/lib/utils"
 
 /**
@@ -171,6 +180,9 @@ function FoldedWelcome() {
       // The card's transition name: it glides from the card's place down to here.
       style={{ viewTransitionName: "tour" }}
       data-glide="how"
+      // A hover or focus fetches the tour's dialog, so it's in by the time it's opened.
+      onPointerEnter={requestIntro}
+      onFocus={requestIntro}
       className="order-1 border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] hover:bg-[color-mix(in_oklab,var(--brand-blue)_16%,var(--card))]"
     >
       <CircleHelpIcon className="text-(--brand-blue)" />
@@ -199,6 +211,9 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
     <section
       data-glide="how"
       aria-labelledby="welcome-title"
+      // A hover or focus fetches the tour's dialog, if it isn't in yet, so it's ready when opened.
+      onPointerEnter={requestIntro}
+      onFocus={requestIntro}
       style={{ viewTransitionName: touring ? undefined : "tour" }}
       className={cn(
         "@container w-full rounded-xl border border-(--brand-blue)/40 bg-[color-mix(in_oklab,var(--brand-blue)_8%,var(--card))] p-4",

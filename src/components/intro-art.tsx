@@ -106,9 +106,20 @@ export const useReducedMotion = () => useMediaQuery("(prefers-reduced-motion: re
 export const useTouch = () => useMediaQuery("(pointer: coarse)")
 /** Phone widths (under Tailwind's sm), where the drawings' frames go square and the camera crops in. */
 const usePhone = () => useMediaQuery("(max-width: 639px)")
+/**
+ * The phone frame's height, as a share of its width: the square the drawing fills, and a band
+ * under it inside the frame, where a drawing's note goes (so every step's frame is one size,
+ * with or without a note, and the dialog sits snug under it).
+ */
+const PHONE_FRAME = 1.25
 /** How long the camera takes to move to a new focus, and its ease. */
 const CAMERA_MS = 900
 const CAMERA_EASE = "cubic-bezier(0.4, 0, 0.2, 1)"
+/**
+ * Where the camera was left by the drawing before (canvas pixels): a new drawing's camera starts
+ * there and moves to its own focus, rather than cutting straight to it.
+ */
+let carriedCamera: number | null = null
 
 /**
  * Plays `script` over and over, after `setup` once; returns a function that stops it
@@ -176,6 +187,7 @@ function Stage({
   height = STAGE_H,
   anchor = "center",
   focus,
+  fill = false,
   note,
   children,
 }: {
@@ -186,6 +198,8 @@ function Stage({
   anchor?: "center" | "top"
   /** Where across the canvas the camera centers on phones (canvas pixels); see above. */
   focus?: number
+  /** Phones: the drawing fills the frame's whole height, the note band too (a drawing with no note). */
+  fill?: boolean
   note?: React.ReactNode
   children: React.ReactNode
 }) {
@@ -200,9 +214,11 @@ function Stage({
     const frame = frameRef.current
     if (!frame) return
     // With the camera, the drawing fills the frame's height; otherwise it fits whole.
+    // With the camera, the drawing fills the square part of the frame (its width), or the whole
+    // frame (fill); otherwise it fits whole.
     const fit = () =>
       camera
-        ? (frame.clientHeight - 20) / height
+        ? (fill ? frame.clientHeight - 20 : frame.clientWidth - 20) / height
         : Math.min((frame.clientWidth - 20) / width, (frame.clientHeight - 20) / height)
     const show = (z: number) => {
       zoomRef.current = z
@@ -234,12 +250,27 @@ function Stage({
       cancelAnimationFrame(frameId)
       ro.disconnect()
     }
-  }, [width, height, camera])
+  }, [width, height, camera, fill])
 
   // The camera: how much of the canvas the frame shows, and how far over it is, centered on the
   // focus but never past either edge.
   const seen = (frameW - 20) / zoom
   const offset = camera ? Math.max(0, Math.min(width - seen, focus - seen / 2)) : 0
+  // Its first frame is where the drawing before left it; from the next, the focus here, so the
+  // move between the two is eased like any other (the transition below), not cut.
+  const [from] = useState(() => carriedCamera)
+  const [landed, setLanded] = useState(false)
+  useEffect(() => {
+    // Two frames on, so the first has been painted where it started.
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => setLanded(true))
+    })
+    return () => cancelAnimationFrame(id)
+  }, [])
+  useEffect(() => {
+    if (camera) carriedCamera = offset
+  }, [camera, offset])
+  const shown = camera && !landed && from !== null ? Math.max(0, Math.min(width - seen, from)) : offset
 
   return (
     <div
@@ -249,11 +280,16 @@ function Stage({
     >
       <div
         ref={frameRef}
-        className={cn("flex shrink-0 overflow-hidden", anchor === "top" ? "items-start pt-2.5" : "items-center")}
+        className={cn(
+          "relative flex shrink-0 overflow-hidden",
+          anchor === "top" ? "items-start pt-2.5" : "items-center",
+          // On phones every drawing sits at the top, the note band under it.
+          phone && "items-start pt-2.5",
+        )}
         // The tallest canvas's proportions (with the margin), so every step's frame is the same
         // height and grows with the dialog's width: the drawings come out larger on big screens.
-        // On phones, square (see above).
-        style={{ aspectRatio: phone ? "1 / 1" : `${STAGE_W + 20} / ${DRAFT_H + 20}` }}
+        // On phones, a square with the note band under it (PHONE_FRAME).
+        style={{ aspectRatio: phone ? `1 / ${PHONE_FRAME}` : `${STAGE_W + 20} / ${DRAFT_H + 20}` }}
       >
         <div
           ref={canvasRef}
@@ -267,15 +303,19 @@ function Stage({
             ...(camera && {
               // The 10px margin, in canvas pixels (the zoom scales it).
               marginLeft: 10 / zoom,
-              transform: `translateX(${-offset}px)`,
+              transform: `translateX(${-shown}px)`,
               transition: `transform ${CAMERA_MS}ms ${CAMERA_EASE}`,
             }),
           }}
         >
           {children}
         </div>
+        {/* Phones: the note in the band at the bottom of the frame, a size down. */}
+        {note && phone && (
+          <div className="absolute inset-x-2.5 bottom-2.5 [&>p]:py-2 [&>p]:text-sm [&>p]:leading-5 [&_svg]:size-4">{note}</div>
+        )}
       </div>
-      {note && <div className="-mt-2 px-6 pb-6">{note}</div>}
+      {note && !phone && <div className="-mt-2 px-6 pb-6">{note}</div>}
     </div>
   )
 }
@@ -1284,9 +1324,9 @@ type StagingFrame = {
 }
 
 /** Where the pointer waits before coming in: well past the frame's edge, out of sight at any zoom. */
-const STAGING_IN: Point = { x: 820, y: 90 }
+const STAGING_IN: Point = { x: -300, y: 90 }
 /** Where the files come over the page's edge. */
-const STAGING_EDGE: Point = { x: 520, y: 112 }
+const STAGING_EDGE: Point = { x: 0, y: 112 }
 const STAGING_REST: Point = { x: 264, y: DRAFT_H - 24 }
 const STAGING_START: StagingFrame = {
   cursor: STAGING_IN,
@@ -1328,7 +1368,9 @@ export function DraftImagesArt({ active, onDone, litFrom = false }: ArtProps) {
     const moveTo = (name: string, duration: number) => set({ cursor: locate(canvasRef.current, name), duration })
     return loop(
       async (wait) => {
-        // Out past the frame's right edge, from wherever the pointer is, to pick up the files.
+        // Out past the frame's left edge, from wherever the pointer is, to pick up the files: the
+        // left, so on phones the camera, on Compose, needn't follow it out (it heads right later,
+        // to X's card, once the images are in).
         set({ cursor: STAGING_IN, duration: 700, easing: "cubic-bezier(0.4, 0, 1, 1)", carrying: false })
         await wait(600)
         set({ carrying: true, easing: undefined, pose: "grab" })
@@ -1668,8 +1710,9 @@ export function DecideArt({ active, onDone }: ArtProps) {
     <Stage
       height={DRAFT_H}
       anchor="top"
-      // Phones: on Compose, then over to the cards and icons with the pan.
-      focus={frame.panned ? STAGE_W : 0}
+      // Phones: the camera follows the pointer, as on Images (so it carries on from where Images
+      // left it), over to the cards and icons as the pointer heads for More.
+      focus={frame.cursor.x}
       label="A pointer moves right to the column of platform icons beside the cards, the view moving over with it, and rests on More, which opens the platforms that are off: Mastodon and Twitter. It drags Twitter's icon up to just above X's, and Twitter's card joins the others; then it drags X's icon down past the line into Off, and X's card goes. Less closes the Off part."
       note={
         <p className="flex items-center gap-2.5 rounded-lg border border-(--brand-blue)/40 bg-(--brand-blue)/8 px-3 py-3 text-base text-muted-foreground">
@@ -2174,7 +2217,8 @@ function PhoneImagesArt({ active, onDone }: { active: boolean; onDone?: () => vo
         set({ inApp: false })
         await wait(400)
         set({ cursor: PHONE_REST, duration: 700 })
-        await wait(800)
+        // A rest on the posted state, as the desktop's drawing has, before the tour moves on.
+        await wait(2000)
         done()
         set({ copied: false, pasted: false })
         await wait(1400)
@@ -2195,6 +2239,10 @@ function PhoneImagesArt({ active, onDone }: { active: boolean; onDone?: () => vo
       canvasRef={canvasRef}
       width={PHONE_W}
       height={PHONE_H}
+      // Phones: the drawn phone fills the frame, centered (its canvas has room either side for the
+      // desktop's wider frame); no note, so the band is its too.
+      focus={PHONE_W / 2}
+      fill
     >
       <div className="absolute top-2 left-1/2 h-[244px] w-[132px] -translate-x-1/2 rounded-[22px] border-4 border-neutral-700 bg-background p-1 shadow-xl">
         <div className="relative size-full overflow-hidden rounded-[20px] bg-background">

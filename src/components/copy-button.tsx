@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 
 // Copied: a finished task, not a disabled one. The app's blue, as on the copied-image checks; still clickable.
 const DONE =
-  "border-(--brand-blue)/60 bg-(--brand-blue)/10 text-(--brand-blue) hover:bg-(--brand-blue)/20 hover:text-(--brand-blue)"
+  "border-(--brand-blue)/60 bg-(--brand-blue)/10 text-(--brand-blue-text) hover:bg-(--brand-blue)/20 hover:text-(--brand-blue-text)"
 
 // The async clipboard API can be blocked (permissions, embedded browsers), so
 // fall back to the older selection-based copy.

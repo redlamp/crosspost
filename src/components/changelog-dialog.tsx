@@ -19,7 +19,7 @@ export function ChangelogDialog({ className }: { className?: string }) {
           aria-label={`Version ${version}: what's new`}
           // Underlined at rest so it reads as a link (a soft line), lighting up with the text on hover.
           className={cn(
-            "text-left tabular-nums underline decoration-current/40 underline-offset-4 transition-colors hover:text-foreground hover:decoration-current",
+            "py-0.5 text-left tabular-nums underline decoration-current/40 underline-offset-4 transition-colors hover:text-foreground hover:decoration-current",
             className,
           )}
         >
