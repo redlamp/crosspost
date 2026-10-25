@@ -37,6 +37,16 @@ export const facebook: PlatformAdapter = {
       approximate: true,
     },
   ],
+  // Meta's video requirements (written for Pages; nothing separate for personal posts): up to
+  // 10 GB and 240 minutes, MP4 and MOV recommended, most containers taken. Photos and videos mix.
+  video: {
+    types: ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska", "video/x-msvideo", "video/mpeg", "video/x-m4v"],
+    typeLabel: "MP4, MOV, WebM, MKV, AVI or MPEG",
+    maxBytes: 10e9,
+    maxSeconds: 240 * 60,
+    perPost: 10,
+    mixes: true,
+  },
   open: { label: "Open Facebook", url: () => "https://www.facebook.com/" },
   // Meta's policy: nothing may prefill a Facebook post, so its app drops shared text and keeps
   // only the images. Share copies the text for pasting instead.

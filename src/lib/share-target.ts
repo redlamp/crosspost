@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react"
 
+import { isMediaType, mediaType } from "@/lib/media"
+
 // Posts shared into Crosspost from other apps. The service worker (public/sw.js) takes the
 // share target's POST, keeps what came in IndexedDB, and opens the app with ?share-target;
 // the composer then takes it from here: text into the draft, images into the tray.
@@ -33,11 +35,20 @@ function openDb(): Promise<IDBDatabase> {
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 
-/** A stored blob as a file (IndexedDB gives files back as files, but a plain blob needs a name). */
+/** File name endings for the types whose names aren't their endings. */
+const ENDINGS: Record<string, string> = { quicktime: "mov", "x-m4v": "m4v", jpeg: "jpg", "x-matroska": "mkv" }
+
+/**
+ * A stored blob as a typed file (IndexedDB gives files back as files, but a plain blob needs a
+ * name, and a file some apps send untyped is typed by its name, as the tray types it).
+ */
 function asFile(value: unknown, n: number): File | null {
-  if (!(value instanceof Blob) || !value.type.startsWith("image/")) return null
-  if (value instanceof File) return value
-  return new File([value], `shared-${n}.${value.type.split("/")[1] ?? "png"}`, { type: value.type })
+  if (!(value instanceof Blob)) return null
+  const type = value instanceof File ? mediaType(value) : value.type
+  if (!isMediaType(type)) return null
+  if (value instanceof File) return value.type ? value : new File([value], value.name, { type })
+  const sub = type.split("/")[1] ?? "png"
+  return new File([value], `shared-${n}.${ENDINGS[sub] ?? sub}`, { type })
 }
 
 /** Take the shared post the worker stored, if any, clearing it so a reload doesn't bring it back. */

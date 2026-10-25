@@ -127,17 +127,18 @@ function TileFace({ item: { adapter, enabled, issue, posts, posted } }: { item: 
     <>
       <PlatformLogo adapter={adapter} />
       {issue && enabled && (
-        <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-destructive text-white ring-2 ring-background">
-          <TriangleAlertIcon className="size-2.5" strokeWidth={3} />
+        // Upper left, as on the cards' thumbnails, clear of the counts and checks on the lower right.
+        <span className="absolute -top-2 -left-2 grid size-4.5 place-items-center rounded-full bg-destructive text-white ring-2 ring-background">
+          <TriangleAlertIcon className="size-2.75" strokeWidth={3} />
         </span>
       )}
       {/* Posted: a check in the count's place, the app's blue as on the cards' checks. */}
       {posted && enabled && (
         <span
           aria-hidden
-          className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background"
+          className="absolute -right-1.5 -bottom-1.5 grid size-4.5 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background"
         >
-          <CheckIcon className="size-2.5" strokeWidth={3.5} />
+          <CheckIcon className="size-2.75" strokeWidth={3.5} />
         </span>
       )}
       {/* Only once the post splits: a single post needs no count. */}
@@ -145,7 +146,7 @@ function TileFace({ item: { adapter, enabled, issue, posts, posted } }: { item: 
         <span
           aria-hidden
           className={cn(
-            "absolute -right-1.5 -bottom-1.5 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums ring-2 ring-background",
+            "absolute -right-1.5 -bottom-1.5 grid h-4.5 min-w-4.5 place-items-center rounded-full px-1 text-[11px] leading-none font-semibold tabular-nums ring-2 ring-background",
             // The app's blue, as on the other badges: platform colors are for logos only.
             "bg-(--brand-blue) text-white",
           )}

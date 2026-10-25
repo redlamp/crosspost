@@ -51,7 +51,27 @@ export default function manifest(): MetadataRoute.Manifest {
         files: [
           {
             name: "images",
-            accept: ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif"],
+            // Images, and the videos the platforms take most widely.
+            accept: [
+              "image/png",
+              "image/jpeg",
+              "image/gif",
+              "image/webp",
+              "image/avif",
+              "video/mp4",
+              "video/quicktime",
+              "video/webm",
+              ".png",
+              ".jpg",
+              ".jpeg",
+              ".gif",
+              ".webp",
+              ".avif",
+              ".mp4",
+              ".mov",
+              ".m4v",
+              ".webm",
+            ],
           },
         ],
       },

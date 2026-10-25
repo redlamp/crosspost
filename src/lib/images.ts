@@ -2,9 +2,13 @@
 
 import { useEffect, useRef, useState } from "react"
 
-// Staged images live in this browser's IndexedDB (localStorage can't hold
-// files). Nothing is uploaded: the user copies or drags each image into the
-// platform's own composer.
+import { isMediaType, mediaType, probeVideo, type VideoInfo } from "@/lib/media"
+import type { Span } from "@/lib/trim"
+
+// Staged images and videos live in this browser's IndexedDB (localStorage can't
+// hold files). Nothing is uploaded: the user copies or drags each one into the
+// platform's own composer. Videos share the images' tray and places; the code
+// calls them all images, and `isVideo` (lib/media.ts) tells them apart.
 
 /** Part of an image, as fractions of its full width and height (0 to 1). */
 export type CropRect = { x: number; y: number; w: number; h: number }
@@ -18,10 +22,21 @@ export type StagedImage = {
   url: string
   /** Alt text the person wrote, to paste into each platform's alt field (the clipboard carries pixels only). */
   alt?: string
-  /** The image as it was added, kept once it's cropped so the crop can be changed or undone. */
+  /** The image as it was added, kept once it's cropped (or a video trimmed) so the edit can be changed or undone. */
   original?: Blob
   /** The part of `original` that `blob` shows. */
   crop?: CropRect
+  /** A video's part of `original` that `blob` holds, in seconds. */
+  trim?: Span
+  /** The short side a video was made smaller to, in pixels (1080, 720 or 480). */
+  resize?: number
+  /** A video's length and size, once read; null when this browser can't read it. */
+  video?: VideoInfo | null
+  /**
+   * A platform's own version of a tray video, made on its card to fit it (trimmed, or one part of
+   * it split): the tray item it stands in for, the platform, and which part of how many.
+   */
+  version?: { of: string; platform: string; part: number; parts: number }
 }
 
 /** Bluesky's limit for alt text, the tightest of the platforms that take it. */
@@ -33,11 +48,45 @@ export const ALT_LIMIT = 2000
  */
 export const MAX_IMAGES = 10
 
-type StoredImage = { id: string; name: string; blob: Blob; alt?: string; original?: Blob; crop?: CropRect }
+type StoredImage = {
+  id: string
+  name: string
+  blob: Blob
+  alt?: string
+  original?: Blob
+  crop?: CropRect
+  trim?: Span
+  resize?: number
+  video?: VideoInfo | null
+  version?: StagedImage["version"]
+}
 
 const DB = "crosspost"
 const STORE = "images"
 const KEY = "staged"
+/** Where platforms' own versions of videos are kept, apart from the tray. */
+export const VERSIONS_KEY = "versions"
+/**
+ * Most platform clips kept: a split makes several of each video, for each platform. Kept a whole
+ * platform's set at a time (the newest sets), so a set is never left part made.
+ */
+const MAX_VERSIONS = 200
+
+/** The newest whole sets of clips (a video's, for a platform) that come to `max` or fewer. */
+function newestSets(list: StagedImage[], max: number): StagedImage[] {
+  const setOf = (v: StagedImage) => `${v.version?.of}|${v.version?.platform}`
+  const keep = new Set<string>()
+  let count = 0
+  for (const v of [...list].reverse()) {
+    const set = setOf(v)
+    if (keep.has(set)) continue
+    const size = list.filter((x) => setOf(x) === set).length
+    if (count + size > max) break
+    keep.add(set)
+    count += size
+  }
+  return list.filter((v) => keep.has(setOf(v)))
+}
 
 // One connection for the page, opened on first use.
 let connection: Promise<IDBDatabase> | null = null
@@ -130,55 +179,125 @@ function openDb(): Promise<IDBDatabase> {
   return connection
 }
 
-async function load(): Promise<StoredImage[]> {
+// A list is kept as its order (the ids, under its key) and each item as a record of its own (under
+// `key/id`), so a change rewrites only the items that changed, not every video each time.
+const itemKey = (key: string, id: string) => `${key}/${id}`
+
+/**
+ * A list's items in order, and whether they were kept the old way (the whole list as one value,
+ * before 2026-10-25), so the first save writes them all out as records.
+ */
+async function load(key: string): Promise<{ items: StoredImage[]; old: boolean }> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE).objectStore(STORE).get(KEY)
-    req.onsuccess = () => resolve((req.result as StoredImage[] | undefined) ?? [])
-    req.onerror = () => reject(req.error)
+    const tx = db.transaction(STORE)
+    const store = tx.objectStore(STORE)
+    const req = store.get(key)
+    req.onsuccess = () => {
+      const value = (req.result as (string | StoredImage)[] | undefined) ?? []
+      if (value.some((v) => typeof v !== "string")) {
+        return resolve({ items: value.filter((v): v is StoredImage => typeof v !== "string"), old: true })
+      }
+      const ids = value as string[]
+      if (!ids.length) return resolve({ items: [], old: false })
+      const items: (StoredImage | undefined)[] = []
+      let left = ids.length
+      ids.forEach((id, i) => {
+        const r = store.get(itemKey(key, id))
+        r.onsuccess = () => {
+          items[i] = r.result as StoredImage | undefined
+          if (--left === 0) resolve({ items: items.filter((x): x is StoredImage => !!x), old: false })
+        }
+      })
+    }
+    tx.onerror = () => reject(tx.error)
   })
 }
 
-async function save(images: StoredImage[]) {
+/** Write the list's order, the items that changed, and drop the records of those gone, in one go. */
+async function save(key: string, order: string[], changed: StoredImage[], gone: string[]) {
   const db = await openDb()
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite")
-    tx.objectStore(STORE).put(images, KEY)
+    const store = tx.objectStore(STORE)
+    for (const item of changed) store.put(item, itemKey(key, item.id))
+    for (const id of gone) store.delete(itemKey(key, id))
+    store.put(order, key)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
   })
 }
 
 const withUrl = (img: StoredImage): StagedImage => ({ ...img, url: URL.createObjectURL(img.blob) })
 
-/** The staged images, loaded from and saved to IndexedDB. */
-export function useStagedImages() {
+/**
+ * The staged images, loaded from and saved to IndexedDB: the tray's (up to MAX_IMAGES, the first
+ * kept) or the platforms' clips (`VERSIONS_KEY`, up to MAX_VERSIONS, the newest whole sets kept).
+ * `saveFailed` is set while the browser won't store them (blocked, or full): they still work
+ * until the page closes.
+ */
+export function useStagedImages(key = KEY) {
+  const max = key === KEY ? MAX_IMAGES : MAX_VERSIONS
+  const cap = (list: StagedImage[]) => (key === KEY ? list.slice(0, max) : newestSets(list, max))
   const [images, setImages] = useState<StagedImage[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  // Each item as last stored, by id, so a save writes only what changed since.
+  const stored = useRef(new Map<string, StagedImage>())
 
   useEffect(() => {
-    load()
+    load(key)
       // Images added while this loaded go after the stored ones, not in place of
       // them. Merged by id, so a second load (React's dev double-run) adds nothing.
-      .then((stored) =>
+      .then(({ items, old }) => {
+        const fresh = items.map(withUrl)
+        // Stored as records already: nothing to write back. The old way: all of them, once.
+        if (!old) for (const f of fresh) stored.current.set(f.id, f)
         setImages((list) => {
-          const fresh = stored.filter((s) => !list.some((img) => img.id === s.id)).map(withUrl)
-          const added = list.filter((img) => !stored.some((s) => s.id === img.id))
-          const kept = list.filter((img) => stored.some((s) => s.id === img.id))
-          return [...kept, ...fresh, ...added].slice(0, MAX_IMAGES)
-        }),
-      )
+          const novel = fresh.filter((s) => !list.some((img) => img.id === s.id))
+          const added = list.filter((img) => !items.some((s) => s.id === img.id))
+          const kept = list.filter((img) => items.some((s) => s.id === img.id))
+          return cap([...kept, ...novel, ...added])
+        })
+      })
       .catch(() => {})
       .finally(() => setLoaded(true))
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cap follows key
+  }, [key, max])
 
   useEffect(() => {
     // Don't overwrite what's stored before it has been read.
     if (!loaded) return
-    save(images.map(({ id, name, blob, alt, original, crop }) => ({ id, name, blob, alt, original, crop }))).catch(() => {
-      // Storage blocked or full: the images still work until the page closes.
-    })
-  }, [images, loaded])
+    const before = stored.current
+    const changed = images.filter((img) => before.get(img.id) !== img)
+    const gone = [...before.keys()].filter((id) => !images.some((img) => img.id === id))
+    if (!changed.length && !gone.length && before.size === images.length) return
+    const snapshot = new Map(images.map((img) => [img.id, img]))
+    save(
+      key,
+      images.map((img) => img.id),
+      changed.map(({ id, name, blob, alt, original, crop, trim, resize, video, version }) => ({
+        id,
+        name,
+        blob,
+        alt,
+        original,
+        crop,
+        trim,
+        resize,
+        video,
+        version,
+      })),
+      gone,
+    )
+      .then(() => {
+        stored.current = snapshot
+        setSaveFailed(false)
+      })
+      // Storage blocked or full: they still work until the page closes; the next change tries again.
+      .catch(() => setSaveFailed(true))
+  }, [images, loaded, key])
 
   // An object URL keeps its image in memory until revoked. One that leaves the
   // list is revoked a minute later, unless an undo has brought it back.
@@ -196,40 +315,56 @@ export function useStagedImages() {
     }, 60_000)
   }, [images])
 
-  /** Stage image files, up to MAX_IMAGES in all. Returns how many were added and how many didn't fit. */
+  /**
+   * Stage image and video files, up to MAX_IMAGES in all. Returns how many were added and how
+   * many didn't fit. A video's length and size are read just after, for the platforms' checks.
+   */
   const add = (files: Iterable<File>) => {
-    const candidates = [...files].filter((f) => f.type.startsWith("image/"))
+    const candidates = [...files].filter((f) => isMediaType(mediaType(f)))
     // Until the stored images load, the count isn't known; the merge above trims any overflow.
     const room = Math.max(0, MAX_IMAGES - images.length)
-    const added = candidates
-      .slice(0, room)
-      .map((f) => withUrl({ id: crypto.randomUUID(), name: f.name || "image.png", blob: f }))
+    const added = candidates.slice(0, room).map((f) => {
+      const type = mediaType(f)
+      // Typed by its name where the system gave it no type, so the checks know what it is.
+      const blob = f.type ? f : new File([f], f.name, { type })
+      const name = f.name || (type.startsWith("video/") ? "video.mp4" : "image.png")
+      return withUrl({ id: crypto.randomUUID(), name, blob })
+    })
     if (added.length) setImages((list) => [...list, ...added].slice(0, MAX_IMAGES))
+    for (const item of added) {
+      if (!item.blob.type.startsWith("video/")) continue
+      // Only while it's still that file: an edit made meanwhile reads its own.
+      probeVideo(item.blob).then((video) =>
+        setImages((list) => list.map((img) => (img.id === item.id && img.blob === item.blob ? { ...img, video } : img))),
+      )
+    }
     return { added: added.length, skipped: candidates.length - added.length }
   }
 
-  return { images, setImages, add }
+  return { images, setImages, add, loaded, saveFailed }
 }
 
 /**
- * How many images a drag carries: 0 for none, null when the browser doesn't
- * say. Chrome and Firefox list file types mid-drag; Safari doesn't, so any
- * file drag counts there.
+ * How many images and videos a drag carries: a count of 0 for none, null when
+ * the browser doesn't say. Chrome and Firefox list file types mid-drag; Safari
+ * doesn't, so any file drag counts there.
  */
-function imagesInDrag(data: DataTransfer | null): number | null {
-  if (!data?.types.includes("Files")) return 0
+function mediaInDrag(data: DataTransfer | null): { count: number | null; videos: number | null } {
+  if (!data?.types.includes("Files")) return { count: 0, videos: 0 }
   const items = [...data.items]
-  if (items.length === 0) return null
-  return items.filter((i) => i.kind === "file" && i.type.startsWith("image/")).length
+  if (items.length === 0) return { count: null, videos: null }
+  const files = items.filter((i) => i.kind === "file" && isMediaType(i.type))
+  return { count: files.length, videos: files.filter((i) => i.type.startsWith("video/")).length }
 }
 
 export type Point = { x: number; y: number }
 
 /**
  * An image drag over the page: where it came in, or, once it's gone, where it
- * went out, and how many images it carries (null when the browser doesn't say).
+ * went out, and how many images it carries, and how many of those are videos
+ * (null when the browser doesn't say).
  */
-export type ImageDrag = { phase: "in" | "out"; count: number | null } & Point
+export type ImageDrag = { phase: "in" | "out"; count: number | null; videos: number | null } & Point
 
 /**
  * Accept images pasted or dropped anywhere on the page, focused field or not
@@ -257,7 +392,7 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       clear()
       const exit = last
       if (!exit) return
-      setDrag((d) => ({ phase: "out", count: d?.count ?? null, ...exit }))
+      setDrag((d) => ({ phase: "out", count: d?.count ?? null, videos: d?.videos ?? null, ...exit }))
       last = null
       outTimer = setTimeout(() => setDrag(null), 1200)
     }
@@ -265,10 +400,10 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       if (!e.dataTransfer?.types.includes("Files") || isOwnDrag(e.dataTransfer)) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
-      const count = imagesInDrag(e.dataTransfer)
+      const { count, videos } = mediaInDrag(e.dataTransfer)
       if (count === 0) return
       const at = { x: e.clientX, y: e.clientY }
-      if (!last) setDrag({ phase: "in", count, ...at })
+      if (!last) setDrag({ phase: "in", count, videos, ...at })
       last = at
       clear()
       // dragover repeats while a drag stays over the page; when it stops
@@ -293,7 +428,7 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
       setDrag(null)
       handler.current([...e.dataTransfer.files])
     }
-    // Pasted images are staged; pasted text still lands wherever it's going.
+    // Pasted images (and videos) are staged; pasted text still lands wherever it's going.
     const paste = (e: ClipboardEvent) => {
       const files = imageFiles(e.clipboardData)
       if (!files.length) return
@@ -316,9 +451,9 @@ export function usePageImageInput(onFiles: (files: File[]) => void): ImageDrag |
   return drag
 }
 
-/** Image files in a paste or drop, if any. */
+/** Image and video files in a paste or drop, if any. */
 export function imageFiles(data: DataTransfer | null): File[] {
-  return [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"))
+  return [...(data?.files ?? [])].filter((f) => isMediaType(mediaType(f)))
 }
 
 /**
@@ -364,10 +499,56 @@ export async function copyImage(img: StagedImage) {
   await navigator.clipboard.write([new ClipboardItem({ "image/png": toPng(img.blob) })])
 }
 
+/**
+ * The file's name as it goes out: an edited video is an MP4 whatever it was added as, so its
+ * name says so.
+ */
+export function fileName(img: { name: string; blob: Blob }) {
+  if (img.blob.type !== "video/mp4" || /\.(mp4|m4v)$/i.test(img.name)) return img.name
+  return `${img.name.replace(/\.[^.]*$/, "")}.mp4`
+}
+
+/**
+ * An item's alt text as it is now, for remembering it was copied: its id and a short hash of the
+ * text, so a change to the text makes it new (and the key stays small in storage).
+ */
+export function altKey(img: { id: string; alt?: string }): string {
+  let h = 5381
+  for (const ch of img.alt ?? "") h = ((h * 33) ^ ch.codePointAt(0)!) >>> 0
+  return `${img.id}:${h.toString(36)}`
+}
+
+/** Files already saved from here, as "id:size", so a second click can say so rather than save a copy. */
+const DOWNLOADED = "crosspost:downloaded"
+
+/** The file as it is now: an edit makes a new file (a new size, or a new id for a platform's version). */
+const fileKey = (img: StagedImage) => `${img.id}:${img.blob.size}`
+
+/** This file, as it is now, was saved from here before (in this browser). */
+export function wasDownloaded(img: StagedImage): boolean {
+  try {
+    return (JSON.parse(localStorage.getItem(DOWNLOADED) ?? "[]") as string[]).includes(fileKey(img))
+  } catch {
+    return false
+  }
+}
+
+function noteDownloaded(img: StagedImage) {
+  try {
+    const list = JSON.parse(localStorage.getItem(DOWNLOADED) ?? "[]") as string[]
+    // The last hundred are plenty: older ones are long gone from the tray.
+    localStorage.setItem(DOWNLOADED, JSON.stringify([...list.filter((k) => k !== fileKey(img)), fileKey(img)].slice(-100)))
+  } catch {
+    // Storage blocked: every click saves it again.
+  }
+}
+
+/** Save the image or video as a file (a video can't go on the clipboard, so this is how it leaves). */
 export function downloadImage(img: StagedImage) {
+  noteDownloaded(img)
   const a = document.createElement("a")
   a.href = img.url
-  a.download = img.name
+  a.download = fileName(img)
   a.click()
 }
 
@@ -440,6 +621,6 @@ export function followDragOut(): () => boolean {
  */
 export function dragOut(e: React.DragEvent, img: StagedImage, from: "tray" | { platformId: string }) {
   e.dataTransfer.effectAllowed = "copyMove"
-  e.dataTransfer.setData("DownloadURL", `${img.blob.type}:${img.name}:${img.url}`)
+  e.dataTransfer.setData("DownloadURL", `${img.blob.type}:${fileName(img)}:${img.url}`)
   e.dataTransfer.setData(from === "tray" ? TRAY_TYPE : moveType(from.platformId), img.id)
 }
