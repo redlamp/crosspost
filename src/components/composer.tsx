@@ -7,7 +7,8 @@ import { toast } from "sonner"
 import { ComposeEditor, type SplitMarker } from "@/components/compose-editor"
 import { ConfirmButton } from "@/components/confirm-button"
 import { ImageArea } from "@/components/image-tray"
-import { firstProblem, imageProblem, imagesPerPost, PlatformCard, type PostEdit } from "@/components/platform-card"
+import { MediaDialog, type MediaTab, type VideoChange, type VideoSplitting } from "@/components/media-dialog"
+import { firstProblem, PlatformCard, type PostEdit } from "@/components/platform-card"
 import { PlatformLogo } from "@/components/platform-logo"
 import { MadeBy } from "@/components/made-by"
 import { SplitViewTip } from "@/components/split-view-tip"
@@ -29,7 +30,18 @@ import { adapters, type PlatformAdapter } from "@/lib/adapters"
 import { trackDelivery } from "@/lib/analytics"
 import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
-import { cropImage, MAX_IMAGES, onClearedElsewhere, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
+import { isVideo, mediaNoun, mediaPerPost, mediaProblem, probeVideo } from "@/lib/media"
+import {
+  cropImage,
+  MAX_IMAGES,
+  onClearedElsewhere,
+  reorder,
+  usePageImageInput,
+  useStagedImages,
+  VERSIONS_KEY,
+  type CropRect,
+  type StagedImage,
+} from "@/lib/images"
 import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
   arrangePlatforms,
@@ -39,6 +51,9 @@ import {
 } from "@/lib/platform-settings"
 import { useGlide } from "@/lib/use-glide"
 import { useStoredState } from "@/lib/use-stored-state"
+import { spanLength, type Span } from "@/lib/trim"
+import { renderVideo } from "@/lib/video-edit"
+import { clipCap, clipsFor, sameClips, sameSplits, sharedSplits, type VideoSplits } from "@/lib/video-splits"
 
 type Prefs = {
   /** Add " i/n" to split posts on platforms that don't number threads themselves. */
@@ -65,9 +80,18 @@ type Progress = {
   hiddenImages: Record<string, string[]>
   /** The @tags confirmed as right on each platform; a new tag needs confirming again. */
   checkedTags: Record<string, string[]>
+  /** Alt texts copied from each platform's card (`altKey`: the item and its text as it was). */
+  copiedAlts: Record<string, string[]>
 }
 
-const NO_PROGRESS: Progress = { posted: {}, copiedPosts: {}, copiedImages: {}, hiddenImages: {}, checkedTags: {} }
+const NO_PROGRESS: Progress = {
+  posted: {},
+  copiedPosts: {},
+  copiedImages: {},
+  hiddenImages: {},
+  checkedTags: {},
+  copiedAlts: {},
+}
 
 type ProgressList = Exclude<keyof Progress, "posted">
 
@@ -105,7 +129,40 @@ export default function Composer() {
   const [prefs, setPrefs] = useStoredState<Prefs>("crosspost:prefs", DEFAULT_PREFS)
   // Splits the user placed by hand, per platform, as offsets into the draft.
   const [breaks, setBreaks] = useStoredState<Breaks>("crosspost:breaks", {})
-  const { images, setImages, add: stageImages } = useStagedImages()
+  const { images, setImages, add: stageImages, loaded: trayLoaded, saveFailed: traySaveFailed } = useStagedImages()
+  // Platforms' clips of tray videos (where a video is split for a platform, by hand or by its
+  // length limit), kept apart from the tray.
+  const {
+    images: versions,
+    setImages: setVersions,
+    loaded: versionsLoaded,
+    saveFailed: versionsSaveFailed,
+  } = useStagedImages(VERSIONS_KEY)
+  // Clips of tray videos that are gone (removed before clips went with them) aren't kept.
+  useEffect(() => {
+    if (!trayLoaded || !versionsLoaded) return
+    if (versions.some((v) => !images.some((img) => img.id === v.version?.of)))
+      setVersions((list) => list.filter((v) => images.some((img) => img.id === v.version?.of)))
+    // Once, when both have loaded: later removals take their versions with them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayLoaded, versionsLoaded])
+  // The browser won't store the images (blocked, or full): say so, once each time it starts.
+  const saveFailed = traySaveFailed || versionsSaveFailed
+  useEffect(() => {
+    if (saveFailed)
+      toast.error("This browser isn't saving your images and videos (its storage may be full).", {
+        description: "They still work until the page closes. Freeing space, or removing a large video, lets it save again.",
+      })
+  }, [saveFailed])
+  /** A platform's own versions of a tray video, parts in order; none when it takes the tray's. */
+  const versionsOf = (platformId: string, id: string) =>
+    versions
+      .filter((v) => v.version?.of === id && v.version.platform === platformId)
+      .sort((a, b) => a.version!.part - b.version!.part)
+  /** The tray item a platform's version stands in for (itself, for a tray item). */
+  const baseId = (id: string) => versions.find((v) => v.id === id)?.version?.of ?? id
+  // An image or video opened from a card, the platform it was opened from, and the tab its dialog is on.
+  const [fixing, setFixing] = useState<{ platformId: string; id: string; tab: MediaTab } | null>(null)
   // Clear Data in another tab (or the installed app's window): start fresh here too, rather than
   // keep this tab's copy, which it would write back the next time anything changed.
   useEffect(() => onClearedElsewhere(() => location.reload()), [])
@@ -115,7 +172,7 @@ export default function Composer() {
    */
   const cropStaged = async (id: string, crop: CropRect | null) => {
     const img = images.find((i) => i.id === id)
-    if (!img) return
+    if (!img || isVideo(img)) return
     const original = img.original ?? img.blob
     let blob: Blob
     try {
@@ -136,10 +193,48 @@ export default function Composer() {
       copiedImages: Object.fromEntries(Object.entries(p.copiedImages).map(([k, ids]) => [k, ids.filter((x) => x !== id)])),
     }))
   }
+  /**
+   * Keep a video's crop, trim and size (made in its dialog), or with none, the video as added. Like a
+   * crop, it's a new file, so its copied checks clear, and its length and size are read again.
+   */
+  const editVideo = (id: string, { blob, crop, trim, resize }: VideoChange) => {
+    const img = images.find((i) => i.id === id)
+    if (!img) return
+    const original = img.original ?? img.blob
+    const edited = !!crop || !!trim || !!resize
+    setImages((list) =>
+      list.map((i) =>
+        i.id === id
+          ? {
+              ...i,
+              blob: edited ? blob : original,
+              url: URL.createObjectURL(edited ? blob : original),
+              original: edited ? original : undefined,
+              crop,
+              trim,
+              resize,
+              // The old file's reading (its length above all) is no longer this file's: none until
+              // the new one is read, so nothing is planned from a length the video no longer has.
+              video: (edited ? blob : original) === i.blob ? i.video : undefined,
+            }
+          : i,
+      ),
+    )
+    // Only while the file is still the one read: a later edit's reading wins.
+    const file = edited ? blob : original
+    probeVideo(file).then((video) =>
+      setImages((list) => list.map((i) => (i.id === id && i.blob === file ? { ...i, video } : i))),
+    )
+    setProgress((p) => ({
+      ...p,
+      copiedImages: Object.fromEntries(Object.entries(p.copiedImages).map(([k, ids]) => [k, ids.filter((x) => x !== id)])),
+    }))
+  }
   const addImages = (files: File[]) => {
     const { added, skipped } = stageImages(files)
-    if (skipped) toast.info(`Compose holds up to ${MAX_IMAGES} images, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
-    else if (!added) toast.info("Only images can be staged for now.")
+    if (skipped)
+      toast.info(`Compose holds up to ${MAX_IMAGES} images and videos, so ${skipped === 1 ? "1 was" : `${skipped} were`} left out.`)
+    else if (!added) toast.info("Only images and videos can be staged.")
   }
   const drag = usePageImageInput(addImages)
 
@@ -148,11 +243,13 @@ export default function Composer() {
   // stays on that platform and wins over the shared one.
   // Kept across reloads, so a crash or a closed tab doesn't lose where the images went.
   const [placement, setPlacement] = useStoredState<Placement>("crosspost:image-placement", { shared: {}, only: {} })
-  const imagePost = (platformId: string, id: string) =>
-    placement.only[platformId]?.[id] ?? placement.shared[id] ?? 0
+  // A platform's version goes where its tray video goes, unless moved itself.
+  const imagePost = (platformId: string, id: string): number =>
+    placement.only[platformId]?.[id] ?? placement.shared[id] ?? (baseId(id) !== id ? imagePost(platformId, baseId(id)) : 0)
+  // A platform's own version is that platform's alone: moving it never mirrors to the others.
   const moveImage = (platformId: string, id: string, post: number, onlyHere: boolean) =>
     setPlacement((p) => {
-      if (onlyHere) return { ...p, only: { ...p.only, [platformId]: { ...p.only[platformId], [id]: post } } }
+      if (onlyHere || baseId(id) !== id) return { ...p, only: { ...p.only, [platformId]: { ...p.only[platformId], [id]: post } } }
       // A shared move takes the image along on every platform, overrides included.
       const only: Placement["only"] = {}
       for (const [platform, posts] of Object.entries(p.only)) {
@@ -242,8 +339,17 @@ export default function Composer() {
       )
       return ids.map((x) => list.find((img) => img.id === x)!)
     })
+  // A platform's versions move with (and as) the tray video they stand for.
   const reorderOnCard = (platformId: string, id: string, target: string, after: boolean) =>
-    setCardOrder((o) => ({ ...o, [platformId]: reorder(imagesFor(platformId).map((img) => img.id), id, target, after) }))
+    setCardOrder((o) => ({
+      ...o,
+      [platformId]: reorder(
+        imagesFor(platformId).map((img) => img.id),
+        baseId(id),
+        baseId(target),
+        after,
+      ),
+    }))
   const matchCompose = (platformId: string) =>
     setCardOrder((o) => {
       const rest = { ...o }
@@ -261,7 +367,26 @@ export default function Composer() {
     return [...images].sort((a, b) => rank(a.id) - rank(b.id))
   }
   /** An image's number: its place in the Compose tray. */
-  const imageNumber = (id: string) => images.findIndex((img) => img.id === id) + 1
+  // A platform's version takes its tray video's number, and a split's parts "1.1", "1.2" and so on.
+  const imageNumber = (id: string): number | string => {
+    const own = versions.find((v) => v.id === id)?.version
+    const n = images.findIndex((img) => img.id === (own?.of ?? id)) + 1
+    return own && own.parts > 1 ? `${n}.${own.part}` : n
+  }
+  /**
+   * What a platform's card shows: the tray in its order, with a video's clips (alt text and all,
+   * from the tray video) in its place once they're made.
+   */
+  const mediaFor = (platformId: string): StagedImage[] => {
+    const adapter = adapters.find((a) => a.id === platformId)
+    return imagesFor(platformId).flatMap((img) => {
+      const own = adapter && clipsMade(adapter, img)
+      return own ? own.map((v) => ({ ...v, alt: img.alt })) : [img]
+    })
+  }
+
+  /** Open an image or video from a card in the media dialog, that platform's splits forward. */
+  const openFromCard = (platformId: string, id: string, tab: MediaTab) => setFixing({ platformId, id: baseId(id), tab })
 
   // A card has moved images between posts or set its own order.
   // Only images still staged count; settings for removed ones are left over.
@@ -273,7 +398,7 @@ export default function Composer() {
   }
   const imagesCustomized =
     Object.entries(placement.shared).some(([id, post]) => staged.has(id) && post > 0) ||
-    Object.values(placement.only).some((posts) => Object.keys(posts).some((id) => staged.has(id))) ||
+    Object.values(placement.only).some((posts) => Object.keys(posts).some((id) => staged.has(baseId(id)))) ||
     Object.keys(cardOrder).some(hasOwnOrder)
   /** Put every card back on the tray's order, all images on the first post, with an undo. */
   const resetImages = () => {
@@ -355,8 +480,216 @@ export default function Composer() {
     [shown, draft, prefs.numbering, breaks],
   )
 
+  // How many posts each platform's text comes to, for whether a video shares its post.
+  const postCount = new Map(previews.map((p) => [p.adapter.id, p.chunks.length]))
+
+  // Splitting videos into clips, as Compose splits text into posts. Each tray video keeps the
+  // splits placed by hand, per platform (seconds into the file as added); each platform's length
+  // limit adds its own around them. Clips are made in the background, one platform's set at a time.
+  const [videoSplits, setVideoSplits] = useStoredState<Record<string, VideoSplits>>("crosspost:video-splits", {})
+  // Splits kept for videos no longer in the tray (removed before splits went with them) go, once
+  // the tray has loaded: later removals take their splits with them.
+  useEffect(() => {
+    if (!trayLoaded) return
+    if (Object.keys(videoSplits).some((id) => !images.some((img) => img.id === id)))
+      setVideoSplits((all) => Object.fromEntries(Object.entries(all).filter(([id]) => images.some((img) => img.id === id))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayLoaded])
+  /** The part of a tray video kept (its trim, or all of it), in seconds into the file as added; null until its length is read. */
+  const keptSpan = (img: StagedImage): Span | null =>
+    img.trim ?? (img.video?.duration ? { start: 0, end: img.video.duration } : null)
+  /** Whether a tray item shares its post on a platform with other photos or videos (not left off it). */
+  const sharesPost = (adapter: PlatformAdapter, id: string) => {
+    const posts = postCount.get(adapter.id) ?? 1
+    const postOf = (x: string) => (adapter.chain && posts > 1 ? Math.min(imagePost(adapter.id, x), posts - 1) : 0)
+    const left = progress.hiddenImages[adapter.id] ?? []
+    return images.some((o) => o.id !== id && !left.includes(o.id) && postOf(o.id) === postOf(id))
+  }
+  /** Where a platform cuts a tray video: at its splits, and where its limit needs, around them. One clip: no cut. */
+  const clipsOf = (adapter: PlatformAdapter, img: StagedImage): Span[] => {
+    const span = isVideo(img) ? keptSpan(img) : null
+    if (!span) return []
+    const hand = videoSplits[img.id]?.[adapter.id] ?? []
+    const handSplit = clipsFor(span, undefined, hand).length > 1
+    return clipsFor(span, clipCap(adapter, spanLength(span), { withOthers: sharesPost(adapter, img.id), handSplit }), hand)
+  }
+  /** Whether a version was made with the tray video's crop and size as they are now. */
+  const sameEdit = (v: StagedImage, img: StagedImage) =>
+    JSON.stringify(v.crop ?? null) === JSON.stringify(img.crop ?? null) && v.resize === img.resize
+  /** A platform's clips of a tray video, when they're made and are the clips it needs now. */
+  const clipsMade = (adapter: PlatformAdapter, img: StagedImage) => {
+    const clips = clipsOf(adapter, img)
+    const own = versionsOf(adapter.id, img.id)
+    return clips.length > 1 && sameClips(own.map((v) => v.trim), clips) && own.every((v) => sameEdit(v, img)) ? own : null
+  }
+  /** Compose's splits of a video as one platform sees them: the ones most of the others share. */
+  const composeSplits = (id: string, platformId: string) =>
+    sharedSplits(videoSplits[id] ?? {}, shown.map((a) => a.id), platformId)
+  /** What the media dialog needs to split a tray video: each platform, its splits, and how to keep new ones. */
+  const splittingFor = (id: string, focus?: string): VideoSplitting => ({
+    platforms: shown.map((adapter) => ({ adapter, withOthers: sharesPost(adapter, id) })),
+    splits: videoSplits[id] ?? {},
+    onSplits: (next) =>
+      setVideoSplits((all) => {
+        const kept = Object.fromEntries(Object.entries(next).filter(([, hand]) => hand.length))
+        const rest = { ...all }
+        if (Object.keys(kept).length) rest[id] = kept
+        else delete rest[id]
+        return rest
+      }),
+    focus,
+  })
+  /** Set one video's hand-placed splits on one platform, with an undo. */
+  const setPlatformSplits = (adapter: PlatformAdapter, id: string, hand: number[], what: string) => {
+    const before = videoSplits[id]?.[adapter.id] ?? []
+    const put = (next: number[]) =>
+      setVideoSplits((all) => {
+        const own = { ...all[id] }
+        if (next.length) own[adapter.id] = next
+        else delete own[adapter.id]
+        const rest = { ...all, [id]: own }
+        if (!Object.keys(own).length) delete rest[id]
+        return rest
+      })
+    put(hand)
+    toast(`Video ${images.findIndex((img) => img.id === id) + 1} on ${adapter.name} ${what}`, {
+      action: { label: "Undo", onClick: () => put(before) },
+    })
+  }
+
   // Cards have no switch of their own: a platform is off when it's in the rail's Off part.
   const isEnabled = (id: string) => !hidden.includes(id)
+
+  // The clips each platform needs and doesn't have: made from the file as added, with the tray's
+  // crop and size, one platform's set at a time. A clip another platform has made already is used
+  // again rather than made again. One that couldn't be made isn't tried again until it changes.
+  const [failedClips, setFailedClips] = useState<string[]>([])
+  const editKey = (img: StagedImage) => `${JSON.stringify(img.crop ?? null)}|${img.resize ?? ""}`
+  /** One platform's set of clips of a video, as it would be made: who, from what, and where cut. */
+  const clipKey = (adapter: PlatformAdapter, img: StagedImage, clips: Span[]) =>
+    `${adapter.id}|${img.id}|${editKey(img)}|${clips.map((c) => `${c.start.toFixed(2)}-${c.end.toFixed(2)}`).join()}`
+  const clipJobs = !(trayLoaded && versionsLoaded)
+    ? []
+    : shown.flatMap((adapter) =>
+        images
+          .filter((img) => isVideo(img) && !progress.hiddenImages[adapter.id]?.includes(img.id))
+          .flatMap((img) => {
+            const clips = clipsOf(adapter, img)
+            if (clips.length < 2 || clipsMade(adapter, img)) return []
+            const key = clipKey(adapter, img, clips)
+            return failedClips.includes(key) ? [] : [{ adapter, img, clips, key }]
+          }),
+      )
+  const jobsKey = clipJobs.map((j) => j.key).join("\n")
+  const clipRun = useRef<{ key: string; abort: AbortController } | null>(null)
+  const makeClips = async ({ adapter, img, clips, key }: (typeof clipJobs)[number], signal: AbortSignal) => {
+    const n = images.findIndex((i) => i.id === img.id) + 1
+    const source = img.original ?? img.blob
+    const toastId = "making-clips"
+    // Progress can still come in after the last clip is done: by then the toast has gone for good.
+    let over = false
+    const say = (done: number) =>
+      !over &&
+      toast.loading(`Making ${clips.length} clips of video ${n} for ${adapter.name}`, {
+        id: toastId,
+        description: `${Math.round(done * 100)}%, here in your browser`,
+      })
+    try {
+      const blobs: Blob[] = []
+      let info: Awaited<ReturnType<typeof probeVideo>> | undefined
+      for (const [i, clip] of clips.entries()) {
+        const made = versions.find((v) => v.version?.of === img.id && sameClips([v.trim], [clip]) && sameEdit(v, img))
+        if (made) {
+          blobs.push(made.blob)
+          continue
+        }
+        say(i / clips.length)
+        info ??= await probeVideo(source)
+        if (!info) throw new Error("This browser can't read it.")
+        blobs.push(
+          await renderVideo(
+            source,
+            { crop: img.crop, trim: clip, resize: img.resize, size: { width: info.width, height: info.height }, duration: info.duration },
+            (p) => say((i + p) / clips.length),
+            signal,
+          ),
+        )
+      }
+      over = true
+      toast.dismiss(toastId)
+      if (signal.aborted) return
+      putClips(adapter, img, clips, blobs)
+    } catch (err) {
+      over = true
+      toast.dismiss(toastId)
+      if (signal.aborted) return
+      setFailedClips((f) => [...f, key])
+      toast.error(`Couldn't make the clips of video ${n} for ${adapter.name} in this browser.`, {
+        description: err instanceof Error ? err.message : undefined,
+      })
+    }
+  }
+  /** Keep a platform's clips of a tray video, made; they keep the ids of the clips they replace, clip for clip. */
+  const putClips = (adapter: PlatformAdapter, img: StagedImage, clips: Span[], blobs: Blob[]) => {
+    const before = versionsOf(adapter.id, img.id)
+    const base = img.name.replace(/\.[^.]*$/, "")
+    // Remade clips keep the ids of the clips they replace, clip for clip, so where they were
+    // moved, whether they're hidden and their copied alt text all stay with them.
+    const made: StagedImage[] = blobs.map((blob, i) => ({
+      id: before[i]?.id ?? crypto.randomUUID(),
+      name: `${base} clip ${i + 1}.mp4`,
+      blob,
+      url: URL.createObjectURL(blob),
+      crop: img.crop,
+      trim: clips[i],
+      resize: img.resize,
+      version: { of: img.id, platform: adapter.id, part: i + 1, parts: clips.length },
+    }))
+    setVersions((list) => [
+      ...list.filter((v) => !(v.version?.of === img.id && v.version.platform === adapter.id)),
+      ...made,
+    ])
+    // A remade clip is a new file: its copied check goes.
+    setProgress((p) => markIn(p, "copiedImages", adapter.id, made.map((v) => v.id), false))
+    for (const v of made) {
+      probeVideo(v.blob).then((video) =>
+        setVersions((list) => list.map((x) => (x.id === v.id && x.blob === v.blob ? { ...x, video } : x))),
+      )
+    }
+  }
+  useEffect(() => {
+    const running = clipRun.current
+    // The set being made is still wanted: let it finish.
+    if (running && clipJobs.some((j) => j.key === running.key)) return
+    running?.abort.abort()
+    clipRun.current = null
+    const job = clipJobs[0]
+    if (!job) return
+    const run = { key: job.key, abort: new AbortController() }
+    clipRun.current = run
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- made in the background, kept when done
+    void makeClips(job, run.abort.signal).finally(() => {
+      if (clipRun.current === run) clipRun.current = null
+    })
+    // Started again only when the clips wanted change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobsKey])
+  // Clips a platform no longer needs (the video fits it whole now) go.
+  const unneeded =
+    trayLoaded && versionsLoaded
+      ? versions
+          .filter((v) => {
+            const img = images.find((i) => i.id === v.version?.of)
+            const adapter = shown.find((a) => a.id === v.version?.platform)
+            return !!img && !!adapter && clipsOf(adapter, img).length === 1
+          })
+          .map((v) => v.id)
+          .join()
+      : ""
+  useEffect(() => {
+    if (unneeded) setVersions((list) => list.filter((v) => !unneeded.split(",").includes(v.id)))
+  }, [unneeded, setVersions])
+
 
   const editDraft = (next: string) => {
     // Emptied by hand: the posted marks belonged to that post, so a new one starts without them.
@@ -376,7 +709,11 @@ export default function Composer() {
     if (post.files.length) addImages(post.files)
     const what = [
       text && "text",
-      post.files.length > 0 && (post.files.length === 1 ? "an image" : `${post.files.length} images`),
+      post.files.length > 0 &&
+        mediaNoun(
+          post.files.filter((f) => !f.type.startsWith("video/")).length,
+          post.files.filter((f) => f.type.startsWith("video/")).length,
+        ),
     ].filter(Boolean)
     if (what.length === 0) return
     toast.success(`Added the shared ${what.join(" and ")}`, {
@@ -558,16 +895,15 @@ export default function Composer() {
       !adapter.chain && total > adapter.limit
         ? `${(total - adapter.limit).toLocaleString()} over the limit`
         : (firstProblem(adapter, chunks.map((c) => c.text)) ??
-          imageProblem(
+          mediaProblem(
             adapter,
-            imagesPerPost(
-              imagesFor(adapter.id)
-                .map((img) => img.id)
-                .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id)),
+            mediaPerPost(
+              mediaFor(adapter.id).filter((img) => !progress.hiddenImages[adapter.id]?.includes(img.id)),
               Math.max(1, chunks.length),
               // As on the card: images on a post that no longer exists fall back to the last one.
-              (id) => (adapter.chain && chunks.length > 1 ? Math.min(imagePost(adapter.id, id), chunks.length - 1) : 0),
+              (img) => (adapter.chain && chunks.length > 1 ? Math.min(imagePost(adapter.id, img.id), chunks.length - 1) : 0),
             ),
+            (img) => imageNumber(img.id),
             true,
           ))
     const note = chunks.length > 1 ? `${chunks.length} posts` : chunks.length === 1 ? "1 post" : "Nothing to post"
@@ -584,7 +920,11 @@ export default function Composer() {
         Number(adapter.chain && [...(breaks[adapter.id] ?? [])].sort((x, y) => x - y).join() !== composeBreaks(adapter.id).join()) +
         Object.keys(postEdits[adapter.id] ?? {}).length +
         Number(hasOwnOrder(adapter.id)) +
-        Object.keys(placement.only[adapter.id] ?? {}).filter((id) => staged.has(id)).length,
+        Object.keys(placement.only[adapter.id] ?? {}).filter((id) => staged.has(baseId(id))).length +
+        // and each video it splits its own way (not as Compose does).
+        images.filter(
+          (img) => isVideo(img) && !sameSplits(videoSplits[img.id]?.[adapter.id] ?? [], composeSplits(img.id, adapter.id)),
+        ).length,
     }
   })
 
@@ -596,13 +936,17 @@ export default function Composer() {
   /** Clear the draft and manual splits, with an undo in the toast. */
   /** Clear the images with how the cards placed and ordered them; returns how to put it all back. */
   const takeImages = () => {
-    const saved = { images, placement, cardOrder }
+    const saved = { images, versions, placement, cardOrder, videoSplits }
     setImages([])
+    setVersions([])
+    setVideoSplits({})
     setPlacement({ shared: {}, only: {} })
     setCardOrder({})
     return () => {
       // Images added since the clear stay, after the restored ones, as room allows.
       setImages((now) => [...saved.images, ...now.filter((img) => !saved.images.some((s) => s.id === img.id))].slice(0, MAX_IMAGES))
+      setVersions((now) => [...saved.versions, ...now.filter((v) => !saved.versions.some((s) => s.id === v.id))])
+      setVideoSplits((now) => ({ ...now, ...saved.videoSplits }))
       setPlacement(saved.placement)
       setCardOrder(saved.cardOrder)
     }
@@ -682,10 +1026,17 @@ export default function Composer() {
     images.length === 0 &&
     Object.keys(postEdits).length === 0 &&
     !Object.values(progress.posted).some(Boolean)
+  // What the staged files are, for the buttons that clear and reset them: "Images", "Video", "Media".
+  const stagedVideos = images.filter(isVideo).length
+  const stagedWord =
+    stagedVideos === 0
+      ? images.length === 1 ? "Image" : "Images"
+      : stagedVideos === images.length
+        ? images.length === 1 ? "Video" : "Videos"
+        : "Media"
   const clearImages = () => {
-    const count = images.length
     const restoreImages = takeImages()
-    toast(count === 1 ? "Image cleared" : "Images cleared", {
+    toast(`${stagedWord} cleared`, {
       action: { label: "Undo", onClick: restoreImages },
     })
   }
@@ -733,7 +1084,7 @@ export default function Composer() {
                 <Label htmlFor="numbering" className="font-normal">
                   {/* One span, so the label's flex gap doesn't open up around the parentheses. */}
                   <span>
-                    Number posts (<span className="font-mono">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
+                    Number posts (<span className="tabular-nums">{maxPosts > 1 ? `1/${maxPosts}` : "X/Y"}</span>)
                   </span>
                   {switchPlatforms.length > 0 && (
                     <span className="flex items-center gap-1">
@@ -772,12 +1123,24 @@ export default function Composer() {
               images={images}
               drag={drag}
               onAdd={addImages}
-              onRemove={(id) => setImages((list) => list.filter((img) => img.id !== id))}
+              onRemove={(id) => {
+                setImages((list) => list.filter((img) => img.id !== id))
+                // Its clips and splits go with it.
+                setVersions((list) => list.filter((v) => v.version?.of !== id))
+                setVideoSplits((all) => {
+                  const rest = { ...all }
+                  delete rest[id]
+                  return rest
+                })
+              }}
               onReorder={reorderTray}
               onAltChange={(id, alt) =>
                 setImages((list) => list.map((img) => (img.id === id ? { ...img, alt: alt || undefined } : img)))
               }
               onCrop={cropStaged}
+              onVideoChange={editVideo}
+              platforms={shown}
+              splitting={splittingFor}
               clearPost={
                 <ConfirmButton icon={<BroomIcon />} label="Clear Post" onConfirm={startOver} disabled={nothingToClear} />
               }
@@ -785,13 +1148,13 @@ export default function Composer() {
                 <>
                   <ConfirmButton
                     icon={<ImageMinusIcon />}
-                    label={images.length === 1 ? "Clear Image" : "Clear Images"}
+                    label={`Clear ${stagedWord}`}
                     onConfirm={clearImages}
                   />
                   {imagesCustomized && (
                     <ConfirmButton
                       icon={<RotateCcwIcon />}
-                      label={images.length === 1 ? "Reset Image" : "Reset Images"}
+                      label={`Reset ${stagedWord}`}
                       onConfirm={resetImages}
                     />
                   )}
@@ -843,7 +1206,7 @@ export default function Composer() {
           const chunks = withEdits(made, postEdits[adapter.id])
           // What has to be copied for the platform to count as done: every post, and every image not left off it.
           const chunkTexts = chunks.map((c) => c.text)
-          const cardImageIds = imagesFor(adapter.id)
+          const cardImageIds = mediaFor(adapter.id)
             .map((img) => img.id)
             .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id))
           // Tags to confirm before the platform counts as done.
@@ -861,11 +1224,36 @@ export default function Composer() {
             customSplits={(breaks[adapter.id]?.length ?? 0) > 0}
             onResetSplits={() => resetBreaks(adapter.id)}
             onMatchComposeSplits={adapter.chain ? matchComposeBreaks(adapter.id) : undefined}
-            images={imagesFor(adapter.id)}
+            images={mediaFor(adapter.id)}
             imageNumber={imageNumber}
             ownOrder={hasOwnOrder(adapter.id)}
             onReorderImage={(id, target, after) => reorderOnCard(adapter.id, id, target, after)}
             onMatchCompose={() => matchCompose(adapter.id)}
+            onEditMedia={(id, tab) => openFromCard(adapter.id, id, tab)}
+            clips={images.flatMap((img) => {
+              const clips = clipsOf(adapter, img)
+              const hand = videoSplits[img.id]?.[adapter.id] ?? []
+              const shared = composeSplits(img.id, adapter.id)
+              // Split here, or not split as Compose splits it (so Revert has a place).
+              if (!clips.length || progress.hiddenImages[adapter.id]?.includes(img.id)) return []
+              if (clips.length < 2 && sameSplits(hand, shared)) return []
+              return [
+                {
+                  of: img.id,
+                  n: images.indexOf(img) + 1,
+                  count: clips.length,
+                  made: !!clipsMade(adapter, img),
+                  failed: failedClips.includes(clipKey(adapter, img, clips)),
+                  onRevert:
+                    shared.length && !sameSplits(hand, shared)
+                      ? () => setPlatformSplits(adapter, img.id, shared, "is back to Compose's splits")
+                      : undefined,
+                  onAutoSplit: hand.length
+                    ? () => setPlatformSplits(adapter, img.id, [], `is back to ${adapter.name}'s length limit alone`)
+                    : undefined,
+                },
+              ]
+            })}
             imagePost={(id) => imagePost(adapter.id, id)}
             onMoveImage={(id, post, onlyHere) => moveImage(adapter.id, id, post, onlyHere)}
             enabled={isEnabled(adapter.id)}
@@ -882,6 +1270,8 @@ export default function Composer() {
             }
             tags={tags}
             checkedTags={progress.checkedTags[adapter.id] ?? []}
+            copiedAlts={progress.copiedAlts[adapter.id] ?? []}
+            onAltCopied={(key) => setProgress((p) => markIn(p, "copiedAlts", adapter.id, [key], true))}
             onTagsChecked={(postTags, on) => noteCopy(adapter, "checkedTags", postTags, on, chunkTexts, cardImageIds, tags)}
             hiddenImages={new Set(progress.hiddenImages[adapter.id])}
             onHideImage={(id) => setProgress((p) => markIn(p, "hiddenImages", adapter.id, [id], true))}
@@ -890,6 +1280,28 @@ export default function Composer() {
           )
         })}
       </div>
+      {(() => {
+        // An image or video opened from a card: the tray's own, edited for every platform, with
+        // that platform's splits forward.
+        const at = fixing ? images.findIndex((img) => img.id === fixing.id) : -1
+        if (!fixing || at < 0) return null
+        return (
+          <MediaDialog
+            image={images[at]}
+            n={at + 1}
+            tab={fixing.tab}
+            onTabChange={(tab) => setFixing((f) => f && { ...f, tab })}
+            onClose={() => setFixing(null)}
+            platforms={shown}
+            onAltChange={(alt) =>
+              setImages((list) => list.map((img) => (img.id === fixing.id ? { ...img, alt: alt || undefined } : img)))
+            }
+            onCrop={(crop) => cropStaged(fixing.id, crop)}
+            onVideoChange={(change) => editVideo(fixing.id, change)}
+            splitting={(id) => splittingFor(id, fixing.platformId)}
+          />
+        )
+      })()}
     </main>
   )
 }

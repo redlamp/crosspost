@@ -1,13 +1,12 @@
 "use client"
 
-import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, PencilIcon, XIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, DownloadIcon, ImagePlusIcon, PlayIcon, WrenchIcon, TriangleAlertIcon, XIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { PlatformAdapter } from "@/lib/adapters"
-import { AltTextDialog } from "@/components/alt-text-dialog"
 import { writeClipboard } from "@/components/copy-button"
-import { CropDialog } from "@/components/crop-dialog"
+import { MediaDialog, type MediaTab, type VideoChange, type VideoSplitting } from "@/components/media-dialog"
 import {
   copyImage,
   downloadImage,
@@ -19,9 +18,75 @@ import {
   type CropRect,
   type ImageDrag,
   type StagedImage,
+  altKey,
+  wasDownloaded,
 } from "@/lib/images"
+import { formatDuration, isVideo, mediaKind, mediaNoun } from "@/lib/media"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+
+/** What the pickers take. */
+const ACCEPT = "image/*,video/*"
+
+/** "Image 2" or "Video 2". */
+const named = (img: StagedImage, n: number) => `${isVideo(img) ? "Video" : "Image"} ${n}`
+
+type PreviewProps = { img: StagedImage; alt: string; playOnHover?: boolean } & Omit<
+  React.HTMLAttributes<HTMLElement>,
+  "children"
+>
+
+/**
+ * An image, or a video's opening frame, muted; with `playOnHover`, the video plays while the
+ * pointer is on it, so it's plain which clip it is.
+ */
+export function Preview({ img, alt, playOnHover, ...rest }: PreviewProps) {
+  if (!isVideo(img)) {
+    // eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset
+    return <img src={img.url} alt={alt} {...rest} />
+  }
+  return (
+    <video
+      // A moment in, so browsers that show nothing until played (Safari) show a frame.
+      src={`${img.url}#t=0.1`}
+      aria-label={alt || undefined}
+      muted
+      playsInline
+      loop
+      preload="metadata"
+      onMouseEnter={playOnHover ? (e) => void e.currentTarget.play().catch(() => {}) : undefined}
+      onMouseLeave={playOnHover ? (e) => e.currentTarget.pause() : undefined}
+      {...rest}
+    />
+  )
+}
+
+/** A video's length, beside its number: a play mark and "0:42" (just the mark until it's read). */
+function Length({ img }: { img: StagedImage }) {
+  if (!isVideo(img)) return null
+  return (
+    <span className="flex h-4 items-center gap-0.5 rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
+      <PlayIcon className="size-2.5 fill-current" aria-hidden />
+      {img.video && <span className="[text-box:trim-both_cap_alphabetic]">{formatDuration(img.video.duration)}</span>}
+    </span>
+  )
+}
+
+/**
+ * Save a video (the clipboard takes pictures only), with a toast saying where it goes next. One
+ * saved before, unchanged, isn't saved again: the toast says where it is, with Download again.
+ */
+export function downloadWithToast(img: StagedImage, what: string, platform?: string) {
+  const composer = platform ? `${platform}'s` : "the platform's"
+  if (wasDownloaded(img)) {
+    toast.info(`Already downloaded ${what}. Check your Downloads folder, and add it in ${composer} composer.`, {
+      action: { label: "Download again", onClick: () => downloadImage(img) },
+    })
+    return
+  }
+  downloadImage(img)
+  toast.success(`Saved ${what}. Add it in ${composer} composer.`)
+}
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
 export async function copyWithToast(img: StagedImage, what = "image") {
@@ -38,16 +103,26 @@ export async function copyWithToast(img: StagedImage, what = "image") {
 const tileButton =
   "grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
 
-/** A tile's crop button; a tile has two, upper right and under ALT, and its width shows one. */
-function CropButton({ n, cropped, onClick, className }: { n: number; cropped: boolean; onClick: () => void; className: string }) {
+/**
+ * A tile's crop button (Crop & Trim on a video); a tile has two, upper right and under ALT, and
+ * its width shows one.
+ */
+function CropButton({ img, n, onClick, className }: { img: StagedImage; n: number; onClick: () => void; className: string }) {
+  const video = isVideo(img)
+  const changed = !!img.crop || !!img.trim || !!img.resize
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className={cn(tileButton, className)} onClick={onClick} aria-label={`Crop image ${n}`}>
-          <PencilIcon className="size-3.5" />
+        <button
+          type="button"
+          className={cn(tileButton, className)}
+          onClick={onClick}
+          aria-label={`${video ? "Crop or trim" : "Crop"} ${mediaKind(img)} ${n}`}
+        >
+          <WrenchIcon className="size-3.5" />
         </button>
       </TooltipTrigger>
-      <TooltipContent>{cropped ? "Change the crop" : "Crop"}</TooltipContent>
+      <TooltipContent>{changed ? `Change the ${video ? "edit" : "crop"}` : video ? "Crop & Trim" : "Crop"}</TooltipContent>
     </Tooltip>
   )
 }
@@ -118,13 +193,11 @@ const MOVE_KEY =
     ? "⌘"
     : "Ctrl"
 
-const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
-
-/** The empty drop bar's label for a drag of `count` images (null: the browser doesn't say). */
-function dropLabel(count: number | null) {
-  if (count === null) return `Drop, paste, or pick up to ${MAX_IMAGES} images`
-  if (count <= MAX_IMAGES) return `Add ${plural(count)}`
-  return `Add ${MAX_IMAGES} of ${count} images`
+/** The empty drop bar's label for a drag of `count` files, `videos` of them videos (null: the browser doesn't say). */
+function dropLabel(count: number | null, videos: number | null) {
+  if (count === null) return `Drop, paste, or pick up to ${MAX_IMAGES} images or videos`
+  if (count <= MAX_IMAGES) return `Add ${mediaNoun(count - (videos ?? 0), videos ?? 0)}`
+  return `Add ${MAX_IMAGES} of ${count} files`
 }
 
 /** The add tile's note for a drag of `count` images when `room` more fit. */
@@ -147,6 +220,12 @@ type AreaProps = {
   onAltChange: (id: string, alt: string) => void
   /** Crop an image (from the image as added), or with null, show all of it again. */
   onCrop: (id: string, crop: CropRect | null) => void
+  /** Keep a video's crop and trim, made in its dialog (or back to the video as added). */
+  onVideoChange: (id: string, change: VideoChange) => void
+  /** The platforms shown, whose video length caps the trim timeline offers. */
+  platforms: PlatformAdapter[]
+  /** A video's splits into clips for each platform, for its dialog. */
+  splitting?: (id: string) => VideoSplitting
   /** The Clear Post button, first in the bottom row. */
   clearPost: React.ReactNode
   /** The image buttons (Clear and, after a card changes them, Reset), beside it once images are staged. */
@@ -167,6 +246,9 @@ export function ImageArea({
   onReorder,
   onAltChange,
   onCrop,
+  onVideoChange,
+  platforms,
+  splitting,
   clearPost,
   clearImages,
 }: AreaProps) {
@@ -214,7 +296,18 @@ export function ImageArea({
     <div ref={box} className="@container relative">
       {staged ? (
         <div className="mb-4">
-          <ImageTray images={images} drag={drag} onAdd={onAdd} onRemove={onRemove} onReorder={onReorder} onAltChange={onAltChange} onCrop={onCrop} />
+          <ImageTray
+            images={images}
+            drag={drag}
+            onAdd={onAdd}
+            onRemove={onRemove}
+            onReorder={onReorder}
+            onAltChange={onAltChange}
+            onCrop={onCrop}
+            onVideoChange={onVideoChange}
+            platforms={platforms}
+            splitting={splitting}
+          />
         </div>
       ) : (
         // Makes room above the buttons while the bar is up there.
@@ -248,7 +341,7 @@ function DropBar({ expanded, animate, drag, onAdd }: BarProps) {
       <input
         ref={input}
         type="file"
-        accept="image/*"
+        accept={ACCEPT}
         multiple
         hidden
         onChange={(e) => {
@@ -280,13 +373,13 @@ function DropBar({ expanded, animate, drag, onAdd }: BarProps) {
           <TooltipTrigger asChild>
             <span className={cn("relative", expanded ? "text-center text-balance" : "truncate")}>
               {drag?.phase === "in"
-                ? dropLabel(drag.count)
+                ? dropLabel(drag.count, drag.videos)
                 : expanded
-                  ? `Drop, paste, or pick up to ${MAX_IMAGES} images`
-                  : "Drop, paste, or pick images"}
+                  ? `Drop, paste, or pick up to ${MAX_IMAGES} images or videos`
+                  : "Drop, paste, or pick images or videos"}
             </span>
           </TooltipTrigger>
-          {!expanded && !drag && <TooltipContent>Drop, paste, or pick up to {MAX_IMAGES} images</TooltipContent>}
+          {!expanded && !drag && <TooltipContent>Drop, paste, or pick up to {MAX_IMAGES} images or videos</TooltipContent>}
         </Tooltip>
       </button>
     </>
@@ -302,15 +395,30 @@ type TrayProps = {
   onReorder: (id: string, target: string, after: boolean) => void
   onAltChange: (id: string, alt: string) => void
   onCrop: (id: string, crop: CropRect | null) => void
+  onVideoChange: (id: string, change: VideoChange) => void
+  platforms: PlatformAdapter[]
+  splitting?: (id: string) => VideoSplitting
 }
 
 /** Staged images in one row: copy, drag, download or remove each one, or add more in the empty slot. */
-function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChange, onCrop }: TrayProps) {
+function ImageTray({
+  images,
+  drag = null,
+  onAdd,
+  onRemove,
+  onReorder,
+  onAltChange,
+  onCrop,
+  onVideoChange,
+  platforms,
+  splitting,
+}: TrayProps) {
   const input = useRef<HTMLInputElement>(null)
   // The image whose alt text, or crop, is being edited.
-  const [altFor, setAltFor] = useState<string | null>(null)
-  const [cropFor, setCropFor] = useState<string | null>(null)
-  const altIndex = images.findIndex((img) => img.id === altFor)
+  const [editing, setEditing] = useState<{ id: string; tab: MediaTab } | null>(null)
+  const editIndex = images.findIndex((img) => img.id === editing?.id)
+  // A touch tap first shows a tile's buttons; a tap on a tile already showing them opens it.
+  const tapOpens = useRef(false)
   // Touch screens can't hover: a tap on a tile shows its buttons, and a tap anywhere else hides them.
   const [tapped, setTapped] = useState<string | null>(null)
   useEffect(() => {
@@ -321,14 +429,13 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
     window.addEventListener("pointerdown", away, true)
     return () => window.removeEventListener("pointerdown", away, true)
   }, [tapped])
-  const cropIndex = images.findIndex((img) => img.id === cropFor)
   // Where a tile dragged within the tray would land: beside this one.
   const [insert, setInsert] = useState<{ id: string; after: boolean } | null>(null)
   const picker = (
     <input
       ref={input}
       type="file"
-      accept="image/*"
+      accept={ACCEPT}
       multiple
       hidden
       onChange={(e) => {
@@ -341,22 +448,28 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
   return (
     <div className="space-y-2">
       {picker}
-      {altIndex >= 0 && (
-        <AltTextDialog
-          image={images[altIndex]}
-          n={altIndex + 1}
-          open
-          onOpenChange={(open) => !open && setAltFor(null)}
-          onSave={(alt) => onAltChange(images[altIndex].id, alt)}
-        />
-      )}
-      {cropIndex >= 0 && (
-        <CropDialog
-          image={images[cropIndex]}
-          n={cropIndex + 1}
-          open
-          onOpenChange={(open) => !open && setCropFor(null)}
-          onSave={(crop) => onCrop(images[cropIndex].id, crop)}
+      {editIndex >= 0 && (
+        <MediaDialog
+          image={images[editIndex]}
+          n={editIndex + 1}
+          tab={editing!.tab}
+          onTabChange={(tab) => setEditing((e) => e && { ...e, tab })}
+          onClose={() => setEditing(null)}
+          platforms={platforms}
+          onAltChange={(alt) => onAltChange(images[editIndex].id, alt)}
+          onCrop={(crop) => onCrop(images[editIndex].id, crop)}
+          onVideoChange={(change) => onVideoChange(images[editIndex].id, change)}
+          splitting={splitting}
+          {...(images.length > 1 && {
+            // Round the tray, either way, on the tab in use.
+            onNavigate: (dir: -1 | 1) =>
+              setEditing((e) => e && { ...e, id: images[(editIndex + dir + images.length) % images.length].id }),
+            neighbors: {
+              prev: named(images[(editIndex - 1 + images.length) % images.length], ((editIndex - 1 + images.length) % images.length) + 1),
+              next: named(images[(editIndex + 1) % images.length], ((editIndex + 1) % images.length) + 1),
+            },
+            ahead: [images[(editIndex - 1 + images.length) % images.length], images[(editIndex + 1) % images.length]],
+          })}
         />
       )}
       <ol
@@ -394,15 +507,20 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
           >
             {/* No hover card: the file name says little (a pasted image's is made up), and the ALT
                 badge shows the alt text when hovered. The name is kept for downloads and sharing. */}
-            {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset */}
-            <img
-              src={img.url}
-              alt={img.alt || `Image ${i + 1}`}
+            <Preview
+              img={img}
+              alt={img.alt || named(img, i + 1)}
+              playOnHover
               draggable
               onDragStart={(e) => dragOut(e, img, "tray")}
               onDragEnd={() => setInsert(null)}
-              onPointerUp={(e) => e.pointerType !== "mouse" && setTapped(tapped === img.id ? null : img.id)}
-              className="size-full cursor-grab object-cover"
+              onPointerDown={(e) => {
+                tapOpens.current = e.pointerType === "mouse" || tapped === img.id
+              }}
+              onPointerUp={(e) => e.pointerType !== "mouse" && tapped !== img.id && setTapped(img.id)}
+              // Clicking the picture opens it on Alt Text, its preview (the wrench opens its crop).
+              onClick={() => tapOpens.current && setEditing({ id: img.id, tab: "alt" })}
+              className="size-full cursor-pointer object-cover active:cursor-grabbing"
             />
             {insert?.id === img.id && (
               <span
@@ -413,8 +531,11 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                 )}
               />
             )}
-            <span className="absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
-              <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
+            <span className="pointer-events-none absolute bottom-1 left-1 flex gap-1">
+              <span className="grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
+                <span className="[text-box:trim-both_cap_alphabetic]">{i + 1}</span>
+              </span>
+              <Length img={img} />
             </span>
             {/* Shown on hover or focus, or after a tap on touch screens (which can't hover): ALT upper
                 left (its own, below, kept in view once there's alt text), crop and remove upper
@@ -438,8 +559,8 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={() => setAltFor(img.id)}
-                    aria-label={img.alt ? `Edit alt text for image ${i + 1}` : `Add alt text for image ${i + 1}`}
+                    onClick={() => setEditing({ id: img.id, tab: "alt" })}
+                    aria-label={`${img.alt ? "Edit" : "Add"} alt text for ${mediaKind(img)} ${i + 1}`}
                     className={cn(
                       "grid h-6 place-items-center rounded-md px-1.5 text-[11px] leading-none font-bold tracking-wide text-white backdrop-blur-sm transition-colors",
                       // With alt text: the app's blue, as on the copied checks, so it's plain it has some.
@@ -460,26 +581,45 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
             >
               {/* Narrower tiles: crop under ALT, as the top row has no room for it. */}
               <CropButton
+                img={img}
                 n={i + 1}
-                cropped={!!img.crop}
-                onClick={() => setCropFor(img.id)}
+                onClick={() => setEditing({ id: img.id, tab: "edit" })}
                 className="absolute top-7 left-0 hidden @max-[7rem]/tile:grid @max-[5.5rem]/tile:hidden"
               />
               <span className="absolute top-0 right-0 flex gap-1">
                 <CropButton
+                  img={img}
                   n={i + 1}
-                  cropped={!!img.crop}
-                  onClick={() => setCropFor(img.id)}
+                  onClick={() => setEditing({ id: img.id, tab: "edit" })}
                   className="@max-[7rem]/tile:hidden"
                 />
                 <ConfirmX
-                  label={`Remove image ${i + 1}`}
+                  label={`Remove ${mediaKind(img)} ${i + 1}`}
                   onConfirm={() => onRemove(img.id)}
                   className="grid size-6 place-items-center rounded-md text-white backdrop-blur-sm transition-colors"
                   idleClassName="bg-black/60 hover:bg-black/80"
                   iconClassName="size-3.5"
                 />
               </span>
+              {isVideo(img) ? (
+                // A video can't go on the clipboard: Download takes Copy's place, on every width
+                // (not on touch screens, where it's in the phone's library already).
+                <span className="absolute right-0 bottom-0 flex gap-1 pointer-coarse:hidden">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={tileButton}
+                        onClick={() => downloadImage(img)}
+                        aria-label={`Download video ${i + 1}`}
+                      >
+                        <DownloadIcon className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Download</TooltipContent>
+                  </Tooltip>
+                </span>
+              ) : (
               <span className="absolute right-0 bottom-0 flex gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -510,6 +650,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                   <TooltipContent>Copy</TooltipContent>
                 </Tooltip>
               </span>
+              )}
             </div>
           </li>
         ))}
@@ -520,7 +661,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                 <button
                   type="button"
                   onClick={() => input.current?.click()}
-                  aria-label="Add images"
+                  aria-label="Add images or videos"
                   className={cn(
                     "relative grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-dashed text-muted-foreground transition-colors duration-300 hover:border-foreground/40 hover:text-foreground",
                     drag?.phase === "in" && "border-foreground/40 text-foreground",
@@ -537,7 +678,7 @@ function ImageTray({ images, drag = null, onAdd, onRemove, onReorder, onAltChang
                   </span>
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Add images (up to {MAX_IMAGES})</TooltipContent>
+              <TooltipContent>Add images or videos (up to {MAX_IMAGES})</TooltipContent>
             </Tooltip>
           </li>
         )}
@@ -605,8 +746,8 @@ function SteadyBold({ bold, children }: { bold: boolean; children: React.ReactNo
 }
 
 type StripProps = {
-  /** This post's images, with their numbers in the Compose tray. */
-  items: { img: StagedImage; n: number }[]
+  /** This post's images, with their numbers in the Compose tray ("1.2": video 1's second part). */
+  items: { img: StagedImage; n: number | string }[]
   platform: PlatformAdapter
   /** Ids of the images already copied from this card. */
   copied: ReadonlySet<string>
@@ -629,12 +770,20 @@ type StripProps = {
   insert?: { id: string; after: boolean } | null
   /** Set when this platform has its own image order: go back to the tray's. */
   onMatchCompose?: () => void
+  /** Alt texts already copied from this card (`altKey`), and noting one. */
+  copiedAlts?: ReadonlySet<string>
+  onAltCopied?: (key: string) => void
+  /** Videos the platform won't take as they are, by id, with why: marked in the corner. */
+  issues?: ReadonlyMap<string, string>
+  /** Open one in the media dialog, from the corner's wrench: to preview and edit it (and fix it). */
+  onEdit?: (id: string) => void
 }
 
 /**
- * Thumbnails on one of a platform card's posts: click to copy, or drag into
- * the platform's composer or onto another post. Copied ones get a check; the
- * x leaves one off this platform only. Numbers match the Compose tray.
+ * Thumbnails on one of a platform card's posts: click to copy an image or download a video, or drag into
+ * the platform's composer or onto another post; the upper left corner's wrench
+ * opens one to preview and edit. Copied ones get a check; the x leaves one off
+ * this platform only. Numbers match the Compose tray.
  */
 export function ImageStrip({
   items,
@@ -651,6 +800,10 @@ export function ImageStrip({
   onlyHere = false,
   insert = null,
   onMatchCompose,
+  issues,
+  onEdit,
+  copiedAlts,
+  onAltCopied,
 }: StripProps) {
   // Ends following the thumbnail drag in progress, if any (see followDragOut).
   const endDrag = useRef<(() => boolean) | null>(null)
@@ -658,28 +811,43 @@ export function ImageStrip({
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
         {items.map(({ img, n }) => {
-          const copy = async () => {
-            if (await copyWithToast(img, `image ${n}`)) onCopiedChange(img.id, true)
+          // A click copies an image, to paste in the platform's composer, and downloads a video
+          // (the clipboard takes pictures only); the corner's wrench opens it to preview and edit.
+          const video = isVideo(img)
+          const what = `${mediaKind(img)} ${n}`
+          const issue = issues?.get(img.id)
+          const save = async () => {
+            if (video) {
+              downloadWithToast(img, what, platform.name)
+              onCopiedChange(img.id, true)
+            } else if (await copyWithToast(img, what)) onCopiedChange(img.id, true)
           }
           return (
-            <li key={img.id} data-image-id={img.id} className="group/thumb relative size-14">
+            <li key={img.id} data-image-id={img.id} className="flex w-14 flex-col gap-1.5">
+              {/* The thumbnail and everything on it; the ALT button goes under it. */}
+              <div className="group/thumb relative size-14">
               {/* A div acting as the button: Firefox won't start a drag from inside a real <button>.
                   No hover card on the image: the ALT badge shows the alt text when hovered. */}
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={copy}
+                    onClick={save}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter" && e.key !== " ") return
                       e.preventDefault()
-                      copy()
+                      save()
                     }}
-                    aria-label={copied.has(img.id) ? `Copy image ${n} (copied)` : `Copy image ${n}`}
-                    className="block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none hover:ring-2 hover:ring-(--brand-blue) focus-visible:ring-2 focus-visible:ring-(--brand-blue)"
+                    aria-label={`${video ? "Download" : "Copy"} ${what}${copied.has(img.id) ? " (copied)" : ""}`}
+                    className={cn(
+                      "block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none focus-visible:ring-2",
+                      // Won't go as it is: the rail's warning treatment, a red ring (and the badge below).
+                      issue
+                        ? "ring-2 ring-destructive ring-offset-2 ring-offset-background focus-visible:ring-destructive"
+                        : "hover:ring-2 hover:ring-(--brand-blue) focus-visible:ring-(--brand-blue)",
+                    )}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL */}
-                    <img
-                      src={img.url}
+                    <Preview
+                      img={img}
                       alt=""
                       draggable
                       onDragStart={(e) => {
@@ -701,28 +869,6 @@ export function ImageStrip({
                       className={cn("size-full object-cover transition", copied.has(img.id) && "opacity-40 grayscale")}
                     />
                   </div>
-              {img.alt && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await writeClipboard(img.alt!)
-                          toast.success(`Copied alt text for image ${n}. Paste it into ${platform.name}'s alt text field.`)
-                        } catch {
-                          toast.error(`Couldn't copy the alt text for image ${n}.`)
-                        }
-                      }}
-                      aria-label={`Copy alt text for image ${n}`}
-                      className="absolute -top-2 -left-2 grid h-4 place-items-center rounded-full bg-(--brand-blue) px-1.5 text-[10px] leading-none font-bold text-white ring-2 ring-background transition-colors hover:bg-(--brand-blue)/85"
-                    >
-                      <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-64">{img.alt}</TooltipContent>
-                </Tooltip>
-              )}
               {insert?.id === img.id && (
                 // The gap this image would drop into.
                 <span
@@ -736,8 +882,57 @@ export function ImageStrip({
               <span className="pointer-events-none absolute bottom-1 left-1 grid h-4 min-w-4 place-items-center rounded bg-black/60 px-1 text-[10px] leading-none text-white tabular-nums">
                 <span className="[text-box:trim-both_cap_alphabetic]">{n}</span>
               </span>
+              {video && (
+                // No room for the length on a thumbnail: the play mark says it's a video.
+                <PlayIcon
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-1/2 fill-white text-white drop-shadow transition-opacity group-hover/thumb:opacity-0"
+                />
+              )}
+              {/* Hovered, what a click does, over the darkened thumbnail: copy an image, download a video. */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 grid place-items-center rounded bg-black/55 text-white opacity-0 transition-opacity group-hover/thumb:opacity-100"
+              >
+                {video ? <DownloadIcon className="size-5" /> : <CopyIcon className="size-5" />}
+              </span>
+              {onEdit && (
+                // The upper left corner: the alert while the platform won't take it, and hovered
+                // (always on touch screens), a wrench that opens it to preview and edit, and to fix.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onEdit(img.id)}
+                      aria-label={issue ? `Fix ${what} for ${platform.name}: ${issue}` : `Edit ${what}`}
+                      className={cn(
+                        "absolute -top-2 -left-2 z-10 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100",
+                        issue
+                          ? "bg-destructive hover:bg-destructive/85"
+                          : "bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600 pointer-coarse:opacity-100",
+                      )}
+                    >
+                      {issue && (
+                        <TriangleAlertIcon
+                          className="size-3 group-hover/thumb:hidden pointer-coarse:hidden"
+                          strokeWidth={3}
+                          aria-hidden
+                        />
+                      )}
+                      <WrenchIcon
+                        className={cn("size-3", issue && "hidden group-hover/thumb:block pointer-coarse:block")}
+                        strokeWidth={2.5}
+                        aria-hidden
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">
+                    {issue ? `${issue}. Fix it for ${platform.name}.` : "Edit"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               <ConfirmX
-                label={`Leave image ${n} off ${platform.name}`}
+                label={`Leave ${what} off ${platform.name}`}
                 onConfirm={() => onHide(img.id)}
                 // Sits over the corner, poking out above the thumbnail. On touch screens, with
                 // no hover to bring it out, it's always there.
@@ -753,13 +948,44 @@ export function ImageStrip({
                     <button
                       type="button"
                       onClick={() => onCopiedChange(img.id, false)}
-                      aria-label={`Image ${n} copied. Clear the check`}
-                      className="absolute -right-1.5 -bottom-1.5 grid size-4 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
+                      aria-label={`${video ? "Video" : "Image"} ${n} copied. Clear the check`}
+                      className="absolute -right-1.5 -bottom-1.5 grid size-4.5 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
                     >
-                      <CheckIcon className="size-2.5" strokeWidth={3.5} />
+                      <CheckIcon className="size-2.75" strokeWidth={3.5} />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>Clear the copied check</TooltipContent>
+                </Tooltip>
+              )}
+              </div>
+              {img.alt && (
+                // Under the thumbnail, its width: an easy target, and off the crowded corners.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await writeClipboard(img.alt!)
+                          onAltCopied?.(altKey(img))
+                          toast.success(`Copied alt text for ${what}. Paste it into ${platform.name}'s alt text field.`)
+                        } catch {
+                          toast.error(`Couldn't copy the alt text for ${what}.`)
+                        }
+                      }}
+                      aria-label={`Copy alt text for ${what}${copiedAlts?.has(altKey(img)) ? " (copied)" : ""}`}
+                      className="flex h-6 w-full items-center justify-center gap-1 rounded-md bg-(--brand-blue) text-[11px] leading-none font-bold tracking-wide text-white transition-colors hover:bg-(--brand-blue)/85 focus-visible:ring-2 focus-visible:ring-(--brand-blue) focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                    >
+                      {/* Copied (this text, on this card): a check in the copy mark's place. */}
+                      {copiedAlts?.has(altKey(img)) ? (
+                        <CheckIcon className="size-3" strokeWidth={3} aria-hidden />
+                      ) : (
+                        <CopyIcon className="size-3" aria-hidden />
+                      )}
+                      <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">{img.alt}</TooltipContent>
                 </Tooltip>
               )}
             </li>

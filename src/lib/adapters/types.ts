@@ -27,6 +27,25 @@ export type Breakpoint = {
   blockedBy?: (text: string) => string | null;
 };
 
+/** The videos a platform's composer takes, posted by hand on a free account. */
+export type VideoRules = {
+  /** Media types it takes, and how to name them ("MP4 or MOV"). */
+  types: string[];
+  typeLabel: string;
+  /** Omit where the platform doesn't publish one (Instagram's app) or has none (Mastodon's length). */
+  maxBytes?: number;
+  maxSeconds?: number;
+  minSeconds?: number;
+  /** A shorter cap for a video in a post with other photos or videos (Instagram's carousel). */
+  carouselMaxSeconds?: number;
+  /** Videos one post holds. */
+  perPost: number;
+  /** A video and images can share a post (up to `maxImages` in all, where set). */
+  mixes: boolean;
+  /** A paid tier that takes more (X Premium), named in the card's message when it would help. */
+  upgrade?: { label: string; maxSeconds?: number; maxBytes?: number };
+};
+
 /** A platform: how it counts and splits, how it looks, and how to open it to post. */
 export type PlatformAdapter = {
   id: string;
@@ -59,9 +78,12 @@ export type PlatformAdapter = {
   needsImage?: boolean;
   /**
    * Most images one post takes, where that's fewer than Compose holds (Bluesky, X and
-   * Mastodon: 4). Omit for platforms that take at least as many as Compose.
+   * Mastodon: 4), videos included where the platform mixes them. Omit for platforms that
+   * take at least as many as Compose.
    */
   maxImages?: number;
+  /** What a video has to be for the platform's own composer to take it ("Video" in docs/spec.md). */
+  video?: VideoRules;
   /**
    * The platform has no single site: posts go through the user's own server,
    * entered in Settings, or `default` when none is. `open.url` gets it as a

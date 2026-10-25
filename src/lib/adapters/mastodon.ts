@@ -23,6 +23,16 @@ export const mastodon: PlatformAdapter = {
   },
   server: { default: "mastodon.social" },
   hiddenByDefault: true,
+  // Mastodon's own defaults (media_attachment.rb; mastodon.social runs them): 99 MB, no time
+  // limit (transcoding stops at 36,000 frames), and a video goes alone, with no images.
+  // Servers can change these.
+  video: {
+    types: ["video/mp4", "video/quicktime", "video/webm", "video/ogg", "video/x-m4v"],
+    typeLabel: "MP4, MOV, WebM, M4V or Ogg",
+    maxBytes: 99e6,
+    perPost: 1,
+    mixes: false,
+  },
   open: {
     label: "Open Prefilled",
     // Every Mastodon server has a share page that opens the composer with text.

@@ -1,5 +1,5 @@
 // Anonymous usage counts through GoatCounter: page views, an event each time a post goes out
-// to a platform, and the use of the welcome card and the tour. No cookies and
+// to a platform, and the use of the welcome card, the tour, and the media editor. No cookies and
 // nothing personal: only an event's name is sent, never a post's text or images. GoatCounter's
 // script skips localhost, so development isn't counted. The event list, naming, and how to add
 // and check one are in docs/spec.md, under Analytics.
