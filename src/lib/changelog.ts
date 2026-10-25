@@ -15,6 +15,25 @@ export type Release = {
 /** Newest first. The first entry's version matches package.json (a test checks). */
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.0",
+    date: "2026-10-25",
+    changes: [
+      {
+        text: "New feature: Video support!",
+        items: [
+          "Each platform's video format, size, and length limits, checked on its card.",
+          "Crop, trim, and resize right in your browser; nothing is uploaded.",
+          "Split a long video into clips for each platform, the way posts split into threads.",
+          "A frame-accurate timeline, with keyboard shortcuts.",
+        ],
+      },
+      "One editor for alt text and cropping, with arrows to move between images and videos.",
+      "On each card: click to copy an image or download a video, and copy its alt text from below it.",
+      "Anonymous usage counts, with no cookies.",
+      "A steadier tour, and faster-loading fonts.",
+    ],
+  },
+  {
     version: "1.2.2",
     date: "2026-10-24",
     changes: ["A smoother tour on phones, and a lighter first load.", "Fixes: a stale page after an update, light theme contrast, and tap targets."],
@@ -75,3 +94,14 @@ export const CHANGELOG: Release[] = [
     ],
   },
 ]
+
+/**
+ * Where What's New starts: the newest minor release with its patches (1.3.0 and any 1.3.x after
+ * it), shown in full; the releases before it wait behind "Show earlier versions".
+ */
+export function splitLatest(releases: Release[]): { latest: Release[]; earlier: Release[] } {
+  const minor = (v: string) => v.split(".").slice(0, 2).join(".")
+  const current = releases[0] ? minor(releases[0].version) : ""
+  const at = releases.findIndex((r) => minor(r.version) !== current)
+  return at < 0 ? { latest: releases, earlier: [] } : { latest: releases.slice(0, at), earlier: releases.slice(at) }
+}
