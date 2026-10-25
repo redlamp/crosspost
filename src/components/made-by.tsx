@@ -1,11 +1,13 @@
 "use client"
 
-import { GlobeIcon } from "lucide-react"
+import { CircleHelpIcon, GlobeIcon } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { ChangelogDialog } from "@/components/changelog-dialog"
 import { Dot } from "@/components/dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { linkedin } from "@/lib/adapters/linkedin"
+import { fetchViewCount } from "@/lib/analytics"
 import { cn } from "@/lib/utils"
 
 // Simple Icons' GitHub mark (lucide no longer ships brand logos).
@@ -29,17 +31,58 @@ const LINKS = [
 
 /** Who made Crosspost, and where to find them. The caller places it. */
 export function MadeBy({ className }: { className?: string }) {
+  // Undefined while GoatCounter is asked; then its count, or 1 (this visit) when it has none to give.
+  const [views, setViews] = useState<number>()
+  useEffect(() => {
+    let live = true
+    fetchViewCount().then((n) => live && setViews(n ?? 1))
+    return () => {
+      live = false
+    }
+  }, [])
   return (
-    <footer className={cn("flex items-center justify-between gap-3 text-sm text-foreground/70", className)}>
+    <footer className={cn("@container flex items-center justify-between gap-3 text-sm text-foreground/70", className)}>
       {/* Rendered at build time; the year may differ from the visitor's clock until the next deploy. */}
       <p suppressHydrationWarning>
         {new Date().getFullYear()}
         <Dot />
         Made by Taylor Wright
-        {/* The version, from package.json, opening the changelog; on its own line at phone
-            widths, where the line is full. */}
-        <Dot className="max-sm:hidden" />
-        <ChangelogDialog className="max-sm:block" />
+        {/* The version and the views share a second line wherever the footer is too narrow for
+            one (phones, and the side column on desktops), so no dot is left trailing a wrap. */}
+        <Dot className="@max-[31rem]:hidden" />
+        <span className="@max-[31rem]:block">
+          {/* The version, from package.json, opening the changelog. */}
+          <ChangelogDialog />
+          <Dot />
+          {/* The page's views from GoatCounter (src/lib/analytics.ts), with a ? saying how
+              they're counted. The number shows once GoatCounter answers. As tall as the
+              version's button (24px) and set at the line's top, so the ? centers with the
+              links' icons; on the baseline it rode 3px high. */}
+          <span className="inline-flex h-6 items-center gap-1.5 align-top">
+            {views !== undefined && (
+              <span className="tabular-nums">
+                {views.toLocaleString()} {views === 1 ? "view" : "views"}
+              </span>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="About the view count: anonymous counts, no cookies stored"
+                  // A 16px icon with a 28px hit area (the pseudo-element), for fingers.
+                  className="relative rounded-full transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+                >
+                  <CircleHelpIcon className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Anonymous counts.
+                <br />
+                No cookies stored.
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        </span>
       </p>
       <ul className="flex items-center gap-1">
         {LINKS.map(({ label, href, Icon }) => (

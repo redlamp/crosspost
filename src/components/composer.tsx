@@ -26,6 +26,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { adapters, type PlatformAdapter } from "@/lib/adapters"
+import { trackDelivery } from "@/lib/analytics"
 import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } from "@/lib/text"
 import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
 import { cropImage, MAX_IMAGES, onClearedElsewhere, reorder, usePageImageInput, useStagedImages, type CropRect } from "@/lib/images"
@@ -199,6 +200,7 @@ export default function Composer() {
       tags.every((t) => next.checkedTags[adapter.id]?.includes(t))
     if (!done) return setProgress(next)
     setProgress({ ...next, posted: { ...next.posted, [adapter.id]: true } })
+    trackDelivery("posted", adapter.id)
     revealNextCard(adapter.id)
     toast(`Everything for ${adapter.name} is done, so it's marked posted`, {
       action: {

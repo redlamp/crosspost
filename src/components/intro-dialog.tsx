@@ -24,8 +24,20 @@ import {
 } from "@/components/ui/dialog"
 import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
-import { canMorph, morphTo, registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
-import { CARD_TRAIL_W, TOUR_STEPS, TRAIL, TRAIL_STOPS, TRAIL_TO_DELIVER, TRAIL_TO_DONE, TRAIL_W, TRAIL_Y } from "@/lib/tour-steps"
+import { track } from "@/lib/analytics"
+import { canMorph, morphTo, onTourLink, registerIntroOpener, setTourOpen, setWelcomeFolded, useWelcome } from "@/lib/intro"
+import {
+  CARD_TRAIL_W,
+  TOUR_STEPS,
+  tourHref,
+  tourPlace,
+  TRAIL,
+  TRAIL_STOPS,
+  TRAIL_TO_DELIVER,
+  TRAIL_TO_DONE,
+  TRAIL_W,
+  TRAIL_Y,
+} from "@/lib/tour-steps"
 import { cn } from "@/lib/utils"
 
 /** Draft's tabs, kept by the dialog so the timeline can move between them. */
@@ -682,10 +694,11 @@ function Trail({
         onPointerCancel={letGo}
       />
       {STEPS.map(({ label, icon: Icon }, i) => (
-        <button
+        // A link, so a step can be copied or opened in a new tab; a plain click goes there here.
+        <a
           key={label}
-          type="button"
-          onClick={() => onGo(i)}
+          href={tourHref(i)}
+          onClick={(e) => onTourLink(e, () => onGo(i))}
           aria-current={i === step ? "step" : undefined}
           // The icon over the name, both centered on the step's stop.
           className={cn(
@@ -701,7 +714,7 @@ function Trail({
             style={{ viewTransitionName: named && i <= DELIVER_AT ? `tour-step-${i}` : undefined }}
           />
           <span style={{ viewTransitionName: named && i <= DELIVER_AT ? `tour-label-${i}` : undefined }}>{label}</span>
-        </button>
+        </a>
       ))}
     </nav>
   )
@@ -756,23 +769,23 @@ export function IntroDialog() {
     const s = stretchFor(to, toPart)
     return held ? still(s.from) : s
   }
-  /** Fresh at step `at` (Draft from its first tab), playing by itself. */
-  const restart = (at = 0) => {
+  /** Fresh at step `at` (on Draft, at its tab `atPart`), playing by itself. */
+  const restart = (at = 0, atPart = 0) => {
     setStep(at)
-    setPart(0)
+    setPart(atPart)
     setWay(0)
     setPrevious(null)
     setPicked(false)
     setManual(false)
-    setStretch(stretchFor(at, 0))
+    setStretch(stretchFor(at, atPart))
   }
   // The welcome card opens it at a step.
   useEffect(
     () =>
-      registerIntroOpener((at) => {
+      registerIntroOpener((at, atPart) => {
         const show = (grow: boolean) =>
           flushSync(() => {
-            restart(at)
+            restart(at, atPart)
             setMorph(grow)
             setArriving(grow)
             setTitleFrom(grow ? cardTitle.current : undefined)
@@ -803,6 +816,15 @@ export function IntroDialog() {
     if (morph && canMorph()) morphTo(hide)
     else hide()
   }
+  // How far each opening gets: every place shown (Draft's tabs, then each step) counted once.
+  const seen = useRef(new Set<string>())
+  useEffect(() => {
+    if (!open) return seen.current.clear()
+    const place = tourPlace(step, part)
+    if (seen.current.has(place)) return
+    seen.current.add(place)
+    track(`tour/step/${place}`)
+  }, [open, step, part])
   const contentRef = useRef<HTMLDivElement>(null)
   /**
    * To step `to`: by the person's hand (taking over from auto-play), or as the drawings move on by
@@ -991,6 +1013,7 @@ export function IntroDialog() {
               onClick={() => {
                 if (!last) return forward()
                 // Start, at the end: closing from Done folds the welcome card (see onOpenChange).
+                track("tour/finish")
                 onOpenChange(false)
               }}
             >
