@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 
 import { fontClassName } from "@/app/fonts";
 import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { GOATCOUNTER_SCRIPT, GOATCOUNTER_URL } from "@/lib/analytics";
 import { DARK_THEME_COLOR } from "@/lib/theme";
 import "./globals.css";
 
@@ -57,6 +59,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Toaster />
           <AppShell />
         </ThemeProvider>
+        {/* Anonymous page views and usage counts (src/lib/analytics.ts; docs/spec.md, Analytics). */}
+        <Script src={GOATCOUNTER_SCRIPT} data-goatcounter={GOATCOUNTER_URL} strategy="afterInteractive" />
       </body>
     </html>
   );

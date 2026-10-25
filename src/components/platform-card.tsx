@@ -27,6 +27,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
+import { trackDelivery } from "@/lib/analytics"
 import { dropTarget, moveType, type StagedImage } from "@/lib/images"
 import { serverHost, usePlatformSettings } from "@/lib/platform-settings"
 import { canShare } from "@/lib/share"
@@ -584,6 +585,7 @@ export function PlatformCard({
                         images={shown.filter(({ img }) => postOf(img.id) === i).map(({ img }) => img)}
                         what={what}
                         onShared={(ids, textWent) => {
+                          trackDelivery("share", adapter.id)
                           if (ids.length) markCopied(ids)
                           if (textWent) onPostCopied(chunk)
                         }}
@@ -595,7 +597,10 @@ export function PlatformCard({
                             href={adapter.open.url(chunk, server)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => onPostCopied(chunk)}
+                            onClick={() => {
+                              trackDelivery("open", adapter.id)
+                              onPostCopied(chunk)
+                            }}
                           >
                             <ExternalLinkIcon />
                             {adapter.open.label}
@@ -643,7 +648,10 @@ export function PlatformCard({
                         what={what}
                         iconOnly
                         done={copiedPosts.includes(chunk)}
-                        onCopied={() => onPostCopied(chunk)}
+                        onCopied={() => {
+                          trackDelivery("copy", adapter.id)
+                          onPostCopied(chunk)
+                        }}
                       />
                     </div>
                   </li>
