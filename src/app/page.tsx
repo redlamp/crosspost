@@ -16,7 +16,7 @@ export default function Home() {
       {/* The bar spans the window; its content lines up with the page's centered column. */}
       <header className="sticky top-0 z-40 h-14 shrink-0 border-b-2 brand-edge-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <h1 className="flex items-center gap-2.5 text-[2rem]/10 font-bold uppercase">
+          <h1 className="flex items-center gap-2.5 text-[2rem]/10 font-bold">
             {/* The Threads plank is white on dark and black on light, so each theme gets its own file. */}
             <Image src={logoLight} alt="" loading="eager" className="h-8 w-auto dark:hidden" />
             <Image src={logoDark} alt="" loading="eager" className="hidden h-8 w-auto dark:block" />
