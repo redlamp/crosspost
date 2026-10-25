@@ -48,7 +48,9 @@ export const welcomePlace = (first: boolean) => (first ? "start-here" : "how-it-
  */
 export function fetchViewCount(): Promise<number | null> {
   viewCount ??= (async () => {
-    const path = encodeURIComponent(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/`)
+    // The path as GoatCounter records it: the base path with no trailing slash (`/crosspost`),
+    // or `/` with none. The counter wants it exactly, or answers "not found".
+    const path = encodeURIComponent(process.env.NEXT_PUBLIC_BASE_PATH || "/")
     try {
       const res = await fetch(GOATCOUNTER_URL.replace(/\/count$/, `/counter/${path}.json`))
       if (!res.ok) return null

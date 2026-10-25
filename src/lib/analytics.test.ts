@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.resetModules()
 })
 
@@ -21,6 +22,13 @@ describe("fetchViewCount", () => {
     const { fetchViewCount, fetch } = await load(Response.json({ count: "1,234", count_unique: "800" }))
     expect(await fetchViewCount()).toBe(1234)
     expect(fetch).toHaveBeenCalledWith("https://redlamp.goatcounter.com/counter/%2F.json")
+  })
+
+  it("asks for the base path as GoatCounter records it, with no trailing slash", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/crosspost")
+    const { fetchViewCount, fetch } = await load(Response.json({ count: "3" }))
+    expect(await fetchViewCount()).toBe(3)
+    expect(fetch).toHaveBeenCalledWith("https://redlamp.goatcounter.com/counter/%2Fcrosspost.json")
   })
 
   it("asks once however many footers want it", async () => {
