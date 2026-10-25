@@ -106,7 +106,11 @@ async function receiveShare(request) {
       const value = data.get(name)
       return typeof value === "string" ? value : ""
     }
-    const files = data.getAll("images").filter((f) => f instanceof File && f.type.startsWith("image/"))
+    // The field is "images" for what the manifest declared first; videos come in it too. A file
+    // some apps send untyped is known by its name, as the tray knows it.
+    const media = (f) =>
+      f.type ? /^(image|video)\//.test(f.type) : /\.(png|jpe?g|gif|webp|avif|mp4|m4v|mov|webm)$/i.test(f.name)
+    const files = data.getAll("images").filter((f) => f instanceof File && media(f))
     await store({ title: field("title"), text: field("text"), url: field("url"), files, at: Date.now() })
   } catch {
     // Nothing usable arrived; open the app anyway.

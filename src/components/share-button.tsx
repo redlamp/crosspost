@@ -8,6 +8,7 @@ import { writeClipboard } from "@/components/copy-button"
 import { Button } from "@/components/ui/button"
 import type { PlatformAdapter } from "@/lib/adapters"
 import type { StagedImage } from "@/lib/images"
+import { isVideo, mediaNoun } from "@/lib/media"
 import { canShare, canShareImages, prepareShareFiles, sharePost } from "@/lib/share"
 
 type Props = {
@@ -20,8 +21,6 @@ type Props = {
   /** Shared: the images that went along, and whether the text did (sent, or on the clipboard), so the card can mark them copied. */
   onShared?: (ids: string[], textWent: boolean) => void
 }
-
-const plural = (n: number) => `${n} image${n === 1 ? "" : "s"}`
 
 /**
  * Hands the post to the share sheet, text and images together, for the platform's app. The
@@ -72,6 +71,7 @@ export function ShareButton({ adapter, text, images, what, onShared }: Props) {
           what,
           name: adapter.name,
           sent: withImages ? sent.length : 0,
+          noun: mediaNoun(sent.filter((img) => !isVideo(img)).length, sent.filter(isVideo).length),
           left: images.length - sent.length,
           staged: images.length,
           dropsText,
@@ -97,6 +97,7 @@ function message({
   what,
   name,
   sent,
+  noun,
   left,
   staged,
   dropsText,
@@ -106,6 +107,8 @@ function message({
   name: string
   /** Images that went along, and how many of the post's were left for the app to take itself. */
   sent: number
+  /** What went along, in words: "2 images and a video". */
+  noun: string
   left: number
   staged: number
   dropsText: boolean
@@ -114,10 +117,10 @@ function message({
   if (dropsText) {
     const rest = left > 0 ? ` ${name} takes ${sent === 1 ? "one" : sent} from the share sheet; add the other${left === 1 ? "" : "s"} there.` : ""
     const text = copied ? ` The text is copied: paste it in ${name}.` : ` ${name} drops shared text, so copy it and paste it in.`
-    return `Shared ${plural(sent)}.${rest}${text}`
+    return `Shared ${noun}.${rest}${text}`
   }
   if (sent > 0) {
-    return `Shared ${what} with ${plural(sent)}.${copied ? " The text is on the clipboard too, in case the app keeps only the images." : ""}`
+    return `Shared ${what} with ${noun}.${copied ? " The text is on the clipboard too, in case the app keeps only the images." : ""}`
   }
   if (staged > 0) return `Shared ${what}. This browser can't share images along; copy them separately.`
   return `Shared ${what}.`

@@ -82,7 +82,7 @@ type Drag = {
 const brandOf = (adapter: PlatformAdapter) => adapter.brand.color ?? "var(--foreground)"
 
 /** The value that appears most often (the first of any tie). */
-function mostCommon(values: number[]): number {
+export function mostCommon(values: number[]): number {
   const counts = new Map<number, number>()
   for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1)
   return [...counts].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0]
@@ -138,7 +138,7 @@ export function Flag({ adapter, label, className }: { adapter: PlatformAdapter; 
         className,
       )}
     >
-      <PlatformLogo adapter={adapter} className="size-2.5 fill-current" />
+      <PlatformLogo adapter={adapter} bare className="size-2.5 fill-current" />
       {/* Trimmed to the figures (no descender room), so the flag centers them. */}
       {label != null && <span className="[text-box:trim-both_cap_alphabetic]">{label}</span>}
     </span>
@@ -399,6 +399,9 @@ export function ComposeEditor({
   }
   pieces.push(value.slice(cursor), "​")
 
+  // How many posts each platform's text comes to (its last split's post number), for its chip's
+  // badge: the chip is the action, the badge what it has made so far. Live, as splits move.
+  const postsFor = (a: PlatformAdapter) => Math.max(1, ...markers.filter((m) => m.adapter.id === a.id).map((m) => m.index))
   const chips: { key: string; adapters: PlatformAdapter[]; name: string }[] = [
     ...(palette.length > 1 ? [{ key: "all", adapters: palette, name: "all threading platforms" }] : []),
     ...palette.map((a) => ({ key: a.id, adapters: [a], name: a.name })),
@@ -422,11 +425,13 @@ export function ComposeEditor({
                 type="button"
                 onPointerDown={chipPointerDown(chip.adapters)}
                 onClick={() => splitAtCursor(chip.adapters)}
-                aria-label={`Split ${chip.name} at the cursor, or drag into the text`}
+                aria-label={`Split ${chip.name} at the cursor, or drag into the text${
+                  chip.key !== "all" && postsFor(chip.adapters[0]) > 1 ? ` (${postsFor(chip.adapters[0])} posts now)` : ""
+                }`}
                 style={{ "--brand": brandOf(chip.adapters[0]) } as React.CSSProperties}
                 // One neutral look for every chip, as for the rail's tiles; the logo carries the brand.
                 className={cn(
-                  "flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border border-border bg-secondary px-1.5 transition-colors hover:bg-accent active:cursor-grabbing",
+                  "relative flex h-7 min-w-7 cursor-grab touch-none items-center justify-center gap-1 rounded-md border border-border bg-secondary px-1.5 transition-colors hover:bg-accent active:cursor-grabbing",
                   chip.key === "all" && "text-xs font-medium",
                 )}
               >
@@ -436,7 +441,19 @@ export function ComposeEditor({
                     All
                   </>
                 ) : (
-                  <PlatformLogo adapter={chip.adapters[0]} className="size-4" />
+                  <>
+                    <PlatformLogo adapter={chip.adapters[0]} className="size-4" />
+                    {/* Its posts once it splits, as on the rail's tiles: no badge for one, none on All
+                        (its platforms' counts differ). */}
+                    {postsFor(chip.adapters[0]) > 1 && (
+                      <span
+                        aria-hidden
+                        className="absolute -right-1.5 -bottom-1.5 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-(--brand-blue) px-1 text-[11px] leading-none font-semibold text-white tabular-nums ring-2 ring-background"
+                      >
+                        <span className="[text-box:trim-both_cap_alphabetic]">{postsFor(chip.adapters[0])}</span>
+                      </span>
+                    )}
+                  </>
                 )}
               </button>
             ))}

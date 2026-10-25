@@ -1,6 +1,6 @@
 "use client"
 
-import { toPng, type StagedImage } from "@/lib/images"
+import { fileName, toPng, type StagedImage } from "@/lib/images"
 
 // Handing a post to the system share sheet (the Web Share API), so a platform's phone app
 // receives the text and all its images in one go: the one route that moves several images at
@@ -17,19 +17,22 @@ export const canShare = () => typeof navigator !== "undefined" && typeof navigat
  */
 const SHARED_AS_IS = new Set(["image/jpeg", "image/png", "image/gif"])
 
+/** Goes to the share sheet as it is: JPEG, PNG, GIF, and any video (there's no converting one here). */
+const asIs = (img: StagedImage) => SHARED_AS_IS.has(img.blob.type) || img.blob.type.startsWith("video/")
+
 const pngName = (name: string) => `${name.replace(/\.[^.]*$/, "")}.png`
 
 const asFile = (blob: Blob, name: string) =>
   blob instanceof File && blob.name === name ? blob : new File([blob], name, { type: blob.type })
 
 /**
- * Staged images as the files the share sheet takes: JPEG, PNG and GIF as they are, the rest
- * converted to PNG. When the browser can't decode one, it goes as it is for the sheet to try.
+ * Staged images as the files the share sheet takes: JPEG, PNG, GIF and videos as they are, the
+ * rest converted to PNG. When the browser can't decode one, it goes as it is for the sheet to try.
  */
 export async function prepareShareFiles(images: StagedImage[]): Promise<File[]> {
   return Promise.all(
     images.map(async (img) => {
-      if (SHARED_AS_IS.has(img.blob.type)) return asFile(img.blob, img.name)
+      if (asIs(img)) return asFile(img.blob, fileName(img))
       try {
         return new File([await toPng(img.blob)], pngName(img.name), { type: "image/png" })
       } catch {
@@ -45,7 +48,7 @@ export function canShareImages(images: StagedImage[]): boolean {
   try {
     // Stands in for the conversion, which is async: a file of the same bytes typed as PNG.
     const files = images.map((img) =>
-      SHARED_AS_IS.has(img.blob.type) ? asFile(img.blob, img.name) : new File([img.blob], pngName(img.name), { type: "image/png" }),
+      asIs(img) ? asFile(img.blob, fileName(img)) : new File([img.blob], pngName(img.name), { type: "image/png" }),
     )
     return navigator.canShare({ files })
   } catch {

@@ -17,6 +17,27 @@ export const TOUR_STEPS: { label: string; icon: LucideIcon; title: string }[] = 
   { label: "Done", icon: FlagIcon, title: "You're ready!" },
 ]
 
+/**
+ * The tour's places by name, for links (`#tour/decide`) and for counting how far a visit gets:
+ * Draft's three tabs, then each later step. `step` and `part` are where the dialog opens.
+ */
+export const TOUR_PLACES = [
+  { name: "write", step: 0, part: 0 },
+  { name: "split", step: 0, part: 1 },
+  { name: "images", step: 0, part: 2 },
+  { name: "decide", step: 1, part: 0 },
+  { name: "deliver", step: 2, part: 0 },
+  { name: "done", step: 3, part: 0 },
+] as const
+
+/** A link to a step's start (`#tour/decide`), on the stops, to open it there or copy it. */
+export const tourHref = (step: number) => `#tour/${TOUR_STEPS[step].label.toLowerCase()}`
+
+/** The name of the place the tour shows: Draft's tab, or the step past Draft. */
+export function tourPlace(step: number, part: number): string {
+  return TOUR_PLACES.find((p) => p.step === step && (step !== 0 || p.part === part))?.name ?? "write"
+}
+
 // The steps as stops on a winding trail, a nod to the signpost, and a timeline of the
 // introduction: a marker plays along the curve as the steps do, inking the way behind it, and
 // can be dragged back and forth. The tour's trail goes one stop further than the card's, to

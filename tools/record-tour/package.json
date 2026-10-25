@@ -1,0 +1,9 @@
+{
+  "name": "crosspost-record-tour",
+  "private": true,
+  "type": "module",
+  "description": "Renders the tour to a video, frame by frame, from the static build.",
+  "dependencies": {
+    "playwright": "^1.64.1"
+  }
+}

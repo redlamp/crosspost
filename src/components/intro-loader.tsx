@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic"
 import { useEffect, useState } from "react"
 
-import { registerIntroLoader, useWelcome } from "@/lib/intro"
+import { openTourFromHash, registerIntroLoader, useWelcome } from "@/lib/intro"
 
 // The tour's dialog and its drawings are a good share of the page's code, and most visits never
 // open them, so they're fetched apart from the page: ahead of time while the welcome card is
@@ -18,6 +18,12 @@ export function IntroLoader() {
   const [wanted, setWanted] = useState(false)
   const welcome = useWelcome()
   useEffect(() => registerIntroLoader(() => setWanted(true)), [])
+  // A link to the tour (#tour/decide) opens it there, on arrival or when followed on the page.
+  useEffect(() => {
+    openTourFromHash()
+    window.addEventListener("hashchange", openTourFromHash)
+    return () => window.removeEventListener("hashchange", openTourFromHash)
+  }, [])
   // The card folded away: no fetch until it's hovered, focused or opened, so a visitor who put it
   // aside doesn't pay for it.
   useEffect(() => {

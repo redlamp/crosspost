@@ -1,23 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Overpass, Overpass_Mono } from "next/font/google";
+import Script from "next/script";
 
+import { fontClassName } from "@/app/fonts";
 import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { GOATCOUNTER_SCRIPT, GOATCOUNTER_URL } from "@/lib/analytics";
 import { DARK_THEME_COLOR } from "@/lib/theme";
 import "./globals.css";
-
-// Overpass is the free cut of Highway Gothic, the lettering on US road signs: it suits a signpost logo.
-const overpass = Overpass({
-  variable: "--font-overpass",
-  subsets: ["latin"],
-});
-
-const overpassMono = Overpass_Mono({
-  variable: "--font-overpass-mono",
-  subsets: ["latin"],
-});
 
 // The live site, for the absolute URLs share previews need. Next adds the /crosspost base path
 // to file-based images (opengraph-image.jpg) itself, so metadataBase is the origin alone.
@@ -60,7 +51,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${overpass.variable} ${overpassMono.variable} h-full antialiased`}
+      className={`${fontClassName} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange storageKey="crosspost:theme">
@@ -68,6 +59,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Toaster />
           <AppShell />
         </ThemeProvider>
+        {/* Anonymous page views and usage counts (src/lib/analytics.ts; docs/spec.md, Analytics). */}
+        <Script src={GOATCOUNTER_SCRIPT} data-goatcounter={GOATCOUNTER_URL} strategy="afterInteractive" />
       </body>
     </html>
   );

@@ -3,7 +3,7 @@
 import { CircleHelpIcon, PlayIcon, XIcon } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 
-import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, TOUR_STEPS } from "@/lib/tour-steps"
+import { CARD_TRAIL, CARD_TRAIL_STOPS, CARD_TRAIL_W, CARD_TRAIL_Y, TOUR_STEPS, tourHref } from "@/lib/tour-steps"
 
 /** The card shows the tour's first three steps; Done is the tour's own. */
 const CARD_STEPS = TOUR_STEPS.slice(0, 3)
@@ -13,6 +13,7 @@ import { RollText } from "@/components/roll-text"
 import { WaveText } from "@/components/wave-text"
 import {
   foldWelcome,
+  onTourLink,
   openIntro,
   requestIntro,
   setWelcomeFolded,
@@ -21,6 +22,7 @@ import {
   useTourOpen,
   useWelcome,
 } from "@/lib/intro"
+import { track, welcomePlace } from "@/lib/analytics"
 import { cn } from "@/lib/utils"
 
 /**
@@ -37,6 +39,11 @@ import { cn } from "@/lib/utils"
  */
 function CardTrail({ touring, walking }: { touring: boolean; walking: boolean }) {
   const at = (x: number) => `${(x / CARD_TRAIL_W) * 100}%`
+  // A stop opens the tour at its step, counted by where the card was (walking: Start here).
+  const openTour = (step: number) => {
+    track(`tour/${welcomePlace(walking)}/${CARD_STEPS[step].label.toLowerCase()}`)
+    openIntro(step)
+  }
   // The waypoints for Split and Images, as in the tour: evenly along the way from Draft to
   // Decide (the first half of the path), measured on the path once it's drawn.
   const pathRef = useRef<SVGPathElement>(null)
@@ -96,10 +103,11 @@ function CardTrail({ touring, walking }: { touring: boolean; walking: boolean })
           />
         ))}
         {CARD_STEPS.map(({ label, icon: Icon, title }, i) => (
-          <button
+          // A link, so it can be copied or opened in a new tab; a plain click opens the tour here.
+          <a
             key={label}
-            type="button"
-            onClick={() => openIntro(i)}
+            href={tourHref(i)}
+            onClick={(e) => onTourLink(e, () => openTour(i))}
             aria-label={`${label}: ${title.replace("\n", " ")}. Open the tour here`}
             className="absolute top-0 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-md px-1.5 py-0.5 text-base leading-5 font-semibold text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             style={{ left: at(CARD_TRAIL_STOPS[i]) }}
@@ -112,23 +120,23 @@ function CardTrail({ touring, walking }: { touring: boolean; walking: boolean })
               style={{ viewTransitionName: touring ? undefined : `tour-step-${i}` }}
             />
             <span style={{ viewTransitionName: touring ? undefined : `tour-label-${i}` }}>{label}</span>
-          </button>
+          </a>
         ))}
       </nav>
       {/* The captions, under the track. Its stop's button already names each for screen
           readers, so these are only a wider place to click. */}
       <div aria-hidden className="relative mt-1 hidden h-12 @md:block">
         {CARD_STEPS.map(({ label, title }, i) => (
-          <button
+          <a
             key={label}
-            type="button"
+            href={tourHref(i)}
             tabIndex={-1}
-            onClick={() => openIntro(i)}
+            onClick={(e) => onTourLink(e, () => openTour(i))}
             className="absolute top-0 w-40 -translate-x-1/2 text-center text-base leading-6 whitespace-pre-line text-muted-foreground transition-colors hover:text-foreground"
             style={{ left: at(CARD_TRAIL_STOPS[i]) }}
           >
             {title}
-          </button>
+          </a>
         ))}
       </div>
     </div>
@@ -176,7 +184,10 @@ function FoldedWelcome() {
       ref={ref}
       variant="outline"
       // Opens at once (a glide back up read oddly); folding is what glides, so it's clear where it went.
-      onClick={() => setWelcomeFolded(false)}
+      onClick={() => {
+        track("how-it-works/open")
+        setWelcomeFolded(false)
+      }}
       // The card's transition name: it glides from the card's place down to here.
       style={{ viewTransitionName: "tour" }}
       data-glide="how"
@@ -235,7 +246,10 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => foldWelcome()}
+              onClick={() => {
+                track(`welcome/dismiss/${welcomePlace(welcome.first)}`)
+                foldWelcome()
+              }}
               aria-label="Dismiss How it works"
               className="-my-2 -mr-2 text-muted-foreground hover:text-foreground"
             >
@@ -249,10 +263,23 @@ export function WelcomeCard({ place, onTryExample }: { place: "top" | "bottom"; 
       {/* The two ways in, filling the card's width between them. Try It is always there: over a
           post of your own, it asks first (the composer's confirmation). */}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button size="lg" onClick={() => openIntro(0)}>
+        <Button
+          size="lg"
+          onClick={() => {
+            track(`tour/${welcomePlace(welcome.first)}/take-the-tour`)
+            openIntro(0)
+          }}
+        >
           Take the Tour
         </Button>
-        <Button size="lg" variant="outline" onClick={onTryExample}>
+        <Button
+          size="lg"
+          variant="outline"
+          onClick={() => {
+            track(`try-it/${welcomePlace(welcome.first)}`)
+            onTryExample()
+          }}
+        >
           <PlayIcon />
           Try It
         </Button>

@@ -27,7 +27,9 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Breakpoint, PlatformAdapter } from "@/lib/adapters"
+import { trackDelivery } from "@/lib/analytics"
 import { dropTarget, moveType, type StagedImage } from "@/lib/images"
+import { mediaPerPost, mediaProblem, videoIssues } from "@/lib/media"
 import { serverHost, usePlatformSettings } from "@/lib/platform-settings"
 import { canShare } from "@/lib/share"
 import { findMentions } from "@/lib/text"
@@ -51,32 +53,6 @@ export function firstProblem(adapter: PlatformAdapter, chunks: string[]): string
     if (problem) return chunks.length > 1 ? `Post ${i + 1}: ${problem}` : problem
   }
   return null
-}
-
-/**
- * The first post holding more images than the platform takes, described, given how many
- * images each post holds: in full for the card, or `short` for the rail's tooltip.
- */
-export function imageProblem(adapter: PlatformAdapter, perPost: number[], short = false): string | null {
-  const max = adapter.maxImages
-  if (!max) return null
-  const i = perPost.findIndex((n) => n > max)
-  if (i < 0) return null
-  if (short) return `${perPost.length > 1 ? `Post ${i + 1}: ` : ""}${perPost[i]} images, ${max} at most`
-  const extra = perPost[i] - max
-  const fix =
-    perPost.length > 1
-      ? `Move ${extra} to another post, or leave ${extra === 1 ? "it" : "them"} off here.`
-      : `Leave ${extra} off here, or split the post and move ${extra === 1 ? "it" : "them"} to the next.`
-  const problem = `${adapter.name} takes up to ${max} images a post; this one has ${perPost[i]}. ${fix}`
-  return perPost.length > 1 ? `Post ${i + 1}: ${problem}` : problem
-}
-
-/** How many images each post holds: `postOf` gives an image's post. */
-export function imagesPerPost(ids: string[], posts: number, postOf: (id: string) => number): number[] {
-  const counts = Array.from({ length: posts }, () => 0)
-  for (const id of ids) counts[postOf(id)]++
-  return counts
 }
 
 function counterTone(count: number, limit: number) {
@@ -143,6 +119,9 @@ type Props = {
   hiddenImages: ReadonlySet<string>
   onHideImage: (id: string) => void
   onShowHidden: () => void
+  /** Alt texts copied from this card (`altKey`), and noting one. */
+  copiedAlts?: readonly string[]
+  onAltCopied?: (key: string) => void
   /** The @tags in this platform's posts, and those confirmed as right here. */
   tags: string[]
   checkedTags: readonly string[]
@@ -158,14 +137,34 @@ type Props = {
   imagePost?: (id: string) => number
   /** Move an image to a post: on every threaded platform, or with `onlyHere`, on this one. */
   onMoveImage?: (id: string, post: number, onlyHere: boolean) => void
-  /** An image's number in the Compose tray. */
-  imageNumber?: (id: string) => number
+  /** An image's number in the Compose tray ("1.2" for the second part of video 1, split for this platform). */
+  imageNumber?: (id: string) => number | string
   /** This platform has its own image order rather than the tray's. */
   ownOrder?: boolean
   /** Give this platform its own order, moving an image beside another. */
   onReorderImage?: (id: string, target: string, after: boolean) => void
   /** Go back to the tray's order. */
   onMatchCompose?: () => void
+  /** Open an image or video in the media dialog from its thumbnail's wrench, on a tab, with this platform's splits forward. */
+  onEditMedia?: (id: string, tab: "alt" | "edit") => void
+  /** Tray videos this platform splits into clips, and the ways back from splits placed by hand. */
+  clips?: VideoClips[]
+}
+
+/** A tray video a platform splits into clips. */
+export type VideoClips = {
+  /** The tray video's id, and its number in the tray. */
+  of: string
+  n: number
+  /** How many clips, and whether they're made yet (they're made in the background). */
+  count: number
+  made: boolean
+  /** Couldn't be made in this browser (tried again once anything about them changes). */
+  failed?: boolean
+  /** Take Compose's splits; set when this platform's differ from them. */
+  onRevert?: () => void
+  /** Drop the splits placed by hand, so only the length limit splits it; set when there are any. */
+  onAutoSplit?: () => void
 }
 
 /**
@@ -232,6 +231,8 @@ export function PlatformCard({
   onShowHidden,
   tags,
   checkedTags,
+  copiedAlts = [],
+  onAltCopied,
   onTagsChecked,
   customSplits,
   onResetSplits,
@@ -243,6 +244,8 @@ export function PlatformCard({
   ownOrder,
   onReorderImage,
   onMatchCompose,
+  onEditMedia,
+  clips = [],
 }: Props) {
   const total = adapter.count(text.trim())
   const over = total > adapter.limit
@@ -303,14 +306,13 @@ export function PlatformCard({
   }
   // Images on a post that no longer exists fall back to the last one.
   const postOf = (id: string) => (splits ? Math.min(imagePost(id), chunks.length - 1) : 0)
-  const tooManyImages = imageProblem(
-    adapter,
-    imagesPerPost(
-      shown.map(({ img }) => img.id),
-      Math.max(1, chunks.length),
-      postOf,
-    ),
+  // Too many images or videos on a post, or a video the platform won't take.
+  const perPost = mediaPerPost(shown, Math.max(1, chunks.length), ({ img }) => postOf(img.id)).map((post) =>
+    post.map(({ img, n }) => ({ ...img, n })),
   )
+  const mediaIssue = mediaProblem(adapter, perPost, (m) => m.n)
+  // Each video the platform won't take, marked on its thumbnail and fixed from there.
+  const issues = new Map([...videoIssues(adapter, perPost, (m) => m.n)].map(([m, why]) => [m.id, why]))
   // Shared images are in the app, as good as copied.
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
   // The steps to being done: every post and every image still on the card, each copied (or
@@ -403,12 +405,48 @@ export function PlatformCard({
         </CardContent>
       )}
 
-      {enabled && tooManyImages && (
+      {enabled && mediaIssue && (
         <CardContent className="px-4">
           <p className="flex items-start gap-2 text-sm text-destructive">
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
-            {tooManyImages}
+            {mediaIssue}
           </p>
+        </CardContent>
+      )}
+
+      {enabled && clips.length > 0 && (
+        // Videos split into clips here, as split posts are called out below: the clip count, and
+        // the ways back. Auto Split shows whenever there are splits placed by hand, so it holds the
+        // right end; Revert (to Compose's splits) only when this card's differ from Compose's.
+        <CardContent className="space-y-2 px-4">
+          {clips.map((v) => (
+            <div
+              key={v.of}
+              className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-(--brand-blue)/50 bg-(--brand-blue)/5 px-3 py-2 text-sm"
+            >
+              <ScissorsIcon className="size-4 shrink-0 text-(--brand-blue)" />
+              <span className="mr-auto">
+                Video {v.n} · {v.count > 1 ? `${v.count} clips` : "not split"}
+                {v.count > 1 && !v.made && (
+                  <span className={v.failed ? "text-destructive" : "text-muted-foreground"}>
+                    {v.failed ? " (couldn't make them in this browser)" : " (making them)"}
+                  </span>
+                )}
+              </span>
+              {v.onRevert && (
+                <Button variant="outline" size="sm" onClick={v.onRevert}>
+                  <UndoDotIcon />
+                  Revert
+                </Button>
+              )}
+              {v.onAutoSplit && (
+                <Button variant="outline" size="sm" onClick={v.onAutoSplit}>
+                  <RotateCcwIcon />
+                  Auto Split
+                </Button>
+              )}
+            </div>
+          ))}
         </CardContent>
       )}
 
@@ -551,6 +589,11 @@ export function PlatformCard({
                             onlyHere={keyHeld}
                             insert={dropOn?.post === i ? dropOn.target : null}
                             onMatchCompose={showMatch ? onMatchCompose : undefined}
+                            issues={issues}
+                            copiedAlts={new Set(copiedAlts)}
+                            onAltCopied={onAltCopied}
+                            // With something to fix, straight to Crop & Trim; otherwise the preview.
+                            onEdit={(id) => onEditMedia?.(id, issues.has(id) ? "edit" : "alt")}
                           />
                         </div>
                       )
@@ -584,6 +627,7 @@ export function PlatformCard({
                         images={shown.filter(({ img }) => postOf(img.id) === i).map(({ img }) => img)}
                         what={what}
                         onShared={(ids, textWent) => {
+                          trackDelivery("share", adapter.id)
                           if (ids.length) markCopied(ids)
                           if (textWent) onPostCopied(chunk)
                         }}
@@ -595,7 +639,10 @@ export function PlatformCard({
                             href={adapter.open.url(chunk, server)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => onPostCopied(chunk)}
+                            onClick={() => {
+                              trackDelivery("open", adapter.id)
+                              onPostCopied(chunk)
+                            }}
                           >
                             <ExternalLinkIcon />
                             {adapter.open.label}
@@ -643,7 +690,10 @@ export function PlatformCard({
                         what={what}
                         iconOnly
                         done={copiedPosts.includes(chunk)}
-                        onCopied={() => onPostCopied(chunk)}
+                        onCopied={() => {
+                          trackDelivery("copy", adapter.id)
+                          onPostCopied(chunk)
+                        }}
                       />
                     </div>
                   </li>

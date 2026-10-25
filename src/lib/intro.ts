@@ -3,6 +3,9 @@
 import { useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
 
+import { track } from "@/lib/analytics"
+import { TOUR_PLACES, TOUR_STEPS } from "@/lib/tour-steps"
+
 // The welcome card and the introduction it opens. On a first visit the card sits above Compose
 // as "Start here"; after that (a later day, or once it has been folded) it lives below Compose as
 // "How it works". Its X folds it to a small button there, beside the split view reminder's, and
@@ -170,9 +173,9 @@ export function foldWelcome() {
 // The introduction's dialog sits on the page with no button of its own; the welcome card asks it
 // to open at a step. The dialog is fetched on demand (src/components/intro-loader.tsx): until it's
 // in, opening it means fetching it, with the step kept to open at once it registers.
-let opener: ((step: number) => void) | null = null
+let opener: ((step: number, part: number) => void) | null = null
 let loader: (() => void) | null = null
-let pending: number | null = null
+let pending: { step: number; part: number } | null = null
 
 /** The loader registers how the dialog is fetched; the returned function unregisters it. */
 export function registerIntroLoader(load: () => void) {
@@ -188,21 +191,51 @@ export function requestIntro() {
 }
 
 /** The dialog registers how it opens (and opens at any step asked for meanwhile); the returned function unregisters it. */
-export function registerIntroOpener(open: (step: number) => void) {
+export function registerIntroOpener(open: (step: number, part: number) => void) {
   opener = open
   if (pending !== null) {
-    const step = pending
+    const { step, part } = pending
     pending = null
-    open(step)
+    open(step, part)
   }
   return () => {
     if (opener === open) opener = null
   }
 }
 
-/** Open the introduction at `step` (0 Draft, 1 Decide, 2 Deliver), fetching the dialog first if need be. */
-export function openIntro(step = 0) {
-  if (opener) return opener(step)
-  pending = step
+/**
+ * Open the introduction at `step` (0 Draft, 1 Decide, 2 Deliver, 3 Done) and, on Draft, its tab
+ * `part`, fetching the dialog first if need be.
+ */
+export function openIntro(step = 0, part = 0) {
+  if (opener) return opener(step, part)
+  pending = { step, part }
   loader?.()
+}
+
+/**
+ * A link to the tour (`#tour`, or `#tour/<name>` for a step, as `/crosspost/#tour/decide`, or
+ * one of Draft's tabs in TOUR_PLACES) opens it there, counted as `tour/link/<name>`. The hash is
+ * then cleared, so a reload or a copied address doesn't open it again.
+ */
+export function openTourFromHash() {
+  const match = /^#tour(?:\/([a-z]+))?$/.exec(location.hash)
+  if (!match) return
+  const name = match[1] ?? "draft"
+  const step = TOUR_STEPS.findIndex((s) => s.label.toLowerCase() === name)
+  const place = step >= 0 ? { step, part: 0 } : TOUR_PLACES.find((p) => p.name === name)
+  history.replaceState(null, "", location.pathname + location.search)
+  if (!place) return
+  track(`tour/link/${name}`)
+  openIntro(place.step, place.part)
+}
+
+/**
+ * A click on a link to a tour step (the stops, whose `href` is there to copy or open in a new
+ * tab): a plain click runs `open` in place; a modified or middle click is left to the browser.
+ */
+export function onTourLink(e: React.MouseEvent, open: () => void) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  e.preventDefault()
+  open()
 }
