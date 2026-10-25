@@ -40,6 +40,9 @@ export function trackDelivery(event: DeliveryEvent, platformId: string) {
 /** Where the welcome card was when it was used: above Compose on a first visit, or below it after. */
 export const welcomePlace = (first: boolean) => (first ? "start-here" : "how-it-works")
 
+/** The day counting began (2026-10-25): the footer's count starts here, so it covers every visit. */
+const COUNT_START = "2026-10-25"
+
 /**
  * The home page's view count, from GoatCounter's public counter (its site setting "Allow
  * adding visitor counts on your website" must be on). Null when it can't be had: blocked,
@@ -52,7 +55,10 @@ export function fetchViewCount(): Promise<number | null> {
     // or `/` with none. The counter wants it exactly, or answers "not found".
     const path = encodeURIComponent(process.env.NEXT_PUBLIC_BASE_PATH || "/")
     try {
-      const res = await fetch(GOATCOUNTER_URL.replace(/\/count$/, `/counter/${path}.json`))
+      // From the day counting began, so all time. GoatCounter caches each answer for up to four
+      // hours by its address; the date gave a fresh one when a "not found" for the plain address
+      // was stuck there, and changing it is how to get past a stale answer again.
+      const res = await fetch(GOATCOUNTER_URL.replace(/\/count$/, `/counter/${path}.json?start=${COUNT_START}`))
       if (!res.ok) return null
       // The count comes formatted ("1,234"), so only its digits are kept.
       const { count } = (await res.json()) as { count?: string | number }
