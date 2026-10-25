@@ -61,7 +61,7 @@ await page.evaluate(() => {
   }).observe(document.body, { childList: true, subtree: true })
 })
 // The tour's chunk, fetched before the clock is taken over (a focus on the card asks for it).
-await page.evaluate(() => { const b = document.querySelector('button[aria-label^="Draft"]'); b?.focus(); b?.blur() })
+await page.evaluate(() => { const b = document.querySelector('[aria-label^="Draft"]'); b?.focus(); b?.blur() })
 await page.waitForTimeout(2000)
 console.log("viewport", VIEW, "zoom", ZOOM, "output", OUT_W, "x", outH, "tour chunk in:", await page.evaluate(() => [...document.scripts].length))
 
@@ -107,7 +107,7 @@ const emit = async (png) => {
   n++
 }
 for (let i = 0; i < PRE_ROLL; i++) await emit(await frame())
-await page.evaluate(() => document.querySelector('button[aria-label^="Draft"]').click())
+await page.evaluate(() => document.querySelector('[aria-label^="Draft"]').click())
 console.log("clicked at frame", n)
 // The cap counts ticks, not frames written: a page that never yields a screenshot would
 // otherwise loop forever, as n stays at 0.
