@@ -313,6 +313,11 @@ export function PlatformCard({
   const mediaIssue = mediaProblem(adapter, perPost, (m) => m.n)
   // Each video the platform won't take, marked on its thumbnail and fixed from there.
   const issues = new Map([...videoIssues(adapter, perPost, (m) => m.n)].map(([m, why]) => [m.id, why]))
+  // Opening a post prefilled delivers its text, so it counts as copied.
+  const openedPrefilled = (chunk: string) => {
+    trackDelivery("open", adapter.id)
+    onPostCopied(chunk)
+  }
   // Shared images are in the app, as good as copied.
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
   // The steps to being done: every post and every image still on the card, each copied (or
@@ -639,10 +644,13 @@ export function PlatformCard({
                             href={adapter.open.url(chunk, server)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => {
-                              trackDelivery("open", adapter.id)
-                              onPostCopied(chunk)
-                            }}
+                            onClick={() => openedPrefilled(chunk)}
+                            // A middle click opens it in a new tab without a click event.
+                            onAuxClick={(e) => e.button === 1 && openedPrefilled(chunk)}
+                            // The page never learns which menu item is picked, but a right-click
+                            // here is to open it in a new tab or window, or to copy the link to
+                            // paste: each delivers the text, so it counts as opened.
+                            onContextMenu={() => openedPrefilled(chunk)}
                           >
                             <ExternalLinkIcon />
                             {adapter.open.label}
