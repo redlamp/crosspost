@@ -18,10 +18,9 @@ export const CHANGELOG: Release[] = [
     version: "1.3.1",
     date: "2026-10-26",
     changes: [
-      "Check off an image or video by hand on a card, for one you uploaded another way.",
-      "Open Prefilled counts the post as copied however you open it, from the right-click menu too.",
+      "Confirm images and videos by hand.",
+      '"Open Prefilled" marks the post as copied when opened through the context menu.',
       "The view count in the footer shows the real number.",
-      "A share image with larger, clearer text.",
     ],
   },
   {
