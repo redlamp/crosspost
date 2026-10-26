@@ -15,6 +15,16 @@ export type Release = {
 /** Newest first. The first entry's version matches package.json (a test checks). */
 export const CHANGELOG: Release[] = [
   {
+    version: "1.3.1",
+    date: "2026-10-26",
+    changes: [
+      "Check off an image or video by hand on a card, for one you uploaded another way.",
+      "Open Prefilled counts the post as copied however you open it, from the right-click menu too.",
+      "The view count in the footer shows the real number.",
+      "A share image with larger, clearer text.",
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-10-25",
     changes: [
