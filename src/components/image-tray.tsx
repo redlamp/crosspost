@@ -782,7 +782,8 @@ type StripProps = {
 /**
  * Thumbnails on one of a platform card's posts: click to copy an image or download a video, or drag into
  * the platform's composer or onto another post; the upper left corner's wrench
- * opens one to preview and edit. Copied ones get a check; the x leaves one off
+ * opens one to preview and edit. Copied ones get a check, and the lower right corner checks one
+ * off by hand; the x leaves one off
  * this platform only. Numbers match the Compose tray.
  */
 export function ImageStrip({
@@ -939,7 +940,7 @@ export function ImageStrip({
                 className="absolute -top-2 -right-2 grid size-5 place-items-center rounded-full text-white ring-2 ring-background transition-[opacity,background-color] focus-visible:opacity-100"
                 idleClassName="bg-neutral-700 opacity-0 group-hover/thumb:opacity-100 hover:bg-neutral-600 pointer-coarse:opacity-100"
               />
-              {copied.has(img.id) && (
+              {copied.has(img.id) ? (
                 // Copied: grayed out like a done item, with a blue check badge on the corner
                 // (placed like the post counts on the rail, the same blue on every card).
                 // Hovering turns it red; clicking clears it.
@@ -955,6 +956,22 @@ export function ImageStrip({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>Clear the copied check</TooltipContent>
+                </Tooltip>
+              ) : (
+                // Not copied: the same corner, hovered (always on touch screens, as the other
+                // corners), checks it off by hand, for one added to the platform some other way.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onCopiedChange(img.id, true)}
+                      aria-label={`Mark ${what} as added to ${platform.name}`}
+                      className="absolute -right-1.5 -bottom-1.5 grid size-4.5 place-items-center rounded-full bg-neutral-700 text-white opacity-0 ring-2 ring-background transition-[opacity,background-color] group-hover/thumb:opacity-100 hover:bg-(--brand-blue) focus-visible:bg-(--brand-blue) focus-visible:opacity-100 focus-visible:outline-none pointer-coarse:opacity-100"
+                    >
+                      <CheckIcon className="size-2.75" strokeWidth={3.5} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Mark as added</TooltipContent>
                 </Tooltip>
               )}
               </div>
