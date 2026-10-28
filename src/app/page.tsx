@@ -4,6 +4,7 @@ import logoDark from "@/assets/logo-dark.svg";
 import logoLight from "@/assets/logo-light.svg";
 import { ComposerLoader } from "@/components/composer-loader";
 import { DevTools } from "@/components/dev-tools";
+import { GuideSheet } from "@/components/guide-sheet";
 import { IntroLoader } from "@/components/intro-loader";
 import { MadeBy } from "@/components/made-by";
 import { SettingsDialog } from "@/components/settings-dialog";
@@ -33,6 +34,8 @@ export default function Home() {
       <ComposerLoader />
       {/* The introduction, opened from the welcome card (it has no button of its own), fetched on demand. */}
       <IntroLoader />
+      {/* The agent guide as a sheet (#guide), from Settings. */}
+      <GuideSheet />
       {/* On wide screens the footer sits under the Compose column instead (see the composer). */}
       <MadeBy className="mx-auto mt-auto w-full max-w-7xl px-4 pb-4 sm:px-6 lg:hidden" />
       {/* A tuning panel for the background noise, on the dev server only (?lab). */}

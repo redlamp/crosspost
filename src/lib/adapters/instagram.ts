@@ -50,7 +50,23 @@ export const instagram: PlatformAdapter = {
     mixes: true,
   },
   needsImage: true,
-  open: { label: "Open Instagram", url: () => "https://www.instagram.com/" },
+  compose: {
+    text: "paste",
+    image: "file",
+    thread: "none",
+    alt: "The Accessibility section on the caption step",
+    warnings: [
+      "Instagram's Share to Facebook switch starts on. Turn it off if you're posting to Facebook separately.",
+      "Pick Original in the crop step, or the image is cut to a square.",
+    ],
+    tips: [
+      "Pasted images are ignored. Add the saved file with Select from computer in the Create dialog.",
+      "The caption is pasted in on the last step.",
+    ],
+    agent: "open",
+    terms: "https://help.instagram.com/581066165581870",
+  },
+  open: { label: "Open", url: () => "https://www.instagram.com/" },
   // The app's share extension takes one image and no caption (developer reports; Meta's apps
   // take no prefilled text). Share sends the first image and copies the caption for pasting;
   // the other images are added in the app.

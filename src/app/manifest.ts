@@ -21,7 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Crosspost",
     short_name: "Crosspost",
     description:
-      "Write a post once, then copy, share or open it on Bluesky, Threads, Mastodon, LinkedIn, X, Facebook and Instagram. Runs entirely in your browser.",
+      "Write a post once, then copy, share or open it on Bluesky, Threads, Mastodon, LinkedIn, X / Twitter, Facebook and Instagram. Runs entirely in your browser.",
     start_url: `${base}/`,
     scope: `${base}/`,
     display: "standalone",

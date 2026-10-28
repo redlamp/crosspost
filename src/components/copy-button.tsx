@@ -41,9 +41,11 @@ type Props = {
   onCopied?: () => void
   /** Just the icon, with its label in a hover card below. */
   iconOnly?: boolean
+  /** `data-*` attributes for the button (the stable `data-crosspost-action` names in the guide). */
+  data?: Record<`data-${string}`, string | number>
 }
 
-export function CopyButton({ text, label = "Copy", what, done = false, onCopied, iconOnly = false }: Props) {
+export function CopyButton({ text, label = "Copy", what, done = false, onCopied, iconOnly = false, data }: Props) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -68,6 +70,7 @@ export function CopyButton({ text, label = "Copy", what, done = false, onCopied,
     <Button
       variant="outline"
       size={iconOnly ? "icon-sm" : "sm"}
+      {...data}
       onClick={copy}
       aria-label={done ? `Copy ${what} again (copied)` : `Copy ${what}`}
       className={cn(shown && DONE)}

@@ -4,8 +4,11 @@ import {
   AtSignIcon,
   CheckIcon,
   CircleCheckBigIcon,
+  CircleCheckIcon,
   CircleHelpIcon,
+  CircleIcon,
   ExternalLinkIcon,
+  InfoIcon,
   MinusIcon,
   PencilIcon,
   RotateCcwIcon,
@@ -16,7 +19,9 @@ import {
 } from "lucide-react"
 import { Fragment, useEffect, useState } from "react"
 
-import { CopyButton } from "@/components/copy-button"
+import { toast } from "sonner"
+
+import { CopyButton, writeClipboard } from "@/components/copy-button"
 import { ImageStrip } from "@/components/image-tray"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Dot } from "@/components/dot"
@@ -32,6 +37,7 @@ import { dropTarget, moveType, type StagedImage } from "@/lib/images"
 import { mediaPerPost, mediaProblem, videoIssues } from "@/lib/media"
 import { serverHost, usePlatformSettings } from "@/lib/platform-settings"
 import { canShare } from "@/lib/share"
+import type { CardProgress } from "@/lib/progress"
 import { findMentions } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
@@ -110,20 +116,20 @@ type Props = {
   /** The person marked this platform done, or every post and image on it was copied. */
   posted: boolean
   onPostedChange: (posted: boolean) => void
-  /** Texts of the posts already copied from this card; a post whose text changed counts as not copied. */
-  copiedPosts: readonly string[]
-  onPostCopied: (text: string) => void
+  /** Where the card stands, step by step (`cardProgress`): a post whose text changed counts as not done. */
+  steps: CardProgress
+  /** A post copied, opened prefilled or ticked by hand (or, with `on` false, unticked). */
+  onPostCopied: (text: string, on?: boolean) => void
   /** Images copied (or shared) from this card, and images left off it. */
   copiedImages: ReadonlySet<string>
   onCopiedImagesChange: (ids: string[], copied: boolean) => void
   hiddenImages: ReadonlySet<string>
   onHideImage: (id: string) => void
   onShowHidden: () => void
-  /** Alt texts copied from this card (`altKey`), and noting one. */
+  /** Alt texts copied or ticked on this card (`altKey`), and noting or clearing one. */
   copiedAlts?: readonly string[]
-  onAltCopied?: (key: string) => void
-  /** The @tags in this platform's posts, and those confirmed as right here. */
-  tags: string[]
+  onAltCopiedChange?: (key: string, on: boolean) => void
+  /** The @tags confirmed as right here. */
   checkedTags: readonly string[]
   /** Confirm these tags (one post's), or take it back. */
   onTagsChecked: (tags: string[], checked: boolean) => void
@@ -222,17 +228,16 @@ export function PlatformCard({
   enabled,
   posted,
   onPostedChange,
-  copiedPosts,
+  steps: progress,
   onPostCopied,
   copiedImages,
   onCopiedImagesChange,
   hiddenImages,
   onHideImage,
   onShowHidden,
-  tags,
   checkedTags,
   copiedAlts = [],
-  onAltCopied,
+  onAltCopiedChange,
   onTagsChecked,
   customSplits,
   onResetSplits,
@@ -318,17 +323,24 @@ export function PlatformCard({
     trackDelivery("open", adapter.id)
     onPostCopied(chunk)
   }
+  // Where Open goes: with images or videos on the card, the plain composer on a platform whose
+  // prefilled page mishandles them (X), the text copied to paste there instead.
+  const plainOpen = shown.length > 0 ? adapter.open.withMedia : undefined
+  const openPlain = async (chunk: string) => {
+    trackDelivery("open", adapter.id)
+    try {
+      await writeClipboard(chunk)
+      onPostCopied(chunk)
+      toast.success(`Copied ${chunks.length > 1 ? `${adapter.name} post 1` : `the ${adapter.name} post`}. Paste it into ${adapter.name}.`)
+    } catch {
+      toast.error(`Couldn't copy the ${adapter.name} post. Copy it before posting.`)
+    }
+  }
   // Shared images are in the app, as good as copied.
   const markCopied = (ids: string[]) => onCopiedImagesChange(ids, true)
-  // The steps to being done: every post and every image still on the card, each copied (or
-  // shared); as many as are copied so far.
-  // Tags, if any, are one more step: confirmed right for this platform.
-  const tagsChecked = tags.length > 0 && tags.every((t) => checkedTags.includes(t))
-  const steps = chunks.length + shown.length + (tags.length > 0 ? 1 : 0)
-  const stepsDone =
-    chunks.filter((c) => copiedPosts.includes(c)).length +
-    shown.filter(({ img }) => copiedImages.has(img.id)).length +
-    (tagsChecked ? 1 : 0)
+  // The steps to being done (`cardProgress`): every post, every image or video still on the card
+  // and the alt text on each, and the tags, if any, as one more.
+  const { steps, done: stepsDone } = progress
 
   return (
     <Card
@@ -455,6 +467,19 @@ export function PlatformCard({
         </CardContent>
       )}
 
+      {enabled && chunks.length > 0 && (adapter.compose.warnings?.length || plainOpen) && (
+        // Worth knowing before posting here (Instagram's Share to Facebook switch, Mastodon's one
+        // post), and why Open goes to the plain composer when it does.
+        <CardContent className="space-y-1.5 px-4">
+          {[...(adapter.compose.warnings ?? []), ...(plainOpen ? [plainOpen.note] : [])].map((w) => (
+            <p key={w} className="flex items-start gap-2 text-sm text-muted-foreground">
+              <InfoIcon className="mt-0.5 size-4 shrink-0" />
+              {w}
+            </p>
+          ))}
+        </CardContent>
+      )}
+
       {enabled && needsImage && (
         <CardContent className="px-4">
           <p className="text-sm text-muted-foreground">{adapter.name} posts need a photo or video. Add one above.</p>
@@ -517,6 +542,9 @@ export function PlatformCard({
                     </li>
                   )}
                   <li
+                    data-crosspost-step="post"
+                    data-post={i + 1}
+                    data-done={progress.posts[i] ?? false}
                     className={cn(
                       "rounded-md border bg-background/40 p-3 transition-colors",
                       // Edited on this platform: the whole post goes orange.
@@ -596,7 +624,7 @@ export function PlatformCard({
                             onMatchCompose={showMatch ? onMatchCompose : undefined}
                             issues={issues}
                             copiedAlts={new Set(copiedAlts)}
-                            onAltCopied={onAltCopied}
+                            onAltCopiedChange={onAltCopiedChange}
                             // With something to fix, straight to Crop & Trim; otherwise the preview.
                             onEdit={(id) => onEditMedia?.(id, issues.has(id) ? "edit" : "alt")}
                           />
@@ -604,6 +632,30 @@ export function PlatformCard({
                       )
                     })()}
                     <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                      {/* Ticked when the post is copied or opened prefilled, or by hand: typed in, or added some other way. */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-pressed={progress.posts[i] ?? false}
+                            aria-label={`Mark ${what} done`}
+                            data-crosspost-action="mark-post"
+                            data-platform={adapter.id}
+                            data-post={i + 1}
+                            onClick={() => onPostCopied(chunk, !progress.posts[i])}
+                            className={cn(
+                              "-ml-1 rounded-full",
+                              progress.posts[i]
+                                ? "text-(--brand-blue-text) hover:text-(--brand-blue-text)"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {progress.posts[i] ? <CircleCheckIcon /> : <CircleIcon />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{progress.posts[i] ? "Done. Click to clear" : "Mark done"}</TooltipContent>
+                      </Tooltip>
                       <span className={cn("mr-auto text-xs tabular-nums", counterTone(n, adapter.limit))}>
                         {chunks.length > 1 && (
                           <>
@@ -637,13 +689,40 @@ export function PlatformCard({
                           if (textWent) onPostCopied(chunk)
                         }}
                       />
-                      {i === 0 && (
+                      {i === 0 && plainOpen && (
+                        <Button variant="outline" size="sm" asChild>
+                          {/* The plain composer takes no text, so the click copies it to paste. */}
+                          <a
+                            href={plainOpen.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            data-crosspost-action="open"
+                            data-platform={adapter.id}
+                            title="Opens the composer and copies this post to paste in. You press Post there."
+                            onClick={() => openPlain(chunk)}
+                            onAuxClick={(e) => e.button === 1 && openPlain(chunk)}
+                          >
+                            <ExternalLinkIcon />
+                            {plainOpen.label}
+                          </a>
+                        </Button>
+                      )}
+                      {i === 0 && !plainOpen && (
                         <Button variant="outline" size="sm" asChild>
                           {/* Opening it prefilled delivers the text, so it counts as copied. */}
                           <a
                             href={adapter.open.url(chunk, server)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            data-crosspost-action="open"
+                            data-platform={adapter.id}
+                            // What the link does, on hover and in the accessibility tree, where a
+                            // browser assistant reads it. The card names the platform already.
+                            title={
+                              adapter.compose.text === "prefill"
+                                ? "Opens the composer with this post in it. You press Post there."
+                                : "Opens the site. Paste the post in; you press Post there."
+                            }
                             onClick={() => openedPrefilled(chunk)}
                             // A middle click opens it in a new tab without a click event.
                             onAuxClick={(e) => e.button === 1 && openedPrefilled(chunk)}
@@ -697,7 +776,8 @@ export function PlatformCard({
                         text={chunk}
                         what={what}
                         iconOnly
-                        done={copiedPosts.includes(chunk)}
+                        done={progress.posts[i] ?? false}
+                        data={{ "data-crosspost-action": "copy-post", "data-platform": adapter.id, "data-post": i + 1 }}
                         onCopied={() => {
                           trackDelivery("copy", adapter.id)
                           onPostCopied(chunk)
