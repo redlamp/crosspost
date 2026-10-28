@@ -73,7 +73,8 @@ function Length({ img }: { img: StagedImage }) {
 }
 
 /**
- * Save a video (the clipboard takes pictures only), with a toast saying where it goes next. One
+ * Save a video (the clipboard takes pictures only), or an image for a composer that ignores pasted
+ * ones (LinkedIn, Instagram), with a toast saying where it goes next. One
  * saved before, unchanged, isn't saved again: the toast says where it is, with Download again.
  */
 export function downloadWithToast(img: StagedImage, what: string, platform?: string) {
@@ -90,12 +91,14 @@ export function downloadWithToast(img: StagedImage, what: string, platform?: str
 
 /** Copy an image, with a toast either way. Resolves to whether it worked. */
 export async function copyWithToast(img: StagedImage, what = "image") {
+  // Making a large PNG takes a few seconds, so the toast says so at once and then turns into the result.
+  const id = toast.loading(`Copying ${what}…`)
   try {
     await copyImage(img)
-    toast.success(`Copied ${what}. Paste it into the post.`)
+    toast.success(`Copied ${what}. Paste it into the post.`, { id })
     return true
   } catch {
-    toast.error(`Couldn't copy ${what}. Drag it or download it instead.`)
+    toast.error(`Couldn't copy ${what}. Drag it or download it instead.`, { id })
     return false
   }
 }
@@ -770,9 +773,9 @@ type StripProps = {
   insert?: { id: string; after: boolean } | null
   /** Set when this platform has its own image order: go back to the tray's. */
   onMatchCompose?: () => void
-  /** Alt texts already copied from this card (`altKey`), and noting one. */
+  /** Alt texts already copied or ticked on this card (`altKey`), and noting or clearing one. */
   copiedAlts?: ReadonlySet<string>
-  onAltCopied?: (key: string) => void
+  onAltCopiedChange?: (key: string, on: boolean) => void
   /** Videos the platform won't take as they are, by id, with why: marked in the corner. */
   issues?: ReadonlyMap<string, string>
   /** Open one in the media dialog, from the corner's wrench: to preview and edit it (and fix it). */
@@ -804,7 +807,7 @@ export function ImageStrip({
   issues,
   onEdit,
   copiedAlts,
-  onAltCopied,
+  onAltCopiedChange,
 }: StripProps) {
   // Ends following the thumbnail drag in progress, if any (see followDragOut).
   const endDrag = useRef<(() => boolean) | null>(null)
@@ -813,18 +816,28 @@ export function ImageStrip({
       <ol className="flex flex-wrap gap-2.5 empty:hidden" aria-label={`Images for ${platform.name}`}>
         {items.map(({ img, n }) => {
           // A click copies an image, to paste in the platform's composer, and downloads a video
-          // (the clipboard takes pictures only); the corner's wrench opens it to preview and edit.
+          // (the clipboard takes pictures only), or an image where the composer ignores pasted
+          // ones (LinkedIn, Instagram); the corner's wrench opens it to preview and edit.
           const video = isVideo(img)
+          const download = video || platform.compose.image === "file"
           const what = `${mediaKind(img)} ${n}`
           const issue = issues?.get(img.id)
+          const altDone = !!img.alt && !!copiedAlts?.has(altKey(img))
           const save = async () => {
-            if (video) {
+            if (download) {
               downloadWithToast(img, what, platform.name)
               onCopiedChange(img.id, true)
             } else if (await copyWithToast(img, what)) onCopiedChange(img.id, true)
           }
           return (
-            <li key={img.id} data-image-id={img.id} className="flex w-14 flex-col gap-1.5">
+            <li
+              key={img.id}
+              data-image-id={img.id}
+              data-crosspost-step="media"
+              data-image={n}
+              data-done={copied.has(img.id)}
+              className="flex w-14 flex-col gap-1.5"
+            >
               {/* The thumbnail and everything on it; the ALT button goes under it. */}
               <div className="group/thumb relative size-14">
               {/* A div acting as the button: Firefox won't start a drag from inside a real <button>.
@@ -838,7 +851,10 @@ export function ImageStrip({
                       e.preventDefault()
                       save()
                     }}
-                    aria-label={`${video ? "Download" : "Copy"} ${what}${copied.has(img.id) ? " (copied)" : ""}`}
+                    aria-label={`${download ? "Download" : "Copy"} ${what}${copied.has(img.id) ? " (copied)" : ""}`}
+                    data-crosspost-action={download ? "download-image" : "copy-image"}
+                    data-platform={platform.id}
+                    data-image={n}
                     className={cn(
                       "block size-full cursor-pointer overflow-hidden rounded border bg-muted outline-none focus-visible:ring-2",
                       // Won't go as it is: the rail's warning treatment, a red ring (and the badge below).
@@ -895,7 +911,7 @@ export function ImageStrip({
                 aria-hidden
                 className="pointer-events-none absolute inset-0 grid place-items-center rounded bg-black/55 text-white opacity-0 transition-opacity group-hover/thumb:opacity-100"
               >
-                {video ? <DownloadIcon className="size-5" /> : <CopyIcon className="size-5" />}
+                {download ? <DownloadIcon className="size-5" /> : <CopyIcon className="size-5" />}
               </span>
               {onEdit && (
                 // The upper left corner: the alert while the platform won't take it, and hovered
@@ -950,6 +966,9 @@ export function ImageStrip({
                       type="button"
                       onClick={() => onCopiedChange(img.id, false)}
                       aria-label={`${video ? "Video" : "Image"} ${n} copied. Clear the check`}
+                      data-crosspost-action="mark-image"
+                      data-platform={platform.id}
+                      data-image={n}
                       className="absolute -right-1.5 -bottom-1.5 grid size-4.5 place-items-center rounded-full bg-(--brand-blue) text-white ring-2 ring-background transition-colors hover:bg-destructive focus-visible:bg-destructive focus-visible:outline-none"
                     >
                       <CheckIcon className="size-2.75" strokeWidth={3.5} />
@@ -966,6 +985,9 @@ export function ImageStrip({
                       type="button"
                       onClick={() => onCopiedChange(img.id, true)}
                       aria-label={`Mark ${what} as added to ${platform.name}`}
+                      data-crosspost-action="mark-image"
+                      data-platform={platform.id}
+                      data-image={n}
                       className="absolute -right-1.5 -bottom-1.5 grid size-4.5 place-items-center rounded-full bg-neutral-700 text-white opacity-0 ring-2 ring-background transition-[opacity,background-color] group-hover/thumb:opacity-100 hover:bg-(--brand-blue) focus-visible:bg-(--brand-blue) focus-visible:opacity-100 focus-visible:outline-none pointer-coarse:opacity-100"
                     >
                       <CheckIcon className="size-2.75" strokeWidth={3.5} />
@@ -976,34 +998,60 @@ export function ImageStrip({
               )}
               </div>
               {img.alt && (
-                // Under the thumbnail, its width: an easy target, and off the crowded corners.
+                // Under the thumbnail, its width: an easy target, and off the crowded corners. Copying
+                // it ticks its step; the check beside it ticks or clears it by hand (typed in, say).
+                <div
+                  className="flex h-6 gap-px"
+                  data-crosspost-step="alt"
+                  data-image={n}
+                  data-done={altDone}
+                >
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
+                      data-crosspost-action="copy-alt"
+                      data-platform={platform.id}
+                      data-image={n}
                       onClick={async () => {
                         try {
                           await writeClipboard(img.alt!)
-                          onAltCopied?.(altKey(img))
+                          onAltCopiedChange?.(altKey(img), true)
                           toast.success(`Copied alt text for ${what}. Paste it into ${platform.name}'s alt text field.`)
                         } catch {
                           toast.error(`Couldn't copy the alt text for ${what}.`)
                         }
                       }}
-                      aria-label={`Copy alt text for ${what}${copiedAlts?.has(altKey(img)) ? " (copied)" : ""}`}
-                      className="flex h-6 w-full items-center justify-center gap-1 rounded-md bg-(--brand-blue) text-[11px] leading-none font-bold tracking-wide text-white transition-colors hover:bg-(--brand-blue)/85 focus-visible:ring-2 focus-visible:ring-(--brand-blue) focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                      aria-label={`Copy alt text for ${what}${altDone ? " (done)" : ""}`}
+                      className="flex h-6 min-w-0 flex-1 items-center justify-center rounded-l-md bg-(--brand-blue) text-[11px] leading-none font-bold tracking-wide text-white transition-colors hover:bg-(--brand-blue)/85 focus-visible:ring-2 focus-visible:ring-(--brand-blue) focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                     >
-                      {/* Copied (this text, on this card): a check in the copy mark's place. */}
-                      {copiedAlts?.has(altKey(img)) ? (
-                        <CheckIcon className="size-3" strokeWidth={3} aria-hidden />
-                      ) : (
-                        <CopyIcon className="size-3" aria-hidden />
-                      )}
                       <span className="[text-box:trim-both_cap_alphabetic]">ALT</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-64">{img.alt}</TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-pressed={altDone}
+                      aria-label={`Mark alt text for ${what} done on ${platform.name}`}
+                      data-crosspost-action="mark-alt"
+                      data-platform={platform.id}
+                      data-image={n}
+                      onClick={() => onAltCopiedChange?.(altKey(img), !altDone)}
+                      className={cn(
+                        "grid w-5 shrink-0 place-items-center rounded-r-md text-white transition-colors focus-visible:ring-2 focus-visible:ring-(--brand-blue) focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+                        // Done (copied, or ticked): the app's blue, as the copied-image checks.
+                        altDone ? "bg-(--brand-blue) hover:bg-destructive" : "bg-neutral-700 hover:bg-(--brand-blue)",
+                      )}
+                    >
+                      <CheckIcon className={cn("size-3", !altDone && "opacity-60")} strokeWidth={3} aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{altDone ? "Alt text added. Click to clear" : "Mark alt text as added"}</TooltipContent>
+                </Tooltip>
+                </div>
               )}
             </li>
           )

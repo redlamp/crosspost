@@ -40,6 +40,16 @@ export const threads: PlatformAdapter = {
     perPost: 20,
     mixes: true,
   },
+  compose: {
+    text: "prefill",
+    image: "paste",
+    thread: "add-post",
+    alt: "The image's ... menu, then Add alt text",
+    tips: ["Pressing Escape in the composer asks whether to save a draft."],
+    // Threads runs under Instagram's terms, which bar automated access without permission.
+    agent: "open",
+    terms: "https://help.instagram.com/581066165581870",
+  },
   open: {
     label: "Open Prefilled",
     url: (firstChunk) => `https://www.threads.com/intent/post?text=${encodeURIComponent(firstChunk)}`,

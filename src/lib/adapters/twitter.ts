@@ -33,9 +33,26 @@ export const twitter: PlatformAdapter = {
     mixes: true,
     upgrade: { label: "Premium", maxSeconds: 4 * 3600, maxBytes: 16e9 },
   },
+  compose: {
+    text: "prefill",
+    image: "paste",
+    thread: "add-post",
+    alt: "Add description, under the image",
+    tips: ["The prefilled page drops images and later posts once alt text is saved."],
+    // The automation rules bar non-API automation, such as scripting the website, and warn of suspension.
+    agent: "open",
+    terms: "https://help.x.com/en/rules-and-policies/x-automation",
+  },
   open: {
     label: "Open Prefilled",
     url: (firstChunk) => `https://x.com/intent/post?text=${encodeURIComponent(firstChunk)}`,
+    // The intent page clears its composer (images, later posts) once alt text is saved; the
+    // regular composer keeps everything but takes no text, so the text goes on the clipboard.
+    withMedia: {
+      label: "Open",
+      url: "https://x.com/compose/post",
+      note: "X's prefilled page drops images when alt text is added, so this opens the regular composer. Paste the text in.",
+    },
   },
   // The X app's share extension ("Post to X") takes text, links and images, 4 at most as in
   // its composer; closed source, widely reported, not confirmed on a phone.

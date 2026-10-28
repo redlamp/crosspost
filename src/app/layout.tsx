@@ -14,7 +14,7 @@ import "./globals.css";
 // to file-based images (opengraph-image.jpg) itself, so metadataBase is the origin alone.
 const SITE = "https://redlamp.github.io";
 const DESCRIPTION =
-  "Write a post once, then copy or open it on Bluesky, Threads, Mastodon, LinkedIn, X, Facebook and Instagram. Runs entirely in your browser.";
+  "Write a post once, then copy or open it on Bluesky, Threads, Mastodon, LinkedIn, X / Twitter, Facebook and Instagram. Runs entirely in your browser.";
 
 // The share image is opengraph-image.jpg (with its .alt.txt), exported from the Dark Open Graph
 // card in the Crosspost Figma file. X, Bluesky, Threads and Mastodon all fall back to og:image.
@@ -53,6 +53,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${fontClassName} h-full antialiased`}
     >
+      <head>
+        {/* The guide to each platform's composer and the page's data (src/app/assistants). */}
+        <link rel="help" href={`${process.env.BASE_PATH ?? ""}/assistants`} />
+      </head>
       <body className="min-h-full flex flex-col font-sans">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange storageKey="crosspost:theme">
           <TooltipProvider>{children}</TooltipProvider>
