@@ -32,7 +32,9 @@ import { findMentions, graphemeLength, shiftBreaks, splitChunks, type Chunk } fr
 import { EXAMPLE_IMAGE, EXAMPLE_POST, EXAMPLE_SPLIT } from "@/lib/example"
 import { isVideo, mediaNoun, mediaPerPost, mediaProblem, probeVideo } from "@/lib/media"
 import {
+  altKey,
   cropImage,
+  fileName,
   MAX_IMAGES,
   onClearedElsewhere,
   reorder,
@@ -46,9 +48,12 @@ import { sharedText, useSharedPost } from "@/lib/share-target"
 import {
   arrangePlatforms,
   isShown,
+  serverHost,
   updatePlatformSettings,
   usePlatformSettings,
 } from "@/lib/platform-settings"
+import { blobToDataUrl, buildPayload, payloadJson, PAYLOAD_VERSION, type Payload } from "@/lib/payload"
+import { cardProgress, type CardMarks, type CardNeeds } from "@/lib/progress"
 import { useGlide } from "@/lib/use-glide"
 import { useStoredState } from "@/lib/use-stored-state"
 import { spanLength, type Span } from "@/lib/trim"
@@ -273,28 +278,40 @@ export default function Composer() {
     progressRef.current = progress
   })
   /**
-   * Note a step done on a platform's card: a post or image copied, or its tags confirmed. Once
-   * every post and every image still on the card has been copied and any tags confirmed, the
-   * platform is marked posted on its own (never unmarked), with a toast.
+   * What a platform's card needs done to count as posted: every post, every image or video not
+   * left off it, the alt text on those, and its @tags confirmed.
+   */
+  const needsFor = (adapter: PlatformAdapter, posts: string[]): CardNeeds => {
+    const media = mediaFor(adapter.id).filter((img) => !progress.hiddenImages[adapter.id]?.includes(img.id))
+    return {
+      posts,
+      media: media.map((img) => img.id),
+      alts: media.filter((img) => img.alt).map(altKey),
+      tags: findMentions(posts.join("\n")),
+    }
+  }
+  /** A platform's marks, as `cardProgress` reads them. */
+  const marksOf = (p: Progress, id: string): CardMarks => ({
+    copiedPosts: p.copiedPosts[id],
+    copiedImages: p.copiedImages[id],
+    copiedAlts: p.copiedAlts[id],
+    checkedTags: p.checkedTags[id],
+  })
+  /**
+   * Note a step done (or undone) on a platform's card: a post, image or alt text copied or ticked
+   * by hand, or its tags confirmed. Once every step is done (`cardProgress`), the platform is
+   * marked posted on its own (never unmarked), with a toast.
    */
   const noteCopy = (
     adapter: PlatformAdapter,
-    list: "copiedPosts" | "copiedImages" | "checkedTags",
+    list: "copiedPosts" | "copiedImages" | "copiedAlts" | "checkedTags",
     items: string[],
     on: boolean,
-    posts: string[],
-    imageIds: string[],
-    tags: string[],
+    needs: CardNeeds,
   ) => {
     const next = markIn(progressRef.current, list, adapter.id, items, on)
     progressRef.current = next
-    const done =
-      on &&
-      !next.posted[adapter.id] &&
-      posts.length > 0 &&
-      posts.every((t) => next.copiedPosts[adapter.id]?.includes(t)) &&
-      imageIds.every((id) => next.copiedImages[adapter.id]?.includes(id)) &&
-      tags.every((t) => next.checkedTags[adapter.id]?.includes(t))
+    const done = on && !next.posted[adapter.id] && cardProgress(needs, marksOf(next, adapter.id)).complete
     if (!done) return setProgress(next)
     setProgress({ ...next, posted: { ...next.posted, [adapter.id]: true } })
     trackDelivery("posted", adapter.id)
@@ -928,6 +945,65 @@ export default function Composer() {
     }
   })
 
+  // The draft as data for a browser assistant (src/lib/payload.ts, documented on /assistants): in
+  // the page as JSON, and from window.crosspost.getPayload(). Read-only.
+  const payload = buildPayload({
+    app: process.env.NEXT_PUBLIC_VERSION ?? "",
+    // A path, not a full address: the page prerenders without one, and a relative link resolves anyway.
+    guide: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/assistants`,
+    draft,
+    images: images.map((img, i) => ({
+      index: i + 1,
+      id: img.id,
+      name: img.name,
+      mime: img.blob.type,
+      bytes: img.blob.size,
+      video: isVideo(img),
+      altText: img.alt ?? null,
+    })),
+    platforms: outgoing.map(({ adapter, chunks }, i) => {
+      const posts = chunks.map((c) => c.text)
+      const media = mediaFor(adapter.id).filter((img) => !progress.hiddenImages[adapter.id]?.includes(img.id))
+      return {
+        adapter,
+        enabled: isEnabled(adapter.id),
+        posted: !!progress.posted[adapter.id] && posts.length > 0,
+        posts,
+        server: adapter.server
+          ? serverHost(platformSettings.servers[adapter.id] ?? "") || adapter.server.default
+          : undefined,
+        media: media.map((img) => ({
+          id: img.id,
+          n: imageNumber(img.id),
+          post: imagePost(adapter.id, img.id),
+          altKey: img.alt ? altKey(img) : undefined,
+        })),
+        needs: needsFor(adapter, posts),
+        marks: marksOf(progress, adapter.id),
+        problem: railItems[i].issue ?? null,
+      }
+    }),
+  })
+  const payloadRef = useRef<Payload>(payload)
+  const imagesRef = useRef(images)
+  useEffect(() => {
+    payloadRef.current = payload
+    imagesRef.current = images
+  })
+  useEffect(() => {
+    window.crosspost = {
+      getPayload: () => payloadRef.current,
+      getImage: async (index) => {
+        const img = imagesRef.current[index - 1]
+        return img ? { name: fileName(img), type: img.blob.type, dataUrl: await blobToDataUrl(img.blob) } : null
+      },
+      version: PAYLOAD_VERSION,
+    }
+    return () => {
+      delete window.crosspost
+    }
+  }, [])
+
   // The platforms turned off, for the rail's Off part, in their order.
   const offRailItems: RailItem[] = ordered
     .filter((a) => hidden.includes(a.id))
@@ -1204,13 +1280,8 @@ export default function Composer() {
           // What Compose gives each post, and the posts as they'll go out, edits in.
           const generated = made.map((c) => c.text)
           const chunks = withEdits(made, postEdits[adapter.id])
-          // What has to be copied for the platform to count as done: every post, and every image not left off it.
           const chunkTexts = chunks.map((c) => c.text)
-          const cardImageIds = mediaFor(adapter.id)
-            .map((img) => img.id)
-            .filter((id) => !progress.hiddenImages[adapter.id]?.includes(id))
-          // Tags to confirm before the platform counts as done.
-          const tags = findMentions(chunkTexts.join("\n"))
+          const needs = needsFor(adapter, chunkTexts)
           return (
           <PlatformCard
             key={adapter.id}
@@ -1262,17 +1333,14 @@ export default function Composer() {
               setProgress((p) => ({ ...p, posted: { ...p.posted, [adapter.id]: on } }))
               if (on) revealNextCard(adapter.id)
             }}
-            copiedPosts={progress.copiedPosts[adapter.id] ?? []}
-            onPostCopied={(text) => noteCopy(adapter, "copiedPosts", [text], true, chunkTexts, cardImageIds, tags)}
+            steps={cardProgress(needs, marksOf(progress, adapter.id))}
+            onPostCopied={(text, on = true) => noteCopy(adapter, "copiedPosts", [text], on, needs)}
             copiedImages={new Set(progress.copiedImages[adapter.id])}
-            onCopiedImagesChange={(ids, on) =>
-              noteCopy(adapter, "copiedImages", ids, on, chunkTexts, cardImageIds, tags)
-            }
-            tags={tags}
+            onCopiedImagesChange={(ids, on) => noteCopy(adapter, "copiedImages", ids, on, needs)}
             checkedTags={progress.checkedTags[adapter.id] ?? []}
             copiedAlts={progress.copiedAlts[adapter.id] ?? []}
-            onAltCopied={(key) => setProgress((p) => markIn(p, "copiedAlts", adapter.id, [key], true))}
-            onTagsChecked={(postTags, on) => noteCopy(adapter, "checkedTags", postTags, on, chunkTexts, cardImageIds, tags)}
+            onAltCopiedChange={(key, on) => noteCopy(adapter, "copiedAlts", [key], on, needs)}
+            onTagsChecked={(postTags, on) => noteCopy(adapter, "checkedTags", postTags, on, needs)}
             hiddenImages={new Set(progress.hiddenImages[adapter.id])}
             onHideImage={(id) => setProgress((p) => markIn(p, "hiddenImages", adapter.id, [id], true))}
             onShowHidden={() => setProgress((p) => ({ ...p, hiddenImages: { ...p.hiddenImages, [adapter.id]: [] } }))}
@@ -1302,6 +1370,12 @@ export default function Composer() {
           />
         )
       })()}
+      {/* The same payload, readable from the page's source by tools that don't run scripts. */}
+      <script
+        type="application/json"
+        id="crosspost-payload"
+        dangerouslySetInnerHTML={{ __html: payloadJson(payload) }}
+      />
     </main>
   )
 }

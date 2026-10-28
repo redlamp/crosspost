@@ -46,6 +46,30 @@ export type VideoRules = {
   upgrade?: { label: string; maxSeconds?: number; maxBytes?: number };
 };
 
+/** How a platform's web composer takes the text, images, alt text and later posts. */
+export type ComposeFacts = {
+  /** The Open link fills in the first post ("prefill"), or the text is pasted in ("paste"). */
+  text: "prefill" | "paste";
+  /** Images go in pasted from the clipboard ("paste"), or only as files (a drop or the file picker). */
+  image: "paste" | "file";
+  /** Posts after the first: added in the composer before posting, posted as replies, or none (no threads). */
+  thread: "add-post" | "reply" | "none";
+  /** Where the alt text goes, in the platform's words. */
+  alt: string;
+  /** Worth knowing before posting; shown on the card and in the guide. */
+  warnings?: string[];
+  /** Smaller quirks, for the guide only. */
+  tips?: string[];
+  /**
+   * Whether a browser agent may fill the composer ("composer": an open network, where automated
+   * posting is common) or only open it from the card for the person to finish ("open"): the
+   * platform's terms bar automated use of its site. See "Agents and platform terms" in docs/spec.md.
+   */
+  agent: "composer" | "open";
+  /** The platform's terms on automation, linked from the guide; none where each server sets its own. */
+  terms?: string;
+};
+
 /** A platform: how it counts and splits, how it looks, and how to open it to post. */
 export type PlatformAdapter = {
   id: string;
@@ -93,7 +117,22 @@ export type PlatformAdapter = {
   /** Starts hidden until the user shows it in Settings (newer or niche platforms). */
   hiddenByDefault?: boolean;
   /** A button that opens the platform to post, given the first post's text (and the server, if it needs one). */
-  open: { label: string; url: (firstChunk: string, server?: string) => string };
+  open: {
+    label: string;
+    url: (firstChunk: string, server?: string) => string;
+    /**
+     * Where the button goes instead when the card has images or videos, for a platform whose
+     * prefilled page mishandles them (X's drops the images once alt text is added). The text
+     * isn't prefilled there, so the button copies it to paste.
+     */
+    withMedia?: { label: string; url: string; note: string };
+  };
+  /**
+   * How the platform's web composer takes each piece, posted by hand or with a browser
+   * assistant's help. The public guide (/assistants) and the page's payload read it; see
+   * "Composer facts and the assistants guide" in docs/spec.md.
+   */
+  compose: ComposeFacts;
   /**
    * What the platform's phone app takes from the share sheet, for the card's Share button
    * (text and images together; see "Phone apps and the share sheet" in docs/spec.md).

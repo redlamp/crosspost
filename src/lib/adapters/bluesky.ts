@@ -31,6 +31,15 @@ export const bluesky: PlatformAdapter = {
     perPost: 1,
     mixes: false,
   },
+  compose: {
+    text: "prefill",
+    image: "paste",
+    thread: "add-post",
+    alt: "The ALT button on the image's thumbnail",
+    tips: ["Pasting an image replaces a link card made from a link in the text."],
+    agent: "composer",
+    terms: "https://bsky.social/about/support/community-guidelines",
+  },
   open: {
     label: "Open Prefilled",
     url: (firstChunk) => `https://bsky.app/intent/compose?text=${encodeURIComponent(firstChunk)}`,

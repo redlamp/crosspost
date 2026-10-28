@@ -36,6 +36,19 @@ export const linkedin: PlatformAdapter = {
     perPost: 1,
     mixes: false,
   },
+  compose: {
+    text: "prefill",
+    image: "file",
+    thread: "none",
+    alt: "ALT in the media editor, after adding the image",
+    tips: [
+      "A link in the post makes a link card, which hides the Media button. Remove the card (its X) to bring Media back; the image replaces the card anyway.",
+      "Pasted images are ignored. Add the saved file with Media.",
+    ],
+    // The User Agreement (8.2) bars bots and automated methods for creating or sharing posts.
+    agent: "open",
+    terms: "https://www.linkedin.com/legal/user-agreement",
+  },
   open: {
     label: "Open Prefilled",
     // LinkedIn's share link; undocumented, but it opens the composer with the text.

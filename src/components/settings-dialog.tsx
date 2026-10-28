@@ -5,6 +5,7 @@ import {
   ArrowUpNarrowWideIcon,
   CalendarIcon,
   ArrowDownAZIcon,
+  BookOpenIcon,
   Settings2Icon,
   Trash2Icon,
   UsersIcon,
@@ -13,6 +14,7 @@ import {
 import { useTheme } from "next-themes"
 
 import { ConfirmButton } from "@/components/confirm-button"
+import { GUIDE_HASH } from "@/components/guide-sheet"
 import { PlatformLogo } from "@/components/platform-logo"
 import { Button } from "@/components/ui/button"
 import {
@@ -85,7 +87,7 @@ export function SettingsDialog() {
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           {/* For screen readers only, as the dialog's description. */}
-          <DialogDescription className="sr-only">Crosspost&apos;s platforms and the data it keeps in this browser.</DialogDescription>
+          <DialogDescription className="sr-only">Crosspost&apos;s platforms, the agent guide, and the data it keeps in this browser.</DialogDescription>
         </DialogHeader>
 
         <section aria-labelledby="settings-platforms" className="space-y-3">
@@ -184,6 +186,26 @@ export function SettingsDialog() {
               )
             })}
           </ul>
+        </section>
+
+        {/* The agent guide, kept here rather than on the main screen: it's for whoever goes looking,
+            and the app says nothing about agents otherwise. Settings closes, then the guide's sheet
+            opens on the hash (src/components/guide-sheet.tsx), so the two never stack. */}
+        <section aria-labelledby="settings-agents" className="space-y-3 border-t pt-4">
+          <div className="space-y-1">
+            <h3 id="settings-agents" className="text-sm font-medium">
+              Browser Agents
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              What an agent can do with Crosspost, and the steps for each platform.
+            </p>
+          </div>
+          <Button variant="outline" asChild>
+            <a href={GUIDE_HASH} onClick={() => setSettingsOpen(false)}>
+              <BookOpenIcon />
+              Agent Guide
+            </a>
+          </Button>
         </section>
 
         {/* Clear Data: everything Crosspost keeps in this browser goes, settings included, so it

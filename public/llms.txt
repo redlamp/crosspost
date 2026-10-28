@@ -1,0 +1,11 @@
+# Crosspost
+
+> Write a post once, then copy or open it on Bluesky, Facebook, Instagram, LinkedIn, Mastodon, Threads, and X / Twitter. A static page: the draft, images, and progress stay in the person's browser. Crosspost doesn't post on its own or ask for passwords, tokens, or keys, and it doesn't come with an agent. Anyone who brings one uses it by their own choice, under each platform's terms, on their own account. The person decides whether and when each post goes out: they may want to see it in the composer first, or may only have wanted a draft, so posting waits for their word.
+
+What an agent can do depends on each platform's rules. In Crosspost itself, on any platform, it can read the draft, copy, open each platform from its card, and tick steps. It can fill the composer only on Bluesky and Mastodon, whose rules cover spam and manipulated reach. Facebook, Instagram, LinkedIn, Threads, and X / Twitter don't allow automated use of their sites, so there the person follows the steps in the guide. One draft, posted once per platform: nothing here schedules, repeats, or bulk-posts.
+
+The page holds the current draft as read-only JSON (`#crosspost-payload`, or `window.crosspost.getPayload()`), with each platform's `compose.agent` saying which applies, and its buttons have stable `data-crosspost-action` attributes.
+
+- [Using Crosspost with an agent](https://redlamp.github.io/crosspost/assistants): what an agent can do, the steps for each platform, the draft as JSON, and the card buttons.
+- [What's new](https://redlamp.github.io/crosspost/changelog.json): the release notes as JSON.
+- [Source](https://github.com/redlamp/crosspost): code, and issues for corrections.

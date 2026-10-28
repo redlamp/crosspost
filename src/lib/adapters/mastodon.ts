@@ -33,6 +33,15 @@ export const mastodon: PlatformAdapter = {
     perPost: 1,
     mixes: false,
   },
+  compose: {
+    text: "prefill",
+    image: "paste",
+    thread: "reply",
+    alt: "The ALT button on the image's thumbnail",
+    warnings: ["The share page takes one post. Post it, then reply to it with the next."],
+    // Each server sets its own rules (on its About page); automated posting is common.
+    agent: "composer",
+  },
   open: {
     label: "Open Prefilled",
     // Every Mastodon server has a share page that opens the composer with text.

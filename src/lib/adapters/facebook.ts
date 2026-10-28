@@ -47,7 +47,16 @@ export const facebook: PlatformAdapter = {
     perPost: 10,
     mixes: true,
   },
-  open: { label: "Open Facebook", url: () => "https://www.facebook.com/" },
+  compose: {
+    text: "paste",
+    image: "paste",
+    thread: "none",
+    alt: "Edit on the image, then Alternative text, then Custom",
+    // Meta's terms (3.2) bar access by automated means without permission, signed in or not.
+    agent: "open",
+    terms: "https://www.facebook.com/terms.php",
+  },
+  open: { label: "Open", url: () => "https://www.facebook.com/" },
   // Meta's policy: nothing may prefill a Facebook post, so its app drops shared text and keeps
   // only the images. Share copies the text for pasting instead.
   share: { dropsText: true, note: "Share sends the images to the Facebook app, which drops shared text; the text is copied to paste in." },

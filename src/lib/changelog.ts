@@ -15,6 +15,27 @@ export type Release = {
 /** Newest first. The first entry's version matches package.json (a test checks). */
 export const CHANGELOG: Release[] = [
   {
+    version: "1.4.0",
+    date: "2026-10-28",
+    changes: [
+      {
+        text: "New feature: A guide to using Crosspost with a browser agent.",
+        items: [
+          "Open it from Settings.",
+          "Which platforms let an agent fill the composer, and which leave it to you.",
+          "The steps to post on each platform, and the draft as read-only data in the page.",
+        ],
+      },
+      "Alt text counts as a step on each card.",
+      "Tick posts, images, and alt text by hand, for anything added another way.",
+      "LinkedIn and Instagram save images as files, since their composers ignore pasted images.",
+      "X with images opens its regular composer and copies the text; the prefilled page drops them.",
+      "Open buttons say what they do on hover, and read just Open where nothing is prefilled.",
+      "Copying an image shows a toast until it's ready to paste.",
+      "Notes on Instagram's crop and Share to Facebook switch, and Mastodon's one-post share page.",
+    ],
+  },
+  {
     version: "1.3.1",
     date: "2026-10-26",
     changes: [
