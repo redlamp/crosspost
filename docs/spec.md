@@ -156,13 +156,13 @@ Each adapter carries this as `share` (`note` for the card, `dropsText` for Meta'
 
 ## Analytics
 
-Counts only, to see whether Crosspost gets used and which parts. GoatCounter (`redlamp.goatcounter.com`; sign-in is Taylor's) takes page views and named events. No cookies, so no consent banner; nothing personal; never a post's text, images, alt text, handles, or a Mastodon server. An event is a name and nothing else: GoatCounter has no values, no properties, and no per-visitor paths, so a funnel is read by comparing counts (100 `tour/step/write` and 40 `tour/step/decide` is 40% reaching Decide).
+Counts only, to see whether Crosspost gets used and which parts. GoatCounter (`crosspost.goatcounter.com`; sign-in is Taylor's) takes page views and named events. Counts from before the move on 2026-11-01 stay on `redlamp.goatcounter.com`. No cookies, so no consent banner; nothing personal; never a post's text, images, alt text, handles, or a Mastodon server. An event is a name and nothing else: GoatCounter has no values, no properties, and no per-visitor paths, so a funnel is read by comparing counts (100 `tour/step/write` and 40 `tour/step/decide` is 40% reaching Decide).
 
 **Pieces:**
 
-- `src/lib/analytics.ts`: `track(name)` counts one event; `trackDelivery(event, platform)` for the delivery events; `welcomePlace(first)` names the welcome card's form; `fetchViewCount()` reads the footer's number. Every call is quiet when GoatCounter is blocked, so the app never depends on it.
+- `src/lib/analytics.ts`: `track(name)` counts one event; `trackDelivery(event, platform)` for the delivery events; `welcomePlace(first)` names the welcome card's form. Every call is quiet when GoatCounter is blocked, so the app never depends on it.
 - `src/app/layout.tsx` loads GoatCounter's script (`gc.zgo.at/count.js`) after the page is interactive. It records the page view itself and skips localhost, so development is never counted.
-- The footer (`src/components/made-by.tsx`) shows the home page's views from GoatCounter's public counter (`/counter/<path>.json`, the path exactly as the dashboard lists it, `/crosspost` with no trailing slash; answers are cached for up to four hours by address, so the footer asks from `?start=2026-10-25`, the day counting began, which gave a fresh answer when a "not found" was stuck, and a new date does so again; it needs the site setting "Allow adding visitor counts on your website", on since 2026-10-25), with a ? whose tooltip reads "Anonymous counts. No cookies stored." With no count to give (no visits yet, blocked, or localhost) it reads "1 view", the visit itself. Narrow footers put the version and views on a second line.
+- The site shows no view count: the footer's was removed on 2026-11-01, when the move to Crosspost's own GoatCounter site would have reset it. Views are read on the dashboard.
 
 **Events** (all `event: true`; page views are GoatCounter's own):
 
@@ -195,7 +195,7 @@ Counts only, to see whether Crosspost gets used and which parts. GoatCounter (`r
 
 **Checking an event:** GoatCounter doesn't count localhost, so watch the calls instead. On a production build (`bun run build`, then serve `out/`; the dev server works too), stub the counter in the console, `window.__gc = []; window.goatcounter.count = (v) => window.__gc.push(v.path)`, do the thing, and read `window.__gc`. On the live site, the dashboard shows events within a few minutes; an ad blocker in your own browser hides your visits.
 
-**Not counted yet, if wanted later:** which platforms are turned on, the theme, thread length (as buckets), visits from the installed app (`display-mode: standalone`), posts shared in through the share target, the Compose "Try an example" link (only the card's Try It is counted), and copy failures. Event names have no `crosspost/` prefix; if another site shares the `redlamp` dashboard later, its events would mix with these (page views stay apart by path), so add a prefix before that happens, accepting a break in the history.
+**Not counted yet, if wanted later:** which platforms are turned on, the theme, thread length (as buckets), visits from the installed app (`display-mode: standalone`), posts shared in through the share target, the Compose "Try an example" link (only the card's Try It is counted), and copy failures. Event names have no `crosspost/` prefix; the GoatCounter site is Crosspost's alone, so they don't need one.
 
 ## Tests (vitest)
 
