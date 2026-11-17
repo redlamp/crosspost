@@ -14,19 +14,17 @@ Next.js 16 App Router with `output: "export"` (so no `cacheComponents`: partial 
 
 ## Rules
 
-- Writing: no em dashes anywhere (UI copy, comments, commits); American English.
 - Static only: no API routes, server actions or secrets. The repo and site are public, so nothing personal or private goes in them.
 - Asset paths must work under the `/crosspost` base path: import images (`import logoLight from "@/assets/logo-light.svg"`) rather than using `/public` paths.
 - `src/lib/text.ts` holds counters, URL finding and splitting.
 - One adapter per platform in `src/lib/adapters/<platform>.ts`, registered in `adapters/index.ts`.
 - Browser storage keys start with `crosspost:`.
-- Theme: dark grey by default (background `oklch(0.24 0 0)`, cards `oklch(0.28 0 0)`), not black. Grid columns use `minmax(0,1fr)` so `field-sizing: content` textareas can't widen them.
+- Theme: dark gray by default (background `oklch(0.24 0 0)`, cards `oklch(0.28 0 0)`), not black. Grid columns use `minmax(0,1fr)` so `field-sizing: content` textareas can't widen them.
 
 ## Workflow
 
 - Verify changes in the browser and leave them uncommitted. Commit and push only when Taylor asks: pushing to `main` deploys the public site through the Pages workflow.
-- Branches: `main` > `dev` > `feature-<label>` (or `fix-<label>`). Merge with `--no-ff`, never fast-forward, so the branching shows.
-- Tags are annotated. The last merge of each working day gets a date tag named for that day (`2026-10-22`, message "End of work day"). A working day runs until 6 AM, so a 2 AM commit belongs to the day before. Releases get semver tags with a `v` (`v1.1.0`): minor for features, patch for fixes; bump `package.json` to match in the release commit. Only version tags carry the `v`. Pushing a tag (`git push origin <tag>`) doesn't deploy; push tags only when Taylor asks.
+- Release tags: minor for features, patch for fixes; bump `package.json` to match in the release commit. Pushing a tag doesn't deploy.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
